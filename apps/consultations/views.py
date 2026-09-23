@@ -256,6 +256,17 @@ def consultation_create_view(request, patient_id):
         department__code__in=['REFRAC', 'PEDS_REFRAC'],
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
     refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
+    # Fallback: pull from investigation results (optometrist used investigation workstation)
+    if not refraction_data:
+        _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
+        _exam_res = InvestigationResult.objects.filter(
+            Q(order__consultation__visit=visit) |
+            Q(order__consultation__isnull=True, order__patient=patient, order__created_at__date=today),
+            order__is_deleted=False,
+            order__investigation_type__category__in=_EXAM_CATS,
+        ).order_by('-result_date').first()
+        if _exam_res and _exam_res.result_data:
+            refraction_data = _exam_res.result_data
 
     # Most recent consultation from THIS visit by another doctor — used to pre-fill
     # history fields so referred specialists don't have to re-enter what was already taken
@@ -896,15 +907,30 @@ def consultation_detail_view(request, pk):
         except Exception:
             pass
 
-    # ── Refraction data from this visit (optometrist's consultation) ──
+    # ── Refraction data from this visit (optometrist's consultation OR investigation result) ──
     _refraction_data = {}
     if consultation.visit:
+        # Path A: optometrist filled a consultation with REFRAC dept
         _refrac_consult = Consultation.objects.filter(
             visit=consultation.visit, is_deleted=False,
             department__code__in=['REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO'],
         ).order_by('-consultation_date').first()
         if _refrac_consult and _refrac_consult.department_specific_data:
             _refraction_data = _refrac_consult.department_specific_data
+        elif not _refraction_data:
+            # Path B: optometrist filled result through investigation workstation
+            from apps.investigations.models import InvestigationResult
+            _visit_date = consultation.visit.visit_date
+            _vd = _visit_date.date() if hasattr(_visit_date, 'date') else _visit_date
+            _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
+            _exam_result = InvestigationResult.objects.filter(
+                Q(order__consultation__visit=consultation.visit) |
+                Q(order__consultation__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd),
+                order__is_deleted=False,
+                order__investigation_type__category__in=_EXAM_CATS,
+            ).select_related('order__investigation_type').order_by('-result_date').first()
+            if _exam_result and _exam_result.result_data:
+                _refraction_data = _exam_result.result_data
 
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
@@ -1161,6 +1187,19 @@ def consultation_edit_view(request, pk):
         department__code__in=['REFRAC', 'PEDS_REFRAC'],
     ).select_related('department', 'consulting_doctor').order_by('-consultation_date').first()
     refraction_data = refraction_consult.department_specific_data if refraction_consult else {}
+    # Fallback: pull from investigation results (optometrist used investigation workstation)
+    if not refraction_data and consultation.visit:
+        _EXAM_CATS_E = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
+        _vd_e = consultation.visit.visit_date
+        _vd_e = _vd_e.date() if hasattr(_vd_e, 'date') else _vd_e
+        _exam_res_e = InvestigationResult.objects.filter(
+            Q(order__consultation__visit=consultation.visit) |
+            Q(order__consultation__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd_e),
+            order__is_deleted=False,
+            order__investigation_type__category__in=_EXAM_CATS_E,
+        ).order_by('-result_date').first()
+        if _exam_res_e and _exam_res_e.result_data:
+            refraction_data = _exam_res_e.result_data
 
     # Latest diagnoses (RE / LE) — shown prominently near triage vitals bar
     from apps.consultations.models import ConsultationDiagnosis

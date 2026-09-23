@@ -208,7 +208,7 @@
 {# ═══════════════════════════════════════════════════════════════════ #}
 {# SECTION 2: CLINICAL EXAMS (Optometry / Orthoptics)                  #}
 {# ═══════════════════════════════════════════════════════════════════ #}
-{% if clinical_exams %}
+{% if clinical_exams or clinical_exam_orders %}
 <div class="vs-card">
   <div class="vs-card-header" style="background:#ede9fe;color:#5b21b6;">
     <span class="vs-section-num" style="background:#7c3aed;">2</span>
@@ -334,6 +334,136 @@
       {% endwith %}
     </div>
     {% endfor %}
+
+    {# ── Investigation-based Clinical Exam Orders ── #}
+    {# When nurse/doctor orders exams through the investigation pipeline, #}
+    {# the optometrist fills an InvestigationResult (not a Consultation). #}
+    {% for order in clinical_exam_orders %}
+    <div class="{% if not forloop.last or clinical_exams %}border-bottom{% endif %} p-3">
+      {# ── Order header ── #}
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div>
+          <span class="fw-bold small">{{ order.investigation_type.name }}</span>
+          <span class="vs-badge ms-1" style="background:#f3e8ff;color:#7c3aed;">{{ order.investigation_type.get_category_display }}</span>
+          <span class="vs-badge ms-1 {% if order.status == 'COMPLETED' %}bg-success text-white{% elif order.status == 'IN_PROGRESS' %}bg-primary text-white{% elif order.status == 'CANCELLED' %}bg-danger text-white{% else %}bg-warning text-dark{% endif %}">{{ order.get_status_display }}</span>
+        </div>
+        <div class="small text-muted">
+          <i class="bi bi-person me-1"></i>Ordered by {{ order.ordered_by.get_full_name|default:"—" }}
+          {% if order.assigned_to %}&bull; Assigned to {{ order.assigned_to.get_full_name }}{% endif %}
+          &bull; {{ order.created_at|date:"d M Y H:i" }}
+        </div>
+      </div>
+
+      {% if order.clinical_indication %}
+      <div class="small mb-2 text-muted fst-italic">{{ order.clinical_indication }}</div>
+      {% endif %}
+
+      {# ── Structured Result Display ── #}
+      {% if order.result %}
+      {% with rd=order.result.result_data %}
+      {% if rd %}
+
+        {# ── Refraction structured results ── #}
+        {% if rd.sub_sph_dist_od or rd.sub_sph_dist_os or rd.va_unaided_od or rd.va_unaided_os or rd.sph_od or rd.sph_os %}
+
+        {# Visual Acuity #}
+        {% if rd.va_unaided_od or rd.va_unaided_os or rd.va_corrected_od or rd.va_corrected_os %}
+        <div class="mb-3">
+          <div class="fw-semibold small text-muted mb-1"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+          <table class="vs-table vs-rx-table">
+            <thead><tr><th></th><th>Unaided</th><th>Corrected</th><th>NVA</th></tr></thead>
+            <tbody>
+              <tr><td class="fw-semibold text-primary">OD (Right)</td><td>{{ rd.va_unaided_od|default:"—" }}</td><td>{{ rd.va_corrected_od|default:"—" }}</td><td>{{ rd.nva_od|default:"—" }}</td></tr>
+              <tr><td class="fw-semibold text-success">OS (Left)</td><td>{{ rd.va_unaided_os|default:"—" }}</td><td>{{ rd.va_corrected_os|default:"—" }}</td><td>{{ rd.nva_os|default:"—" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {# Auto-Refraction #}
+        {% if rd.ar_sph_od or rd.ar_sph_os or rd.auto_sph_od or rd.auto_sph_os %}
+        <div class="mb-3">
+          <div class="fw-semibold small text-muted mb-1"><i class="bi bi-cpu me-1"></i>Auto-Refraction</div>
+          <table class="vs-table vs-rx-table">
+            <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
+            <tbody>
+              <tr><td class="fw-semibold text-primary">OD</td><td>{{ rd.ar_sph_od|default:rd.auto_sph_od|default:"—" }}</td><td>{{ rd.ar_cyl_od|default:rd.auto_cyl_od|default:"—" }}</td><td>{{ rd.ar_axis_od|default:rd.auto_axis_od|default:"—" }}</td></tr>
+              <tr><td class="fw-semibold text-success">OS</td><td>{{ rd.ar_sph_os|default:rd.auto_sph_os|default:"—" }}</td><td>{{ rd.ar_cyl_os|default:rd.auto_cyl_os|default:"—" }}</td><td>{{ rd.ar_axis_os|default:rd.auto_axis_os|default:"—" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {# Subjective Refraction (Final Rx) #}
+        {% if rd.sub_sph_dist_od or rd.sub_sph_dist_os or rd.sph_od or rd.sph_os %}
+        <div class="mb-3">
+          <div class="fw-semibold small text-muted mb-1"><i class="bi bi-eyeglasses me-1"></i>Subjective Refraction (Final Rx)</div>
+          <table class="vs-table vs-rx-table">
+            <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>VA</th><th>Add</th></tr></thead>
+            <tbody>
+              <tr><td class="fw-semibold text-primary">OD</td><td>{{ rd.sub_sph_dist_od|default:rd.sph_od|default:"—" }}</td><td>{{ rd.sub_cyl_dist_od|default:rd.cyl_od|default:"—" }}</td><td>{{ rd.sub_axis_dist_od|default:rd.axis_od|default:"—" }}</td><td>{{ rd.sub_va_dist_od|default:rd.va_od|default:"—" }}</td><td>{{ rd.sub_add_od|default:rd.add_od|default:"—" }}</td></tr>
+              <tr><td class="fw-semibold text-success">OS</td><td>{{ rd.sub_sph_dist_os|default:rd.sph_os|default:"—" }}</td><td>{{ rd.sub_cyl_dist_os|default:rd.cyl_os|default:"—" }}</td><td>{{ rd.sub_axis_dist_os|default:rd.axis_os|default:"—" }}</td><td>{{ rd.sub_va_dist_os|default:rd.va_os|default:"—" }}</td><td>{{ rd.sub_add_os|default:rd.add_os|default:"—" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {# IOP #}
+        {% if rd.iop_right or rd.iop_left or rd.iop_od or rd.iop_os %}
+        <div class="mb-2">
+          <div class="fw-semibold small text-muted mb-1"><i class="bi bi-speedometer2 me-1"></i>IOP</div>
+          <div class="d-flex gap-3">
+            <span class="vs-badge" style="background:#f1f5f9;">OD: <strong>{{ rd.iop_right|default:rd.iop_od|default:"—" }}</strong> mmHg</span>
+            <span class="vs-badge" style="background:#f1f5f9;">OS: <strong>{{ rd.iop_left|default:rd.iop_os|default:"—" }}</strong> mmHg</span>
+          </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        {# Generic structured result — show as key-value grid #}
+        <div class="vs-exam-fields">
+          {% for key, val in rd.items %}
+          {% if val %}
+          <div class="vs-exam-field">
+            <label>{{ key }}</label>
+            <span>{{ val }}</span>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+      {% endif %}
+      {% endwith %}
+
+      {# ── Interpretation text ── #}
+      {% if order.result.interpretation %}
+      <div class="small mt-2"><span class="text-muted fw-semibold">Interpretation:</span> {{ order.result.interpretation }}</div>
+      {% endif %}
+
+      {# ── File attachments ── #}
+      {% if order.result.files.exists %}
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        {% for f in order.result.files.all %}
+        {% if f.file_type == 'IMAGE' %}
+        <a href="{{ f.file.url }}" target="_blank">
+          <img src="{{ f.file.url }}" alt="{{ f.description|default:'Exam image' }}" class="border rounded shadow-sm" style="max-height:140px;max-width:200px;object-fit:contain;">
+        </a>
+        {% elif f.file_type == 'PDF' %}
+        <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-danger"><i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"View PDF" }}</a>
+        {% else %}
+        <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"Download" }}</a>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% elif order.status != 'COMPLETED' %}
+      <div class="vs-empty">Awaiting exam — {% if order.payment_status == 'UNPAID' %}pending payment{% elif order.acquisition_status == 'SCHEDULED' %}not yet checked in{% else %}in progress{% endif %}.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
   </div>
 </div>
 {% endif %}

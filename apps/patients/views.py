@@ -3570,6 +3570,7 @@ def visit_summary_view(request, visit_number):
 
     # ── 2. Clinical Exams (Optometry) — consultations with REFRAC/LOW_VIS/ORTHO dept ──
     _EXAM_DEPTS = ('REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO')
+    _EXAM_CATEGORIES = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
     from apps.consultations.models import Consultation
     clinical_exams = list(
         Consultation.objects.filter(
@@ -3578,15 +3579,30 @@ def visit_summary_view(request, visit_number):
         ).select_related('department', 'consulting_doctor').order_by('consultation_date')
     )
 
-    # ── 3. Investigations — orders via consultation__visit OR nurse-ordered (patient + date) ──
+    # ── 2b. Clinical Exam Orders (investigation pipeline) ──
+    # When nurse/doctor orders REFRACTION/LOW_VISION/ORTHOPTICS exams, the
+    # optometrist fills an InvestigationResult — these must also appear in
+    # the Clinical Exams section, not be hidden.
     from apps.investigations.models import InvestigationOrder
+    clinical_exam_orders = list(
+        InvestigationOrder.objects.filter(
+            Q(consultation__visit=visit) |
+            Q(consultation__isnull=True, patient=patient, created_at__date=_visit_date),
+            is_deleted=False,
+            investigation_type__category__in=_EXAM_CATEGORIES,
+        ).select_related(
+            'investigation_type', 'ordered_by', 'assigned_to', 'result',
+        ).prefetch_related('result__files').order_by('created_at')
+    )
+
+    # ── 3. Investigations — orders via consultation__visit OR nurse-ordered (patient + date) ──
     investigation_orders = list(
         InvestigationOrder.objects.filter(
             Q(consultation__visit=visit) |
             Q(consultation__isnull=True, patient=patient, created_at__date=_visit_date),
             is_deleted=False,
         ).exclude(
-            investigation_type__category__in=['REFRACTION', 'LOW_VISION', 'ORTHOPTICS'],
+            investigation_type__category__in=_EXAM_CATEGORIES,
         ).select_related(
             'investigation_type', 'ordered_by', 'result',
         ).order_by('created_at')
@@ -3655,6 +3671,7 @@ def visit_summary_view(request, visit_number):
         'vitals': vitals,
         'has_vitals': has_vitals,
         'clinical_exams': clinical_exams,
+        'clinical_exam_orders': clinical_exam_orders,
         'investigation_orders': investigation_orders,
         'lab_orders': lab_orders,
         'doctor_consultations': doctor_consultations,
