@@ -5,7 +5,7 @@ from django.db.models import Q, Count, OuterRef, Subquery, CharField
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.utils import timezone
-from .models import Patient, Visit, MedicalHistory, PatientMedication, PatientAllergy
+from .models import Patient, Visit, VisitStop, MedicalHistory, PatientMedication, PatientAllergy
 from .forms import PatientRegistrationForm, NextOfKinForm, MedicalHistoryForm, VitalSignsForm
 from apps.core.decorators import (
     clinical_staff_required, doctor_required,
@@ -3545,4 +3545,121 @@ def document_review_view(request):
         'q': q,
         'doc_type': doc_type,
         'doc_type_choices': PatientDocument.DocType.choices,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VISIT SUMMARY — Read-only, visit-centric medical record view (Stage 1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@clinical_staff_required
+def visit_summary_view(request, visit_number):
+    """
+    Visit Summary — the complete medical record for a single patient visit.
+    Shows triage, clinical exams (optometry), investigations, lab, doctor
+    consultations, and prescriptions in one unified view.
+    """
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
+    patient = visit.patient
+    _visit_date = visit.visit_date.date() if hasattr(visit.visit_date, 'date') else visit.visit_date
+
+    # ── 1. Triage / Vitals (from visit.vital_signs JSONField) ──────────────
+    vitals = visit.vital_signs or {}
+    has_vitals = bool(vitals and any(str(v).strip() for v in vitals.values() if v))
+
+    # ── 2. Clinical Exams (Optometry) — consultations with REFRAC/LOW_VIS/ORTHO dept ──
+    _EXAM_DEPTS = ('REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO')
+    from apps.consultations.models import Consultation
+    clinical_exams = list(
+        Consultation.objects.filter(
+            visit=visit, is_deleted=False,
+            department__code__in=_EXAM_DEPTS,
+        ).select_related('department', 'consulting_doctor').order_by('consultation_date')
+    )
+
+    # ── 3. Investigations — orders via consultation__visit OR nurse-ordered (patient + date) ──
+    from apps.investigations.models import InvestigationOrder
+    investigation_orders = list(
+        InvestigationOrder.objects.filter(
+            Q(consultation__visit=visit) |
+            Q(consultation__isnull=True, patient=patient, created_at__date=_visit_date),
+            is_deleted=False,
+        ).exclude(
+            investigation_type__category__in=['REFRACTION', 'LOW_VISION', 'ORTHOPTICS'],
+        ).select_related(
+            'investigation_type', 'ordered_by', 'result',
+        ).order_by('created_at')
+    )
+
+    # ── 4. Lab Orders — via consultation__visit ──
+    from apps.laboratory.models import LabOrder
+    lab_orders = list(
+        LabOrder.objects.filter(
+            consultation__visit=visit, is_deleted=False,
+        ).select_related('consultation', 'ordered_by').prefetch_related(
+            'items__test_type', 'items__result',
+        ).order_by('created_at')
+    )
+
+    # ── 5. Doctor Consultations — all NON-exam consultations ──
+    doctor_consultations = list(
+        Consultation.objects.filter(
+            visit=visit, is_deleted=False,
+        ).exclude(
+            department__code__in=_EXAM_DEPTS,
+        ).select_related(
+            'department', 'consulting_doctor',
+        ).prefetch_related(
+            'consultation_diagnoses__diagnosis',
+            'drug_prescriptions__items',
+            'optical_prescriptions',
+        ).order_by('consultation_date')
+    )
+
+    # ── 6. Prescriptions — medications and optical from ALL consultations this visit ──
+    from apps.prescriptions.models import DrugPrescription, OpticalPrescription
+    visit_consult_ids = list(
+        Consultation.objects.filter(visit=visit, is_deleted=False).values_list('id', flat=True)
+    )
+    drug_prescriptions = list(
+        DrugPrescription.objects.filter(
+            consultation_id__in=visit_consult_ids, is_deleted=False,
+        ).select_related('prescribed_by', 'consultation__department').prefetch_related('items').order_by('prescription_date')
+    )
+    optical_prescriptions = list(
+        OpticalPrescription.objects.filter(
+            consultation_id__in=visit_consult_ids, is_deleted=False,
+        ).select_related('prescribed_by', 'consultation__department').order_by('prescription_date')
+    )
+
+    # ── 7. Billing summary ──
+    from apps.billing.models import Invoice
+    invoices = list(
+        Invoice.objects.filter(
+            patient=patient, is_deleted=False,
+            created_at__date=_visit_date,
+        ).order_by('-created_at')[:5]
+    )
+
+    # ── Visit stops (journey trail) ──
+    visit_stops = list(
+        VisitStop.objects.filter(
+            visit=visit, is_deleted=False,
+        ).select_related('assigned_to', 'routed_by', 'department').order_by('sequence')
+    ) if hasattr(Visit, 'stops') or True else []
+
+    return render(request, 'patients/visit_summary.html', {
+        'visit': visit,
+        'patient': patient,
+        'vitals': vitals,
+        'has_vitals': has_vitals,
+        'clinical_exams': clinical_exams,
+        'investigation_orders': investigation_orders,
+        'lab_orders': lab_orders,
+        'doctor_consultations': doctor_consultations,
+        'drug_prescriptions': drug_prescriptions,
+        'optical_prescriptions': optical_prescriptions,
+        'invoices': invoices,
+        'visit_stops': visit_stops,
     })

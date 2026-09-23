@@ -1,0 +1,658 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load ehr_tags %}
+{% block title %}Visit Record — {{ patient.full_name }} — {{ visit.visit_date|date:"d M Y" }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  @media print {
+    .sidebar, .topbar, .no-print, nav, footer, .btn { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .vs-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+    body { font-size: 10pt; }
+  }
+  .vs-card { border: none; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,.06); margin-bottom: 1rem; overflow: hidden; }
+  .vs-card-header { padding: 10px 16px; font-size: .82rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .vs-card-body { padding: 12px 16px; }
+  .vs-section-num { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .68rem; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .vs-table { width: 100%; font-size: .8rem; }
+  .vs-table th { font-weight: 600; color: #64748b; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 2px solid #e2e8f0; }
+  .vs-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .vs-table tbody tr:last-child td { border-bottom: none; }
+  .vs-badge { font-size: .68rem; font-weight: 600; padding: 2px 8px; border-radius: 12px; display: inline-block; }
+  .vs-vital-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .vs-vital { background: #f8fafc; border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .vs-vital-label { font-size: .68rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+  .vs-vital-value { font-size: 1.1rem; font-weight: 700; color: #1e293b; line-height: 1.2; margin-top: 2px; }
+  .vs-vital-unit { font-size: .72rem; color: #94a3b8; font-weight: 400; }
+  .vs-rx-table th { background: #f1f5f9; font-size: .72rem; }
+  .vs-rx-table td { font-size: .8rem; text-align: center; }
+  .vs-empty { color: #94a3b8; font-size: .82rem; padding: 16px; text-align: center; font-style: italic; }
+  .vs-journey { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .vs-journey-step { font-size: .7rem; padding: 3px 10px; border-radius: 20px; background: #f1f5f9; color: #475569; font-weight: 500; }
+  .vs-journey-step.active { background: #3b82f6; color: #fff; }
+  .vs-journey-step.done { background: #dcfce7; color: #166534; }
+  .vs-journey-arrow { color: #cbd5e1; font-size: .7rem; }
+  .vs-exam-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; font-size: .78rem; }
+  .vs-exam-field { background: #fafbfc; border-radius: 6px; padding: 4px 8px; }
+  .vs-exam-field label { font-size: .68rem; color: #94a3b8; display: block; }
+  .vs-exam-field span { font-weight: 600; color: #1e293b; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 no-print">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-journal-medical me-2"></i>Visit Medical Record</h5>
+    <div class="text-muted small">Complete clinical record for this visit</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'patients:visit_detail' visit_number=visit.visit_number %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-map me-1"></i>Journey View</a>
+    <a href="{% url 'patients:detail' patient_id=patient.patient_id %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-person me-1"></i>Patient File</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer me-1"></i>Print</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 0: VISIT HEADER                                            #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;">
+    <i class="bi bi-journal-medical"></i> Visit Record
+    <span class="ms-auto" style="font-size:.72rem;font-weight:400;opacity:.7;">{{ visit.visit_number }}</span>
+  </div>
+  <div class="vs-card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-muted">Patient</div>
+        <div class="fw-bold">{{ patient.full_name }}</div>
+        <div class="small text-muted">{{ patient.patient_id }} &bull; {{ patient.gender|default:"—" }} &bull; {{ patient.date_of_birth|date:"d M Y"|default:"DOB N/A" }}{% if patient.age %} ({{ patient.age }}y){% endif %}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted">Visit Date</div>
+        <div class="fw-bold">{{ visit.visit_date|date:"d M Y" }}</div>
+        <div class="small text-muted">{{ visit.visit_date|time:"H:i" }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted">Visit Type</div>
+        <div class="fw-semibold">{{ visit.get_visit_type_display }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted">Service Tier</div>
+        <div>
+          {% if visit.service_tier == 'VIP' %}
+            <span class="vs-badge" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;"><i class="bi bi-stars me-1"></i>VIP</span>
+          {% elif visit.service_tier == 'EXPRESS' %}
+            <span class="vs-badge" style="background:linear-gradient(135deg,#0891b2,#0284c7);color:#fff;">Express</span>
+          {% else %}
+            <span class="vs-badge" style="background:#f1f5f9;color:#475569;">Standard</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted">Status</div>
+        <div>
+          <span class="vs-badge {% if visit.status == 'DISCHARGED' or visit.status == 'COMPLETED' %}bg-success text-white{% elif visit.status == 'IN_CONSULTATION' %}bg-primary text-white{% else %}bg-warning text-dark{% endif %}">{{ visit.get_status_display }}</span>
+        </div>
+      </div>
+    </div>
+    {% if visit.chief_complaint %}
+    <div class="mt-2 pt-2 border-top">
+      <span class="small text-muted">Chief Complaint:</span>
+      <span class="small fw-semibold">{{ visit.chief_complaint }}</span>
+    </div>
+    {% endif %}
+
+    {# ── Patient Journey Trail ── #}
+    {% if visit_stops %}
+    <div class="mt-2 pt-2 border-top">
+      <div class="small text-muted mb-1">Patient Journey</div>
+      <div class="vs-journey">
+        {% for stop in visit_stops %}
+        {% if not forloop.first %}<i class="bi bi-chevron-right vs-journey-arrow"></i>{% endif %}
+        <span class="vs-journey-step {% if stop.status == 'COMPLETED' %}done{% elif stop.status == 'IN_PROGRESS' %}active{% endif %}">
+          {{ stop.get_stop_type_display }}
+          {% if stop.assigned_to %}<span style="opacity:.7;font-size:.62rem;"> &bull; {{ stop.assigned_to.get_short_name|default:stop.assigned_to.username }}</span>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 1: TRIAGE / VITALS                                         #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if has_vitals %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#fef3c7;color:#92400e;">
+    <span class="vs-section-num" style="background:#f59e0b;">1</span>
+    <i class="bi bi-heart-pulse"></i> Triage / Vital Signs
+    {% if visit.triage_nurse %}<span class="ms-auto" style="font-size:.72rem;font-weight:400;">Nurse: {{ visit.triage_nurse.get_full_name }}</span>{% endif %}
+  </div>
+  <div class="vs-card-body">
+    <div class="vs-vital-grid">
+      {# ── Ophthalmic Vitals ── #}
+      {% if vitals.visual_acuity_right or vitals.visual_acuity_left %}
+      <div class="vs-vital" style="background:#eff6ff;">
+        <div class="vs-vital-label">VA OD (Right)</div>
+        <div class="vs-vital-value">{{ vitals.visual_acuity_right|default:"N/R" }}</div>
+      </div>
+      <div class="vs-vital" style="background:#eff6ff;">
+        <div class="vs-vital-label">VA OS (Left)</div>
+        <div class="vs-vital-value">{{ vitals.visual_acuity_left|default:"N/R" }}</div>
+      </div>
+      {% endif %}
+      {% if vitals.intraocular_pressure_right or vitals.intraocular_pressure_left %}
+      <div class="vs-vital" style="background:#faf5ff;">
+        <div class="vs-vital-label">IOP OD</div>
+        <div class="vs-vital-value">{{ vitals.intraocular_pressure_right|default:"N/R" }} <span class="vs-vital-unit">mmHg</span></div>
+      </div>
+      <div class="vs-vital" style="background:#faf5ff;">
+        <div class="vs-vital-label">IOP OS</div>
+        <div class="vs-vital-value">{{ vitals.intraocular_pressure_left|default:"N/R" }} <span class="vs-vital-unit">mmHg</span></div>
+      </div>
+      {% endif %}
+      {# ── General Vitals ── #}
+      {% if vitals.blood_pressure %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">Blood Pressure</div>
+        <div class="vs-vital-value">{{ vitals.blood_pressure }} <span class="vs-vital-unit">mmHg</span></div>
+      </div>
+      {% endif %}
+      {% if vitals.pulse %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">Pulse</div>
+        <div class="vs-vital-value">{{ vitals.pulse }} <span class="vs-vital-unit">bpm</span></div>
+      </div>
+      {% endif %}
+      {% if vitals.temperature %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">Temperature</div>
+        <div class="vs-vital-value">{{ vitals.temperature }} <span class="vs-vital-unit">&deg;C</span></div>
+      </div>
+      {% endif %}
+      {% if vitals.spo2 %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">SpO2</div>
+        <div class="vs-vital-value">{{ vitals.spo2 }} <span class="vs-vital-unit">%</span></div>
+      </div>
+      {% endif %}
+      {% if vitals.weight %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">Weight</div>
+        <div class="vs-vital-value">{{ vitals.weight }} <span class="vs-vital-unit">kg</span></div>
+      </div>
+      {% endif %}
+      {% if vitals.height %}
+      <div class="vs-vital">
+        <div class="vs-vital-label">Height</div>
+        <div class="vs-vital-value">{{ vitals.height }} <span class="vs-vital-unit">cm</span></div>
+      </div>
+      {% endif %}
+    </div>
+    {% if visit.nursing_notes %}
+    <div class="mt-2 pt-2 border-top small">
+      <span class="text-muted fw-semibold">Nursing Notes:</span> {{ visit.nursing_notes }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 2: CLINICAL EXAMS (Optometry / Orthoptics)                  #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if clinical_exams %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#ede9fe;color:#5b21b6;">
+    <span class="vs-section-num" style="background:#7c3aed;">2</span>
+    <i class="bi bi-eyeglasses"></i> Clinical Exams (Optometry)
+  </div>
+  <div class="vs-card-body p-0">
+    {% for exam in clinical_exams %}
+    <div class="{% if not forloop.last %}border-bottom{% endif %} p-3">
+      {# ── Exam header ── #}
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div>
+          <span class="fw-bold small">
+            {% if exam.department.code == 'REFRAC' or exam.department.code == 'PEDS_REFRAC' %}Refraction Exam
+            {% elif exam.department.code == 'LOW_VIS' %}Low Vision Assessment
+            {% elif exam.department.code == 'ORTHO' %}Orthoptic Assessment
+            {% else %}{{ exam.department.name }}
+            {% endif %}
+          </span>
+          <span class="vs-badge bg-purple-subtle text-purple ms-1" style="background:#f3e8ff;color:#7c3aed;">Clinical Exam</span>
+        </div>
+        <div class="small text-muted">
+          <i class="bi bi-person me-1"></i>{{ exam.consulting_doctor.get_full_name|default:"—" }}
+          &bull; {{ exam.consultation_date|date:"d M Y" }} {{ exam.consultation_date|time:"H:i" }}
+          &bull; <span class="{% if exam.status == 'COMPLETED' %}text-success{% else %}text-warning{% endif %}">{{ exam.get_status_display }}</span>
+        </div>
+      </div>
+
+      {% with d=exam.department_specific_data %}
+      {% if d %}
+
+      {# ── Visual Acuity ── #}
+      {% if d.va_unaided_od or d.va_unaided_os or d.va_corrected_od or d.va_corrected_os %}
+      <div class="mb-3">
+        <div class="fw-semibold small text-muted mb-1"><i class="bi bi-eye me-1"></i>Visual Acuity</div>
+        <table class="vs-table vs-rx-table">
+          <thead><tr><th></th><th>Unaided</th><th>Corrected</th><th>NVA</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-semibold text-primary">OD (Right)</td><td>{{ d.va_unaided_od|default:"—" }}</td><td>{{ d.va_corrected_od|default:"—" }}</td><td>{{ d.nva_od|default:"—" }}</td></tr>
+            <tr><td class="fw-semibold text-success">OS (Left)</td><td>{{ d.va_unaided_os|default:"—" }}</td><td>{{ d.va_corrected_os|default:"—" }}</td><td>{{ d.nva_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# ── Auto-Refraction / Keratometry ── #}
+      {% if d.ar_sph_od or d.ar_sph_os %}
+      <div class="mb-3">
+        <div class="fw-semibold small text-muted mb-1"><i class="bi bi-cpu me-1"></i>Auto-Refraction / Keratometry</div>
+        <table class="vs-table vs-rx-table">
+          <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-semibold text-primary">OD</td><td>{{ d.ar_sph_od|default:"—" }}</td><td>{{ d.ar_cyl_od|default:"—" }}</td><td>{% if d.ar_axis_od %}{{ d.ar_axis_od }}&deg;{% else %}—{% endif %}</td><td>{{ d.k1_od|default:"—" }}</td><td>{{ d.k2_od|default:"—" }}</td></tr>
+            <tr><td class="fw-semibold text-success">OS</td><td>{{ d.ar_sph_os|default:"—" }}</td><td>{{ d.ar_cyl_os|default:"—" }}</td><td>{% if d.ar_axis_os %}{{ d.ar_axis_os }}&deg;{% else %}—{% endif %}</td><td>{{ d.k1_os|default:"—" }}</td><td>{{ d.k2_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# ── Subjective Refraction (Final Rx) ── #}
+      {% if d.sub_sph_dist_od or d.sub_sph_dist_os %}
+      <div class="mb-3">
+        <div class="fw-semibold small text-muted mb-1"><i class="bi bi-eyeglasses me-1"></i>Subjective Refraction (Final Rx)</div>
+        <table class="vs-table vs-rx-table">
+          <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>VA</th><th>Add</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-semibold text-primary">OD</td><td>{{ d.sub_sph_dist_od|default:"—" }}</td><td>{{ d.sub_cyl_dist_od|default:"—" }}</td><td>{% if d.sub_axis_dist_od %}{{ d.sub_axis_dist_od }}&deg;{% else %}—{% endif %}</td><td>{{ d.sub_va_dist_od|default:"—" }}</td><td>{{ d.sub_add_od|default:"—" }}</td></tr>
+            <tr><td class="fw-semibold text-success">OS</td><td>{{ d.sub_sph_dist_os|default:"—" }}</td><td>{{ d.sub_cyl_dist_os|default:"—" }}</td><td>{% if d.sub_axis_dist_os %}{{ d.sub_axis_dist_os }}&deg;{% else %}—{% endif %}</td><td>{{ d.sub_va_dist_os|default:"—" }}</td><td>{{ d.sub_add_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# ── Patient's Current Glasses ── #}
+      {% if d.pg_sph_od or d.pg_sph_os %}
+      <div class="mb-3">
+        <div class="fw-semibold small text-muted mb-1"><i class="bi bi-binoculars me-1"></i>Patient's Current Glasses</div>
+        <table class="vs-table vs-rx-table">
+          <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>VA</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-semibold text-primary">OD</td><td>{{ d.pg_sph_od|default:"—" }}</td><td>{{ d.pg_cyl_od|default:"—" }}</td><td>{% if d.pg_axis_od %}{{ d.pg_axis_od }}&deg;{% else %}—{% endif %}</td><td>{{ d.pg_va_od|default:"—" }}</td></tr>
+            <tr><td class="fw-semibold text-success">OS</td><td>{{ d.pg_sph_os|default:"—" }}</td><td>{{ d.pg_cyl_os|default:"—" }}</td><td>{% if d.pg_axis_os %}{{ d.pg_axis_os }}&deg;{% else %}—{% endif %}</td><td>{{ d.pg_va_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# ── IOP (from exam) ── #}
+      {% if d.iop_right or d.iop_left %}
+      <div class="mb-3">
+        <div class="fw-semibold small text-muted mb-1"><i class="bi bi-speedometer2 me-1"></i>IOP</div>
+        <div class="d-flex gap-3">
+          <span class="vs-badge" style="background:#f1f5f9;">OD: <strong>{{ d.iop_right|default:"—" }}</strong> mmHg</span>
+          <span class="vs-badge" style="background:#f1f5f9;">OS: <strong>{{ d.iop_left|default:"—" }}</strong> mmHg</span>
+          {% if d.iop_method %}<span class="small text-muted">({{ d.iop_method }})</span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Clinical Flags ── #}
+      {% if d.cb_icc or d.cb_duochrome or d.cb_mh or d.cb_cycloplegic or d.cb_comfortable_pg or d.cb_change_glass %}
+      <div class="mb-2">
+        <div class="d-flex flex-wrap gap-2">
+          {% if d.cb_icc %}<span class="vs-badge" style="background:#dbeafe;color:#1e40af;">Checked with ICC</span>{% endif %}
+          {% if d.cb_duochrome %}<span class="vs-badge" style="background:#dbeafe;color:#1e40af;">Duochrome Test</span>{% endif %}
+          {% if d.cb_mh %}<span class="vs-badge" style="background:#fef3c7;color:#92400e;">MH Present</span>{% endif %}
+          {% if d.cb_cycloplegic %}<span class="vs-badge" style="background:#fef3c7;color:#92400e;">Cycloplegic Refraction Needed</span>{% endif %}
+          {% if d.cb_comfortable_pg %}<span class="vs-badge" style="background:#dcfce7;color:#166534;">Comfortable with PG</span>{% endif %}
+          {% if d.cb_change_glass %}<span class="vs-badge" style="background:#f1f5f9;color:#475569;">Wants to Change Glass</span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Observations ── #}
+      {% if d.observations %}
+      <div class="small mt-2 pt-2 border-top">
+        <span class="text-muted fw-semibold">Observations:</span> {{ d.observations }}
+      </div>
+      {% endif %}
+
+      {% else %}
+        <div class="vs-empty">Exam form not yet completed.</div>
+      {% endif %}
+      {% endwith %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 3: INVESTIGATIONS (OCT, VF, Biometry, etc.)                #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if investigation_orders %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#dbeafe;color:#1e40af;">
+    <span class="vs-section-num" style="background:#2563eb;">3</span>
+    <i class="bi bi-search-heart"></i> Investigations
+  </div>
+  <div class="vs-card-body p-0">
+    <table class="vs-table">
+      <thead>
+        <tr><th>Investigation</th><th>Eye</th><th>Ordered By</th><th>Payment</th><th>Status</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        {% for o in investigation_orders %}
+        <tr>
+          <td>
+            <span class="fw-semibold">{{ o.investigation_type.name }}</span>
+            <div class="small text-muted">{{ o.investigation_type.get_category_display }}</div>
+          </td>
+          <td>{{ o.get_eye_display }}</td>
+          <td class="small">{{ o.ordered_by.get_full_name|default:"—" }}</td>
+          <td>
+            <span class="vs-badge {% if o.payment_status == 'PAID' or o.payment_status == 'WAIVED' %}bg-success text-white{% elif o.payment_status == 'UNPAID' %}bg-danger text-white{% else %}bg-secondary text-white{% endif %}">{{ o.get_payment_status_display }}</span>
+          </td>
+          <td>
+            <span class="vs-badge {% if o.status == 'COMPLETED' %}bg-success text-white{% elif o.status == 'IN_PROGRESS' %}bg-primary text-white{% elif o.status == 'CANCELLED' %}bg-danger text-white{% else %}bg-warning text-dark{% endif %}">{{ o.get_status_display }}</span>
+          </td>
+          <td class="small">
+            {% if o.result %}
+              {% if o.result.interpretation %}
+                {{ o.result.interpretation|truncatewords:15 }}
+              {% elif o.result.result_data %}
+                {% if o.result.result_data.sph_od or o.result.result_data.sph_os %}
+                  OD: {{ o.result.result_data.sph_od|default:"—" }}/{{ o.result.result_data.cyl_od|default:"—" }}&times;{{ o.result.result_data.axis_od|default:"—" }}
+                  | OS: {{ o.result.result_data.sph_os|default:"—" }}/{{ o.result.result_data.cyl_os|default:"—" }}&times;{{ o.result.result_data.axis_os|default:"—" }}
+                {% else %}
+                  <span class="text-success"><i class="bi bi-check-circle me-1"></i>Result recorded</span>
+                {% endif %}
+              {% else %}
+                <span class="text-success"><i class="bi bi-check-circle me-1"></i>Completed</span>
+              {% endif %}
+            {% elif o.status == 'COMPLETED' %}
+              <span class="text-success"><i class="bi bi-check-circle me-1"></i>Done</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 4: LABORATORY                                              #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if lab_orders %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#fce7f3;color:#9d174d;">
+    <span class="vs-section-num" style="background:#db2777;">4</span>
+    <i class="bi bi-droplet-half"></i> Laboratory
+  </div>
+  <div class="vs-card-body p-0">
+    {% for lab in lab_orders %}
+    <div class="{% if not forloop.last %}border-bottom{% endif %} p-3">
+      <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+        <div class="small">
+          <span class="fw-semibold">Lab Order</span>
+          &bull; Ordered by {{ lab.ordered_by.get_full_name|default:"—" }}
+          &bull; <span class="vs-badge {% if lab.status == 'COMPLETED' %}bg-success text-white{% else %}bg-warning text-dark{% endif %}">{{ lab.get_status_display }}</span>
+        </div>
+        <div class="small text-muted">{{ lab.created_at|date:"d M Y H:i" }}</div>
+      </div>
+      {% if lab.clinical_indication %}
+      <div class="small mb-2"><span class="text-muted">Indication:</span> {{ lab.clinical_indication }}</div>
+      {% endif %}
+      <table class="vs-table">
+        <thead><tr><th>Test</th><th>Status</th><th>Result</th><th>Reference</th><th>Flag</th></tr></thead>
+        <tbody>
+          {% for item in lab.items.all %}
+          <tr>
+            <td class="fw-semibold">{{ item.test_type.name }}</td>
+            <td><span class="vs-badge {% if item.status == 'COMPLETED' %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">{{ item.get_status_display }}</span></td>
+            <td>
+              {% if item.result %}
+                <span class="{% if item.result.is_critical %}text-danger fw-bold{% elif item.result.is_abnormal %}text-warning fw-bold{% endif %}">{{ item.result.result_value }}</span>
+                {% if item.result.result_unit %}<span class="text-muted small">{{ item.result.result_unit }}</span>{% endif %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{% if item.result %}{{ item.result.reference_range|default:"—" }}{% else %}—{% endif %}</td>
+            <td>
+              {% if item.result %}
+                {% if item.result.is_critical %}<span class="vs-badge bg-danger text-white">Critical</span>
+                {% elif item.result.is_abnormal %}<span class="vs-badge bg-warning text-dark">Abnormal</span>
+                {% else %}<span class="vs-badge bg-success text-white">Normal</span>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 5: DOCTOR CONSULTATION(S)                                   #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if doctor_consultations %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#dcfce7;color:#166534;">
+    <span class="vs-section-num" style="background:#16a34a;">5</span>
+    <i class="bi bi-clipboard2-pulse"></i> Doctor Consultation{{ doctor_consultations|length|pluralize }}
+  </div>
+  <div class="vs-card-body p-0">
+    {% for consult in doctor_consultations %}
+    <div class="{% if not forloop.last %}border-bottom{% endif %} p-3">
+      {# ── Consultation header ── #}
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div>
+          <span class="fw-bold">Dr. {{ consult.consulting_doctor.get_full_name|default:"—" }}</span>
+          {% if consult.department %}<span class="vs-badge ms-1" style="background:#f0fdf4;color:#166534;">{{ consult.department.name }}</span>{% endif %}
+          <span class="vs-badge ms-1 {% if consult.status == 'COMPLETED' %}bg-success text-white{% else %}bg-warning text-dark{% endif %}">{{ consult.get_status_display }}</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="small text-muted">{{ consult.consultation_date|date:"d M Y" }} {{ consult.consultation_date|time:"H:i" }}</span>
+          <a href="{% url 'consultations:detail' pk=consult.pk %}" class="btn btn-sm btn-outline-primary py-0 no-print" style="font-size:.72rem;">
+            <i class="bi bi-eye me-1"></i>Full Detail
+          </a>
+        </div>
+      </div>
+
+      {# ── Chief Complaint ── #}
+      {% if consult.chief_complaint %}
+      <div class="small mb-2">
+        <span class="text-muted fw-semibold">Chief Complaint:</span> {{ consult.chief_complaint }}
+      </div>
+      {% endif %}
+
+      {# ── Diagnoses ── #}
+      {% if consult.consultation_diagnoses.exists %}
+      <div class="mb-2">
+        <div class="small text-muted fw-semibold mb-1">Diagnoses</div>
+        <div class="d-flex flex-wrap gap-2">
+          {% for dx in consult.consultation_diagnoses.all %}
+          <span class="vs-badge" style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;">
+            {% if dx.laterality == 'RE' %}OD{% elif dx.laterality == 'LE' %}OS{% elif dx.laterality == 'BE' %}OU{% endif %}
+            {{ dx.diagnosis.description|default:dx.diagnosis.code }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Plan ── #}
+      {% if consult.plan %}
+      <div class="small mb-2">
+        <span class="text-muted fw-semibold">Plan:</span> {{ consult.plan }}
+      </div>
+      {% endif %}
+
+      {# ── Follow-up ── #}
+      {% if consult.follow_up_date %}
+      <div class="small mb-2">
+        <span class="text-muted fw-semibold">Follow-up:</span> {{ consult.follow_up_date|date:"d M Y" }}
+        {% if consult.follow_up_notes %}— {{ consult.follow_up_notes }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 6: PRESCRIPTIONS                                           #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if drug_prescriptions or optical_prescriptions %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#fff7ed;color:#9a3412;">
+    <span class="vs-section-num" style="background:#ea580c;">6</span>
+    <i class="bi bi-capsule"></i> Prescriptions
+  </div>
+  <div class="vs-card-body p-0">
+
+    {# ── Drug Prescriptions ── #}
+    {% for rx in drug_prescriptions %}
+    <div class="{% if not forloop.last or optical_prescriptions %}border-bottom{% endif %} p-3">
+      <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
+        <div class="small">
+          <i class="bi bi-capsule me-1 text-danger"></i>
+          <span class="fw-semibold">Medication Prescription</span>
+          &bull; Dr. {{ rx.prescribed_by.get_full_name|default:"—" }}
+          {% if rx.consultation.department %}&bull; {{ rx.consultation.department.name }}{% endif %}
+        </div>
+        <div class="small text-muted">
+          {{ rx.prescription_date|date:"d M Y" }}
+          {% if rx.is_dispensed %}<span class="vs-badge bg-success text-white ms-1">Dispensed</span>{% else %}<span class="vs-badge bg-warning text-dark ms-1">Pending</span>{% endif %}
+        </div>
+      </div>
+      <table class="vs-table">
+        <thead><tr><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Eye</th></tr></thead>
+        <tbody>
+          {% for item in rx.items.all %}
+          <tr>
+            <td class="fw-semibold">{{ item.drug_name }} {% if item.concentration %}<span class="text-muted small">{{ item.concentration }}</span>{% endif %}</td>
+            <td>{{ item.dose }}</td>
+            <td>{{ item.frequency }}</td>
+            <td>{{ item.duration }}</td>
+            <td class="small">{{ item.get_route_display }}</td>
+            <td>{{ item.get_eye_display }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if rx.notes %}<div class="small mt-1 text-muted"><i class="bi bi-info-circle me-1"></i>{{ rx.notes }}</div>{% endif %}
+    </div>
+    {% endfor %}
+
+    {# ── Optical Prescriptions ── #}
+    {% for orx in optical_prescriptions %}
+    <div class="{% if not forloop.last %}border-bottom{% endif %} p-3">
+      <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
+        <div class="small">
+          <i class="bi bi-eyeglasses me-1 text-primary"></i>
+          <span class="fw-semibold">{{ orx.get_prescription_type_display }} Prescription</span>
+          &bull; Dr. {{ orx.prescribed_by.get_full_name|default:"—" }}
+        </div>
+        <span class="small text-muted">{{ orx.prescription_date|date:"d M Y" }}</span>
+      </div>
+      <table class="vs-table vs-rx-table">
+        <thead><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>VA</th><th>Prism</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="fw-semibold text-primary">OD (Right)</td>
+            <td>{{ orx.re_sphere|default:"—" }}</td>
+            <td>{{ orx.re_cylinder|default:"—" }}</td>
+            <td>{% if orx.re_axis %}{{ orx.re_axis }}&deg;{% else %}—{% endif %}</td>
+            <td>{{ orx.re_add|default:"—" }}</td>
+            <td>{{ orx.re_visual_acuity|default:"—" }}</td>
+            <td>{% if orx.re_prism %}{{ orx.re_prism }} {{ orx.re_prism_base }}{% else %}—{% endif %}</td>
+          </tr>
+          <tr>
+            <td class="fw-semibold text-success">OS (Left)</td>
+            <td>{{ orx.le_sphere|default:"—" }}</td>
+            <td>{{ orx.le_cylinder|default:"—" }}</td>
+            <td>{% if orx.le_axis %}{{ orx.le_axis }}&deg;{% else %}—{% endif %}</td>
+            <td>{{ orx.le_add|default:"—" }}</td>
+            <td>{{ orx.le_visual_acuity|default:"—" }}</td>
+            <td>{% if orx.le_prism %}{{ orx.le_prism }} {{ orx.le_prism_base }}{% else %}—{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if orx.pd %}<div class="small mt-1 text-muted">PD: {{ orx.pd }}mm{% if orx.pd_near %} &bull; Near PD: {{ orx.pd_near }}mm{% endif %}</div>{% endif %}
+      {% if orx.notes %}<div class="small mt-1 text-muted"><i class="bi bi-info-circle me-1"></i>{{ orx.notes }}</div>{% endif %}
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 7: BILLING SUMMARY                                         #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if invoices %}
+<div class="vs-card">
+  <div class="vs-card-header" style="background:#f0fdf4;color:#166534;">
+    <span class="vs-section-num" style="background:#059669;">7</span>
+    <i class="bi bi-receipt"></i> Billing
+  </div>
+  <div class="vs-card-body p-0">
+    <table class="vs-table">
+      <thead><tr><th>Invoice #</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td class="fw-semibold">{{ inv.invoice_number }}</td>
+          <td>{{ inv.total_amount|default:"—" }} FCFA</td>
+          <td><span class="vs-badge {% if inv.status == 'PAID' %}bg-success text-white{% elif inv.status == 'WAIVED' %}bg-info text-white{% else %}bg-warning text-dark{% endif %}">{{ inv.get_status_display }}</span></td>
+          <td class="small text-muted">{{ inv.created_at|date:"d M Y H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# EMPTY STATE                                                         #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{% if not has_vitals and not clinical_exams and not investigation_orders and not lab_orders and not doctor_consultations and not drug_prescriptions and not optical_prescriptions %}
+<div class="vs-card">
+  <div class="vs-card-body text-center py-5">
+    <i class="bi bi-journal-x fs-1 text-muted d-block mb-3 opacity-50"></i>
+    <h6 class="text-muted">No clinical data recorded for this visit yet</h6>
+    <p class="small text-muted">Records will appear here as the patient progresses through their visit.</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
