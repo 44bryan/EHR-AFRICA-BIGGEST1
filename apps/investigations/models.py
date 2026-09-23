@@ -220,7 +220,17 @@ class InvestigationOrder(AuditModel):
         CLINIC = 'CLINIC', _('Clinic')
         OUTREACH = 'OUTREACH', _('Outreach / Field')
 
+    class OrderType(models.TextChoices):
+        INVESTIGATION = 'INVESTIGATION', _('Investigation')
+        CLINICAL_EXAM = 'CLINICAL_EXAM', _('Clinical Exam')
+
     # ── Core FKs ──
+    visit = models.ForeignKey(
+        'patients.Visit', on_delete=models.CASCADE,
+        related_name='investigation_orders',
+        null=True, blank=True,
+        help_text='Links order to the visit (populated automatically on save).',
+    )
     consultation = models.ForeignKey(
         'consultations.Consultation', on_delete=models.CASCADE,
         related_name='investigation_orders',
@@ -230,6 +240,11 @@ class InvestigationOrder(AuditModel):
     patient = models.ForeignKey(
         'patients.Patient', on_delete=models.CASCADE,
         related_name='investigation_orders',
+    )
+    order_type = models.CharField(
+        max_length=15, choices=OrderType.choices, default=OrderType.INVESTIGATION,
+        db_index=True,
+        help_text='CLINICAL_EXAM for optometry/orthoptics, INVESTIGATION for diagnostic tests.',
     )
     ordered_by = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True,
@@ -316,12 +331,37 @@ class InvestigationOrder(AuditModel):
     def __str__(self):
         return f"{self.investigation_type.name} — {self.patient.full_name} ({self.get_eye_display()})"
 
+    _CLINICAL_EXAM_CATEGORIES = frozenset(['REFRACTION', 'LOW_VISION', 'ORTHOPTICS'])
+
+    def save(self, *args, **kwargs):
+        # Auto-populate visit from consultation if not set
+        if not self.visit_id and self.consultation_id:
+            try:
+                self.visit_id = self.consultation.visit_id
+            except Exception:
+                pass
+        # Auto-set order_type based on investigation category
+        if self.investigation_type_id:
+            try:
+                cat = self.investigation_type.category
+                if cat in self._CLINICAL_EXAM_CATEGORIES:
+                    self.order_type = self.OrderType.CLINICAL_EXAM
+                else:
+                    self.order_type = self.OrderType.INVESTIGATION
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
     def can_proceed_without_payment(self):
         return self.payment_status in (
             PaymentStatus.PAID, PaymentStatus.INSURED, PaymentStatus.WAIVED,
             PaymentStatus.PACKAGE, PaymentStatus.STAT_OVERRIDE,
             PaymentStatus.BILL_LATER, PaymentStatus.FREE_REPEAT,
         )
+
+    @property
+    def is_clinical_exam(self):
+        return self.order_type == self.OrderType.CLINICAL_EXAM
 
 
 # ══════════════════════════════════════════════════════════════════════════════

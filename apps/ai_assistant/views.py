@@ -437,6 +437,7 @@ def _create_investigations_from_voice(consultation, inv_list, user):
             ).first()
             InvestigationOrder.objects.create(
                 consultation=consultation,
+                visit=consultation.visit,
                 patient=consultation.patient,
                 investigation_type=inv_type,
                 custom_name=inv_name if not inv_type else '',

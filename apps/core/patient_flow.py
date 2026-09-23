@@ -249,25 +249,25 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
             is_deleted=False,
         ).count()
 
-        # Unfinished investigation orders (check by visit FK or patient+today)
+        # Unfinished investigation orders (visit FK, with fallback for legacy orders)
         from django.db.models import Q as _ARQ
         from django.utils import timezone as _ar_tz
         _ar_today = _ar_tz.localdate()
         pending_invest = InvestigationOrder.objects.filter(
-            _ARQ(consultation__visit=visit) |
-            _ARQ(patient=visit.patient, created_at__date=_ar_today),
+            _ARQ(visit=visit) |
+            _ARQ(visit__isnull=True, patient=visit.patient, created_at__date=_ar_today),
             is_deleted=False,
             status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
-        ).exclude(consultation__isnull=True).count()
+        ).count()
 
         # Unverified investigation results
         unverified_invest = InvestigationResult.objects.filter(
-            _ARQ(order__consultation__visit=visit) |
-            _ARQ(order__patient=visit.patient, order__created_at__date=_ar_today),
+            _ARQ(order__visit=visit) |
+            _ARQ(order__visit__isnull=True, order__patient=visit.patient, order__created_at__date=_ar_today),
             order__is_deleted=False,
             is_verified=False,
             is_deleted=False,
-        ).exclude(order__consultation__isnull=True).count()
+        ).count()
 
         total_pending = pending_lab + unverified_lab + pending_invest + unverified_invest
 

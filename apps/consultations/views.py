@@ -260,8 +260,8 @@ def consultation_create_view(request, patient_id):
     if not refraction_data:
         _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
         _exam_res = InvestigationResult.objects.filter(
-            Q(order__consultation__visit=visit) |
-            Q(order__consultation__isnull=True, order__patient=patient, order__created_at__date=today),
+            Q(order__visit=visit) |
+            Q(order__visit__isnull=True, order__patient=patient, order__created_at__date=today),
             order__is_deleted=False,
             order__investigation_type__category__in=_EXAM_CATS,
         ).order_by('-result_date').first()
@@ -924,8 +924,8 @@ def consultation_detail_view(request, pk):
             _vd = _visit_date.date() if hasattr(_visit_date, 'date') else _visit_date
             _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
             _exam_result = InvestigationResult.objects.filter(
-                Q(order__consultation__visit=consultation.visit) |
-                Q(order__consultation__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd),
+                Q(order__visit=consultation.visit) |
+                Q(order__visit__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd),
                 order__is_deleted=False,
                 order__investigation_type__category__in=_EXAM_CATS,
             ).select_related('order__investigation_type').order_by('-result_date').first()
@@ -1193,8 +1193,8 @@ def consultation_edit_view(request, pk):
         _vd_e = consultation.visit.visit_date
         _vd_e = _vd_e.date() if hasattr(_vd_e, 'date') else _vd_e
         _exam_res_e = InvestigationResult.objects.filter(
-            Q(order__consultation__visit=consultation.visit) |
-            Q(order__consultation__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd_e),
+            Q(order__visit=consultation.visit) |
+            Q(order__visit__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd_e),
             order__is_deleted=False,
             order__investigation_type__category__in=_EXAM_CATS_E,
         ).order_by('-result_date').first()

@@ -38,11 +38,22 @@ class Diagnosis(models.Model):
         return self.icd11_code or self.icd10_code
 
 
+class RecordType(models.TextChoices):
+    CONSULTATION = 'CONSULTATION', _('Consultation')
+    CLINICAL_EXAM = 'CLINICAL_EXAM', _('Clinical Exam')
+
+
 class Consultation(AuditModel):
     """
     A single doctor–patient consultation within a visit.
     One visit may have multiple consultations (e.g. referred across departments).
+    record_type distinguishes doctor consultations from optometrist clinical exams.
     """
+    record_type = models.CharField(
+        max_length=15, choices=RecordType.choices,
+        default=RecordType.CONSULTATION, db_index=True,
+        help_text='CLINICAL_EXAM for optometry/orthoptics exams, CONSULTATION for doctor visits.',
+    )
     visit = models.ForeignKey(
         'patients.Visit',
         on_delete=models.CASCADE,
@@ -155,6 +166,25 @@ class Consultation(AuditModel):
             and getattr(self.consulting_doctor, 'role', None) == 'intern'
             and self.co_signed_by_id is None
         )
+
+    _CLINICAL_EXAM_DEPTS = frozenset(['REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO'])
+
+    def save(self, *args, **kwargs):
+        # Auto-set record_type based on department code
+        if self.department_id:
+            try:
+                code = self.department.code
+                if code in self._CLINICAL_EXAM_DEPTS:
+                    self.record_type = RecordType.CLINICAL_EXAM
+                else:
+                    self.record_type = RecordType.CONSULTATION
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
+    @property
+    def is_clinical_exam(self):
+        return self.record_type == RecordType.CLINICAL_EXAM
 
     class Meta:
         ordering = ['-consultation_date']

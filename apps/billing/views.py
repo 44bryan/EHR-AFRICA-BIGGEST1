@@ -1996,19 +1996,20 @@ def _bridge_work_order_to_clinical(wo, user):
             ).first()
             if _visit and _visit.status not in ('REFRACTION', 'INVESTIGATION'):
                 # Only route if not already at examiner and all orders are paid
+                # Use visit FK when available, fallback to date for legacy orders
+                from django.db.models import Q as _BQ
+                _order_filter = _BQ(visit=_visit) | _BQ(visit__isnull=True, patient_id=wo.patient_id, created_at__date=_today)
                 _still_unpaid = InvestigationOrder.objects.filter(
-                    patient_id=wo.patient_id,
+                    _order_filter,
                     payment_status=_BridgePS.UNPAID,
                     is_deleted=False,
-                    created_at__date=_today,
                 ).exists()
                 if not _still_unpaid:
                     _paid_order = InvestigationOrder.objects.filter(
-                        patient_id=wo.patient_id,
+                        _order_filter,
                         payment_status=_BridgePS.PAID,
                         status='ORDERED',
                         is_deleted=False,
-                        created_at__date=_today,
                     ).select_related('investigation_type').first()
                     if _paid_order:
                         _cat = _paid_order.investigation_type.category

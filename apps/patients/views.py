@@ -1515,6 +1515,7 @@ def triage_view(request, visit_number):
                     for _et in _exam_types:
                         _order = InvestigationOrder.objects.create(
                             patient=visit.patient,
+                            visit=visit,
                             ordered_by=request.user,
                             created_by=request.user,
                             investigation_type=_et,
@@ -3586,8 +3587,8 @@ def visit_summary_view(request, visit_number):
     from apps.investigations.models import InvestigationOrder
     clinical_exam_orders = list(
         InvestigationOrder.objects.filter(
-            Q(consultation__visit=visit) |
-            Q(consultation__isnull=True, patient=patient, created_at__date=_visit_date),
+            Q(visit=visit) |
+            Q(visit__isnull=True, patient=patient, created_at__date=_visit_date),
             is_deleted=False,
             investigation_type__category__in=_EXAM_CATEGORIES,
         ).select_related(
@@ -3595,11 +3596,11 @@ def visit_summary_view(request, visit_number):
         ).prefetch_related('result__files').order_by('created_at')
     )
 
-    # ── 3. Investigations — orders via consultation__visit OR nurse-ordered (patient + date) ──
+    # ── 3. Investigations — orders linked to this visit ──
     investigation_orders = list(
         InvestigationOrder.objects.filter(
-            Q(consultation__visit=visit) |
-            Q(consultation__isnull=True, patient=patient, created_at__date=_visit_date),
+            Q(visit=visit) |
+            Q(visit__isnull=True, patient=patient, created_at__date=_visit_date),
             is_deleted=False,
         ).exclude(
             investigation_type__category__in=_EXAM_CATEGORIES,

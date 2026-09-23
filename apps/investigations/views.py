@@ -2838,6 +2838,7 @@ def multi_exam_order_view(request, consultation_pk):
             for inv_type in inv_types:
                 order = InvestigationOrder(
                     consultation=consultation,
+                    visit=consultation.visit,
                     patient=consultation.patient,
                     ordered_by=request.user,
                     created_by=request.user,
