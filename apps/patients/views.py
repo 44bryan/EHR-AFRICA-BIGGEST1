@@ -1509,6 +1509,15 @@ def triage_view(request, visit_number):
             # examiner. Only route to CASHIER if there are unpaid exams.
             _exam_type_ids = request.POST.getlist('exam_type_ids')
             _exam_assignee_id = request.POST.get('exam_assignee_id', '').strip()
+            # Default to Subjective Refraction when dispatching to optometry
+            # without ticking any specific exam
+            if not _exam_type_ids and direct_service == 'REFRACTION':
+                from apps.investigations.models import InvestigationType as _IT_default
+                _default_ref = _IT_default.objects.filter(
+                    code='REF', is_active=True,
+                ).first()
+                if _default_ref:
+                    _exam_type_ids = [str(_default_ref.pk)]
             if _exam_type_ids and direct_service in ('REFRACTION', 'INVEST'):
                 try:
                     from apps.investigations.models import (
