@@ -527,6 +527,7 @@ def investigation_detail_view(request, pk):
 
     _OPTOMETRY_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
     is_optometry = order.investigation_type.category in _OPTOMETRY_CATS
+    exam_code = order.investigation_type.code or ''
 
     return render(request, 'investigations/detail.html', {
         'order': order,
@@ -537,6 +538,7 @@ def investigation_detail_view(request, pk):
         'amendments': amendments,
         'prior_orders': prior_orders,
         'is_optometry': is_optometry,
+        'exam_code': exam_code,
     })
 
 
