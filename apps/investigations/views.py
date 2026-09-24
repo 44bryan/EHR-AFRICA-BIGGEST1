@@ -66,16 +66,16 @@ def investigation_workstation_view(request):
     _ORTHOPTICS_CATS = {'ORTHOPTICS'}
 
     if user.role in ('optometrist', 'pediatric_refractionist'):
-        # Optometrist: see REFRACTION + anything assigned to them
+        # Optometrist: see orders assigned to them OR unassigned optometry orders
         _base_qs = _base_qs.filter(
-            Q(investigation_type__category__in=_OPTOMETRY_CATS) |
-            Q(assigned_to=user)
+            Q(assigned_to=user) |
+            Q(assigned_to__isnull=True, investigation_type__category__in=_OPTOMETRY_CATS)
         )
     elif user.role == 'orthoptist':
-        # Orthoptist: see ORTHOPTICS + anything assigned to them
+        # Orthoptist: see orders assigned to them OR unassigned orthoptics orders
         _base_qs = _base_qs.filter(
-            Q(investigation_type__category__in=_ORTHOPTICS_CATS) |
-            Q(assigned_to=user)
+            Q(assigned_to=user) |
+            Q(assigned_to__isnull=True, investigation_type__category__in=_ORTHOPTICS_CATS)
         )
     elif user.is_investigation_tech:
         # Regular investigation tech: see everything EXCEPT optometry categories
@@ -3071,6 +3071,9 @@ def structured_result_view(request, pk):
                         result_data[field_name] = str(value) if not isinstance(value, (int, float, bool)) else value
 
             interpretation = request.POST.get('interpretation', '').strip()
+            _mgmt_plan = request.POST.get('management_plan', '').strip()
+            if _mgmt_plan:
+                result_data['management_plan'] = _mgmt_plan
             is_normal_val = request.POST.get('is_normal', '')
             is_normal = None
             if is_normal_val == 'True':
@@ -3242,6 +3245,7 @@ def combined_structured_result_view(request, patient_id):
                 is_normal = False
 
             uploaded_file = request.FILES.get('result_file')
+            _mgmt_plan_c = request.POST.get('management_plan', '').strip()
             _AUTOVERIFY_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
             saved_count = 0
 
@@ -3254,6 +3258,8 @@ def combined_structured_result_view(request, patient_id):
                             result_data[field_name] = value.isoformat()
                         else:
                             result_data[field_name] = str(value) if not isinstance(value, (int, float, bool)) else value
+                if _mgmt_plan_c:
+                    result_data['management_plan'] = _mgmt_plan_c
 
                 result = InvestigationResult(
                     order=order,
@@ -3359,8 +3365,13 @@ def combined_structured_result_view(request, patient_id):
             'form': form,
         })
 
+    _OPTO_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+    _is_optometry = any(
+        o.investigation_type.category in _OPTO_CATS for o in pending_orders
+    )
     return render(request, 'investigations/combined_result_form.html', {
         'patient': patient,
         'order_forms': order_forms,
         'clinical_indication': clinical_indication,
+        'is_optometry': _is_optometry,
     })

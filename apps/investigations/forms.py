@@ -334,31 +334,70 @@ class FusionalVergenceResultForm(forms.Form):
 
 class VisualAcuityResultForm(forms.Form):
     """Visual Acuity measurement — distance and near, aided and unaided."""
-    _va_widget = forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'})
+    _VA_CHOICES = [
+        ('', '—'),
+        ('10/10', '10/10'), ('10/12.5', '10/12.5'), ('10/16', '10/16'),
+        ('10/20', '10/20'), ('10/25', '10/25'), ('10/32', '10/32'),
+        ('10/40', '10/40'), ('10/50', '10/50'), ('10/63', '10/63'),
+        ('10/80', '10/80'), ('10/100', '10/100'), ('10/125', '10/125'),
+        ('10/160', '10/160'), ('10/200', '10/200'),
+        ('CF', 'CF (Count Fingers)'), ('HM', 'HM (Hand Movement)'),
+        ('LP', 'LP (Light Perception)'), ('NLP', 'NLP (No Light Perception)'),
+    ]
+    _NEAR_VA_CHOICES = [
+        ('', '—'),
+        ('N5', 'N5'), ('N6', 'N6'), ('N8', 'N8'), ('N10', 'N10'),
+        ('N12', 'N12'), ('N14', 'N14'), ('N18', 'N18'), ('N24', 'N24'),
+        ('N36', 'N36'), ('N48', 'N48'),
+    ]
+    _CHART_CHOICES = [
+        ('', '—'),
+        ('Snellen 6m', 'Snellen 6m'), ('Snellen 3m', 'Snellen 3m'),
+        ('LogMAR', 'LogMAR'), ('E-chart', 'E-chart / Tumbling E'),
+        ('Landolt C', 'Landolt C'), ('Picture chart', 'Picture chart (paediatric)'),
+        ('Cardiff', 'Cardiff cards'),
+    ]
+    _va_sel = {'class': 'form-select form-select-sm'}
     # Distance VA
-    unaided_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/18'}))
-    unaided_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/18'}))
-    aided_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
-    aided_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
-    pinhole_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/9'}))
-    pinhole_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/9'}))
+    unaided_od = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    unaided_os = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    aided_od = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    aided_os = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    pinhole_od = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    pinhole_os = forms.ChoiceField(choices=_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
     # Near VA
-    near_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N6'}))
-    near_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N6'}))
-    chart_used = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Snellen / LogMAR / E-chart'}))
+    near_od = forms.ChoiceField(choices=_NEAR_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    near_os = forms.ChoiceField(choices=_NEAR_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    chart_used = forms.ChoiceField(choices=_CHART_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
     notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
 
 
 class LowVisionAssessmentForm(forms.Form):
     """Low Vision Assessment — functional vision, magnification, aids."""
-    distance_va_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/60'}))
-    distance_va_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/60'}))
-    near_va_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N36'}))
-    near_va_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N36'}))
+    _LV_VA_CHOICES = [
+        ('', '—'),
+        ('10/10', '10/10'), ('10/12.5', '10/12.5'), ('10/16', '10/16'),
+        ('10/20', '10/20'), ('10/25', '10/25'), ('10/32', '10/32'),
+        ('10/40', '10/40'), ('10/50', '10/50'), ('10/63', '10/63'),
+        ('10/80', '10/80'), ('10/100', '10/100'), ('10/125', '10/125'),
+        ('10/160', '10/160'), ('10/200', '10/200'), ('10/400', '10/400'),
+        ('CF', 'CF (Count Fingers)'), ('HM', 'HM (Hand Movement)'),
+        ('LP', 'LP (Light Perception)'), ('NLP', 'NLP (No Light Perception)'),
+    ]
+    _NEAR_VA_CHOICES = [
+        ('', '—'),
+        ('N5', 'N5'), ('N6', 'N6'), ('N8', 'N8'), ('N10', 'N10'),
+        ('N12', 'N12'), ('N14', 'N14'), ('N18', 'N18'), ('N24', 'N24'),
+        ('N36', 'N36'), ('N48', 'N48'),
+    ]
+    _va_sel = {'class': 'form-select form-select-sm'}
+    distance_va_od = forms.ChoiceField(choices=_LV_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    distance_va_os = forms.ChoiceField(choices=_LV_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    near_va_od = forms.ChoiceField(choices=_NEAR_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
+    near_va_os = forms.ChoiceField(choices=_NEAR_VA_CHOICES, required=False, widget=forms.Select(attrs=_va_sel))
     contrast_sensitivity = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. Normal / Reduced'}))
     magnification_required = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 4x'}))
     aids_tried = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Magnifiers, telescopes, filters tried...'}), required=False)
-    aids_prescribed = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Aids prescribed...'}), required=False)
     functional_goals = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Reading, writing, mobility...'}), required=False)
     notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
 
