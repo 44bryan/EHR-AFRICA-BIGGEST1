@@ -1,0 +1,234 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Surgical Booking & Admissions{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Surgical Booking & Admissions</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Booking, admissions & discharge</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:surgical_booking_queue' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-calendar2-plus me-1"></i>Booking Queue
+    </a>
+    <a href="{% url 'ipd:pre_op_checkin' %}" class="btn btn-outline-warning btn-sm">
+      <i class="bi bi-clipboard2-pulse me-1"></i>Pre-op Check-in
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# KPI Cards #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ pending_bookings }}</div>
+      <div class="text-muted small">Pending Bookings</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ confirmed_bookings }}</div>
+      <div class="text-muted small">Confirmed / Scheduled</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-danger">{{ active_admissions }}</div>
+      <div class="text-muted small">Active Admissions</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ discharged_today }}</div>
+      <div class="text-muted small">Discharged Today</div>
+    </div>
+  </div>
+</div>
+
+{# Quick Actions #}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <a href="{% url 'ipd:surgical_booking_queue' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-calendar2-plus fs-2 text-primary d-block mb-1"></i>
+        <div class="fw-semibold small">Surgical Booking</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'ipd:admit' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-person-check fs-2 text-success d-block mb-1"></i>
+        <div class="fw-semibold small">Admit Patient</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'ipd:pre_op_checkin' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-clipboard2-pulse fs-2 text-warning d-block mb-1"></i>
+        <div class="fw-semibold small">Pre-op Check-in</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'billing:proforma_list' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-file-earmark-text fs-2 text-info d-block mb-1"></i>
+        <div class="fw-semibold small">Cost Estimates</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <a href="{% url 'ipd:dashboard' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-buildings fs-2 text-secondary d-block mb-1"></i>
+        <div class="fw-semibold small">IPD Dashboard</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'ipd:ward_list' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-hospital fs-2 text-secondary d-block mb-1"></i>
+        <div class="fw-semibold small">Wards & Beds</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'ipd:bed_map' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-grid-fill fs-2 text-secondary d-block mb-1"></i>
+        <div class="fw-semibold small">Live Bed Map</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-3">
+    <a href="{% url 'ipd:procedure_room_queue' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-3">
+        <i class="bi bi-eyedropper fs-2 text-danger d-block mb-1"></i>
+        <div class="fw-semibold small">Procedure Room</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# Today's Surgery Schedule #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="fw-semibold mb-0">
+      <i class="bi bi-calendar-event me-1 text-primary"></i>Today's Surgical Schedule
+    </h6>
+    <span class="badge bg-primary">{{ todays_surgeries|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Booking #</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Eye</th>
+          <th>Surgeon</th>
+          <th>Deposit</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bk in todays_surgeries %}
+        <tr>
+          <td><code class="small">{{ bk.booking_number }}</code></td>
+          <td>
+            <div class="fw-semibold">{{ bk.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ bk.patient.patient_id }}</div>
+          </td>
+          <td>{{ bk.get_procedure_display }}</td>
+          <td>{{ bk.get_eye_laterality_display|default:"—" }}</td>
+          <td>Dr. {{ bk.surgeon.full_name|default:"TBD" }}</td>
+          <td>
+            {% if bk.is_fully_deposited %}
+            <span class="badge bg-success">Paid</span>
+            {% else %}
+            <span class="badge bg-danger">{{ bk.balance_due|floatformat:0|intcomma }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {% if bk.status == 'COMPLETED' %}bg-success{% elif bk.status == 'SCHEDULED' %}bg-primary{% elif bk.status == 'CONFIRMED' %}bg-info{% else %}bg-warning text-dark{% endif %}">
+              {{ bk.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'ipd:surgical_booking_detail' bk.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-25"></i>
+            No surgeries scheduled for today
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Active Admissions #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="fw-semibold mb-0">
+      <i class="bi bi-person-lines-fill me-1 text-danger"></i>Active Admissions
+    </h6>
+    <span class="badge bg-danger">{{ active_admissions }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Ward / Bed</th>
+          <th>Diagnosis</th>
+          <th>Admitted</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for adm in admissions %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ adm.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ adm.patient.patient_id }}</div>
+          </td>
+          <td class="text-nowrap">{{ adm.bed.ward.name|default:"—" }}<br><span class="text-muted">{{ adm.bed.bed_number|default:"—" }}</span></td>
+          <td>{{ adm.diagnosis_on_admission|truncatechars:50 }}</td>
+          <td class="text-nowrap text-muted">{{ adm.admission_date|date:"d M Y" }}</td>
+          <td>
+            {% if adm.status == 'POST_OP' %}
+            <span class="badge bg-success">Post-Op</span>
+            {% else %}
+            <span class="badge bg-primary">{{ adm.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'ipd:admission_detail' adm.id %}" class="btn btn-sm btn-outline-primary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No active admissions</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

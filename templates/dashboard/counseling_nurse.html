@@ -1,0 +1,126 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Surgical Counseling{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Surgical Counseling</h4>
+    <p class="text-muted small mb-0">{% now "l, d F Y" %} — Pre-surgical patient counseling</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'ipd:counseling_queue' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-chat-square-heart me-1"></i>Counseling Queue
+    </a>
+    <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-search me-1"></i>Patient Search
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# KPI Cards #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-warning">{{ pending_counseling }}</div>
+      <div class="text-muted small">Awaiting Counseling</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-success">{{ counseled_today }}</div>
+      <div class="text-muted small">Counseled Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-primary">{{ booked_today }}</div>
+      <div class="text-muted small">Booked for Surgery</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-2 fw-bold text-info">{{ surgery_today }}</div>
+      <div class="text-muted small">Surgeries Today</div>
+    </div>
+  </div>
+</div>
+
+{# Quick Actions #}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <a href="{% url 'ipd:counseling_queue' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-chat-square-heart fs-1 text-warning d-block mb-2"></i>
+        <h6 class="fw-semibold">Counseling Queue</h6>
+        <p class="text-muted small mb-0">Patients awaiting pre-surgical counseling</p>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{% url 'ipd:surgical_booking_queue' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-calendar2-plus fs-1 text-primary d-block mb-2"></i>
+        <h6 class="fw-semibold">Surgical Bookings</h6>
+        <p class="text-muted small mb-0">View all surgical bookings & schedule</p>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{% url 'ipd:procedure_room_queue' %}" class="card border-0 shadow-sm text-decoration-none h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-eyedropper fs-1 text-danger d-block mb-2"></i>
+        <h6 class="fw-semibold">Procedure Room</h6>
+        <p class="text-muted small mb-0">Injections, laser & minor procedures</p>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# Today's Surgery Schedule #}
+{% if todays_surgeries %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <h6 class="fw-semibold mb-0">
+      <i class="bi bi-calendar-event me-1 text-info"></i>Today's Surgeries
+    </h6>
+    <span class="badge bg-info">{{ todays_surgeries|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Eye</th>
+          <th>Surgeon</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bk in todays_surgeries %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ bk.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ bk.patient.patient_id }}</div>
+          </td>
+          <td>{{ bk.get_procedure_display }}</td>
+          <td>{{ bk.get_eye_laterality_display|default:"—" }}</td>
+          <td>Dr. {{ bk.surgeon.full_name|default:"TBD" }}</td>
+          <td>
+            <span class="badge {% if bk.status == 'COMPLETED' %}bg-success{% elif bk.status == 'SCHEDULED' %}bg-primary{% elif bk.status == 'CONFIRMED' %}bg-info{% else %}bg-warning text-dark{% endif %}">
+              {{ bk.get_status_display }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

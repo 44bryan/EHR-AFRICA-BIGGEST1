@@ -209,7 +209,7 @@
     </a>
     {% endif %}
     {# VIP Tracker — only for VIP-tier nurses and supervisors #}
-    {% if u.patient_tier == 'VIP' or u.is_super_admin or u.is_medical_director or u.role == 'nurse_director' %}
+    {% if u.patient_tier == 'VIP' or u.is_super_admin or u.is_medical_director or u.is_nurse_director %}
     <a href="{% url 'consultations:vip_dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="VIP Patient Tracker">
       <i class="bi bi-gem"></i><span>VIP Tracker</span>
@@ -453,7 +453,7 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="MoH Disease Export">
       <i class="bi bi-download"></i><span>MoH Export</span>
     </a>
-    {% elif u.is_ceo or u.role == 'anaesthetist' %}
+    {% elif u.is_ceo or u.is_anaesthetist %}
     <div class="sidebar-label">Clinical Records</div>
     <a href="{% url 'consultations:list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Consultations">
@@ -956,7 +956,7 @@
     {% endif %}{# module_opticals #}
 
     {% if not modules or modules.module_ipd %}
-    {% if u.is_super_admin or u.is_counseling_nurse or u.is_admission_officer or u.is_medical_director or u.is_ceo %}
+    {% if u.is_super_admin or u.is_counseling_nurse or u.is_admission_officer or u.is_anaesthetist or u.is_medical_director or u.is_ceo %}
     <div class="sidebar-label">Surgical Pathway</div>
     {% if u.is_super_admin or u.is_counseling_nurse or u.is_medical_director %}
     <a href="{% url 'ipd:counseling_queue' %}" class="sidebar-link"
@@ -964,11 +964,13 @@
       <i class="bi bi-chat-square-heart"></i><span>Surgical Counseling</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_admission_officer or u.is_medical_director or u.is_ceo %}
+    {% if u.is_super_admin or u.is_admission_officer or u.is_counseling_nurse or u.is_anaesthetist or u.is_medical_director or u.is_ceo %}
     <a href="{% url 'ipd:surgical_booking_queue' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Surgical Booking">
       <i class="bi bi-calendar2-plus"></i><span>Surgical Booking</span>
     </a>
+    {% endif %}
+    {% if u.is_super_admin or u.is_admission_officer or u.is_medical_director or u.is_ceo %}
     <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Surgery Cost Estimates">
       <i class="bi bi-file-earmark-text"></i><span>Cost Estimates</span>
@@ -981,10 +983,6 @@
     </a>
     {% endif %}
     {% if u.is_super_admin or u.is_doctor or u.is_medical_director or u.is_nurse or u.is_admission_officer %}
-    <a href="{% url 'ipd:procedure_room_queue' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Injections, Laser & Minor Procedures">
-      <i class="bi bi-eyedropper"></i><span>Procedure Room</span>
-    </a>
     <a href="{% url 'ipd:procedure_room_stats' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Procedure Register & Statistics">
       <i class="bi bi-journal-medical"></i><span>Procedure Register</span>
@@ -992,15 +990,15 @@
     {% endif %}
     {% endif %}
 
-    {% if u.is_super_admin or u.is_admission_officer or u.is_ward_nurse or u.is_theatre_nurse or u.role == 'anaesthetist' or u.is_medical_director or u.is_ceo or u.is_doctor and u.role != 'optometrist' and u.role != 'pediatric_refractionist' and u.role != 'low_vision_specialist' and u.role != 'intern' %}
+    {% if u.is_super_admin or u.is_admission_officer or u.is_ward_nurse or u.is_theatre_nurse or u.is_anaesthetist or u.is_medical_director or u.is_ceo or u.is_nurse_director or u.is_doctor and u.role != 'optometrist' and u.role != 'pediatric_refractionist' and u.role != 'low_vision_specialist' and u.role != 'intern' %}
     <div class="sidebar-label">Inpatient / Theatre</div>
-    {% if u.is_ward_nurse or u.is_theatre_nurse %}
+    {% if u.is_ward_nurse or u.is_theatre_nurse or u.is_anaesthetist %}
     <a href="{% url 'patients:list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Search">
       <i class="bi bi-search"></i><span>Patient Search</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_theatre_nurse or u.role == 'anaesthetist' or u.is_admission_officer or u.is_medical_director %}
+    {% if u.is_super_admin or u.is_theatre_nurse or u.is_anaesthetist or u.is_admission_officer or u.is_medical_director %}
     <a href="{% url 'ipd:pre_op_checkin' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Pre-op Check-in for Surgery Day">
       <i class="bi bi-clipboard2-pulse"></i><span>Pre-op Check-in</span>
@@ -1020,7 +1018,7 @@
       <i class="bi bi-person-check"></i><span>Admit Patient</span>
     </a>
     {% endif %}
-    {% if not u.is_ward_nurse and not u.is_admission_officer and u.role != 'neuro_ophthalmologist' and u.role != 'uveitis_specialist' %}
+    {% if not u.is_ward_nurse and not u.is_admission_officer %}
     <a href="{% url 'ipd:theatre_board' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Theatre Scheduling Board">
       <i class="bi bi-lightning-charge"></i><span>Theatre Board</span>
@@ -1030,7 +1028,14 @@
       <i class="bi bi-scissors"></i><span>OR Sessions</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_medical_director or u.role == 'nurse_director' or u.is_admission_officer or u.is_ceo %}
+    {# Procedure Room — theatre nurse, ward nurse, anaesthetist, doctors, admission officer #}
+    {% if u.is_super_admin or u.is_doctor or u.is_medical_director or u.is_theatre_nurse or u.is_ward_nurse or u.is_anaesthetist or u.is_admission_officer %}
+    <a href="{% url 'ipd:procedure_room_queue' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Injections, Laser &amp; Minor Procedures">
+      <i class="bi bi-eyedropper"></i><span>Procedure Room</span>
+    </a>
+    {% endif %}
+    {% if u.is_super_admin or u.is_medical_director or u.is_nurse_director or u.is_admission_officer or u.is_ceo %}
     <a href="{% url 'ipd:nursing_stats' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="IPD Surgical Bookings Register">
       <i class="bi bi-clipboard-data"></i><span>Bookings Register</span>
@@ -1044,7 +1049,7 @@
       <i class="bi bi-grid-fill"></i><span>Live Bed Map</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_medical_director or u.is_ceo or u.is_doctor %}
+    {% if u.is_super_admin or u.is_medical_director or u.is_ceo or u.is_doctor or u.is_anaesthetist or u.is_admission_officer %}
     <a href="{% url 'ipd:surgical_outcome_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Surgical Outcome Tracking — pre/post VA">
       <i class="bi bi-clipboard2-pulse"></i><span>Surgical Outcomes</span>
@@ -1056,22 +1061,27 @@
       <i class="bi bi-bar-chart-fill"></i><span>Theatre Report</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_medical_director or u.role == 'anaesthetist' or u.role == 'theatre_nurse' %}
+    {# JCI Compliance section — Anaesthetist, Theatre Nurse, Ward Nurse, Nurse Director #}
+    {% if u.is_super_admin or u.is_medical_director or u.is_anaesthetist or u.is_theatre_nurse or u.is_ward_nurse or u.is_nurse_director %}
     <div class="sidebar-label" style="font-size:.58rem;">JCI Compliance</div>
+    {% if u.is_super_admin or u.is_medical_director or u.is_anaesthetist or u.is_theatre_nurse %}
     <a href="{% url 'ipd:anaesthetic_record_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Anaesthetic Charts (JCI ASC.5/6)">
       <i class="bi bi-file-medical"></i><span>Anaesthetic Charts</span>
     </a>
-    {% if u.role == 'theatre_nurse' or u.is_super_admin or u.is_medical_director %}
+    {% endif %}
+    {% if u.is_theatre_nurse or u.is_ward_nurse or u.is_nurse_director or u.is_super_admin or u.is_medical_director %}
     <a href="{% url 'ipd:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Nursing Care Plans (JCI COP.8) — access via patient admission">
       <i class="bi bi-clipboard2-heart"></i><span>Nursing Care Plans</span>
     </a>
     {% endif %}
+    {% if u.is_super_admin or u.is_medical_director or u.is_anaesthetist or u.is_theatre_nurse %}
     <a href="{% url 'ipd:theatre_board' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Theatre Scheduling Board">
       <i class="bi bi-calendar2-check"></i><span>Theatre Board</span>
     </a>
+    {% endif %}
     {% endif %}
     {% endif %}
     {% endif %}{# module_ipd #}
@@ -1339,7 +1349,7 @@
     {% endif %}
 
     {# Blood Bank — Lab technician, nurses, medical director, theatre #}
-    {% if u.is_super_admin or u.is_lab_technician or u.is_investigation_technician or u.is_medical_director or u.role == 'anaesthetist' or u.is_ward_nurse or u.is_theatre_nurse or u.is_ceo %}
+    {% if u.is_super_admin or u.is_lab_technician or u.is_investigation_technician or u.is_medical_director or u.is_anaesthetist or u.is_ward_nurse or u.is_theatre_nurse or u.is_ceo %}
     <div class="sidebar-label">Blood Bank</div>
     <a href="{% url 'blood_bank:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Blood Bank Overview">
@@ -1383,7 +1393,7 @@
     {% endif %}
 
     {# Infection Control — Quality/Medical Director/Lab/Nursing #}
-    {% if u.is_super_admin or u.is_medical_director or u.role == 'quality_officer' or u.is_lab_technician or u.is_ward_nurse or u.is_theatre_nurse or u.is_ceo or u.is_admin_director %}
+    {% if u.is_super_admin or u.is_medical_director or u.is_quality_officer or u.is_lab_technician or u.is_ward_nurse or u.is_theatre_nurse or u.is_ceo or u.is_admin_director %}
     <div class="sidebar-label">Infection Control</div>
     <a href="{% url 'infection_control:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Infection Control Overview">
@@ -1403,7 +1413,7 @@
     </a>
     {% endif %}
 
-    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_nurse or u.is_ward_nurse or u.is_consultation_nurse or u.is_receptionist or u.is_admin_director or u.is_ceo or u.role == 'admission_officer' or u.role == 'medical_records' %}
+    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_nurse or u.is_ward_nurse or u.is_consultation_nurse or u.is_receptionist or u.is_admin_director or u.is_ceo or u.is_admission_officer or u.role == 'medical_records' %}
     <div class="sidebar-label">Telemedicine</div>
     <a href="{% url 'telemedicine:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Telemedicine Dashboard">
@@ -1414,7 +1424,7 @@
       <i class="bi bi-calendar2-week"></i><span>Appointments</span>
     </a>
     {# Schedule link — clinicians + receptionist/admission only #}
-    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_receptionist or u.role == 'admission_officer' %}
+    {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_receptionist or u.is_admission_officer %}
     <a href="{% url 'telemedicine:appointment_create' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Schedule Tele-Appointment">
       <i class="bi bi-calendar-plus"></i><span>Schedule</span>

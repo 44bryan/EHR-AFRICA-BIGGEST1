@@ -844,7 +844,29 @@ def home_view(request):
 
     # ── Counseling Nurse ─────────────────────────────────────────────────
     if user.is_counseling_nurse:
-        return redirect('ipd:counseling_queue')
+        from apps.ipd.models import SurgicalBooking, SurgicalBookingStatus
+        _today = timezone.now().date()
+        _all_bookings = SurgicalBooking.objects.filter(is_deleted=False)
+        ctx.update({
+            'pending_counseling': _all_bookings.filter(
+                status=SurgicalBookingStatus.PENDING_PAYMENT
+            ).count(),
+            'counseled_today': _all_bookings.filter(
+                counseling_notes__isnull=False, created_at__date=_today
+            ).exclude(counseling_notes='').count(),
+            'booked_today': _all_bookings.filter(
+                created_at__date=_today
+            ).count(),
+            'surgery_today': _all_bookings.filter(
+                surgery_date=_today
+            ).exclude(status=SurgicalBookingStatus.CANCELLED).count(),
+            'todays_surgeries': _all_bookings.filter(
+                surgery_date=_today
+            ).exclude(
+                status=SurgicalBookingStatus.CANCELLED
+            ).select_related('patient', 'surgeon').order_by('surgery_date')[:20],
+        })
+        return render(request, 'dashboard/counseling_nurse.html', ctx)
 
     # ── Ward Nurse (IPD) ─────────────────────────────────────────────────
     if user.is_ward_nurse:
@@ -1374,8 +1396,37 @@ def home_view(request):
 
     # ── Admission Officer ─────────────────────────────────────────────────
     if user.is_admission_officer:
-        # Route directly to surgical booking queue (primary task)
-        return redirect('ipd:surgical_booking_queue')
+        from apps.ipd.models import SurgicalBooking, SurgicalBookingStatus, Admission, AdmissionStatus
+        _today = timezone.now().date()
+        _all_bookings = SurgicalBooking.objects.filter(is_deleted=False)
+        _admissions = Admission.objects.filter(
+            is_deleted=False,
+            status__in=[AdmissionStatus.ADMITTED, 'POST_OP'],
+        ).select_related('patient', 'bed__ward').order_by('-admission_date')[:20]
+        ctx.update({
+            'pending_bookings': _all_bookings.filter(
+                status=SurgicalBookingStatus.PENDING_PAYMENT
+            ).count(),
+            'confirmed_bookings': _all_bookings.filter(
+                status__in=[SurgicalBookingStatus.CONFIRMED, SurgicalBookingStatus.SCHEDULED]
+            ).count(),
+            'active_admissions': Admission.objects.filter(
+                is_deleted=False,
+                status__in=[AdmissionStatus.ADMITTED, 'POST_OP'],
+            ).count(),
+            'discharged_today': Admission.objects.filter(
+                is_deleted=False,
+                status=AdmissionStatus.DISCHARGED,
+                discharge_date__date=_today,
+            ).count(),
+            'todays_surgeries': _all_bookings.filter(
+                surgery_date=_today
+            ).exclude(
+                status=SurgicalBookingStatus.CANCELLED
+            ).select_related('patient', 'surgeon').order_by('surgery_date')[:20],
+            'admissions': _admissions,
+        })
+        return render(request, 'dashboard/admission_officer.html', ctx)
 
     # ── System Administrator ──────────────────────────────────────────────
     if user.role == 'admin':
@@ -1458,10 +1509,14 @@ def home_view(request):
     if user.is_store_keeper:
         return redirect('inventory:dashboard')
 
-    # ── Anaesthetist — reuses theatre dashboard (same workspace) ─────────
-    if user.role == 'anaesthetist':
+    # ── Anaesthetist — dedicated anaesthesia dashboard ───────────────────
+    if user.is_anaesthetist:
         try:
-            from apps.ipd.models import Admission, AdmissionStatus, WardType
+            from apps.ipd.models import (
+                Admission, AdmissionStatus, WardType,
+                SurgicalBooking, SurgicalBookingStatus, AnaestheticRecord,
+            )
+            _today = timezone.now().date()
             theatre_cases = Admission.objects.select_related(
                 'patient', 'bed__ward', 'admitting_doctor'
             ).filter(
@@ -1470,18 +1525,39 @@ def home_view(request):
                 is_deleted=False,
             ).order_by('admission_date')
             today_admits = Admission.objects.filter(
-                admission_date__date=today, is_deleted=False,
+                admission_date__date=_today, is_deleted=False,
                 status=AdmissionStatus.ADMITTED,
+            ).count()
+            # Bookings needing anaesthetic assessment (confirmed/scheduled, no chart yet)
+            assessed_booking_ids = AnaestheticRecord.objects.filter(
+                is_deleted=False
+            ).values_list('surgical_booking_id', flat=True)
+            pending_assessments = SurgicalBooking.objects.filter(
+                is_deleted=False,
+                status__in=[
+                    SurgicalBookingStatus.CONFIRMED,
+                    SurgicalBookingStatus.SCHEDULED,
+                ],
+            ).exclude(
+                pk__in=assessed_booking_ids
+            ).select_related('patient', 'surgeon').order_by('surgery_date')[:20]
+            charts_today = AnaestheticRecord.objects.filter(
+                is_deleted=False, created_at__date=_today
             ).count()
         except Exception:
             theatre_cases = []
             today_admits = 0
+            pending_assessments = []
+            charts_today = 0
         ctx.update({
             'theatre_cases': theatre_cases,
             'theatre_count': len(list(theatre_cases)) if not hasattr(theatre_cases, 'count') else theatre_cases.count(),
             'today_admits': today_admits,
+            'pending_preop': len(pending_assessments) if hasattr(pending_assessments, '__len__') else pending_assessments.count(),
+            'pending_assessments': pending_assessments,
+            'charts_today': charts_today,
         })
-        return render(request, 'dashboard/theatre_nurse.html', ctx)
+        return render(request, 'dashboard/anaesthetist.html', ctx)
 
     # Fallback
     return render(request, 'dashboard/medical_director.html', ctx)

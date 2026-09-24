@@ -1055,8 +1055,8 @@ def ipd_nursing_stats(request):
 
     if not (request.user.is_super_admin or request.user.is_medical_director
             or request.user.is_admin_staff or request.user.is_ceo
-            or request.user.is_admin_director
-            or request.user.role in ['ipd_nurse', 'admission_officer']):
+            or request.user.is_admin_director or request.user.is_nurse_director
+            or request.user.is_ward_nurse or request.user.is_admission_officer):
         return HttpResponseForbidden()
 
     # ── Date range + status filters ─────────────────────────────────────────
@@ -1825,8 +1825,7 @@ def bed_delete(request, bed_id):
 
 def _can_manage_anaesthetics(user):
     return (user.is_super_admin or user.is_medical_director or
-            user.role == 'anaesthetist' or
-            user.role in ('doctor', 'specialist', 'ophthalmologist'))
+            user.is_anaesthetist or user.is_doctor)
 
 
 @login_required
@@ -1963,7 +1962,8 @@ def anaesthetic_record_list(request):
 
 def _can_manage_care_plan(user):
     return (user.is_super_admin or user.is_medical_director or
-            user.is_nurse or user.role == 'nurse_director')
+            user.is_nurse or user.is_nurse_director or
+            user.is_ward_nurse or user.is_theatre_nurse)
 
 
 @login_required
@@ -2464,13 +2464,9 @@ def bed_map_view(request):
 # ── Surgical Outcome Tracking ─────────────────────────────────────────────────
 
 def _can_record_outcome(user):
-    return user.role in (
-        'super_admin', 'medical_director', 'admin_director',
-        'ophthalmologist', 'retina_specialist', 'glaucoma_specialist',
-        'cataract_surgeon', 'cornea_specialist', 'oculoplastics_surgeon',
-        'neuro_ophthalmologist', 'uveitis_specialist', 'pediatric_ophthalmologist',
-        'admission_officer',
-    )
+    return (user.is_super_admin or user.is_medical_director or
+            user.is_admin_director or user.is_doctor or
+            user.is_admission_officer)
 
 
 @login_required
@@ -2782,7 +2778,8 @@ def medrec_item_delete(request, item_id):
 def _can_procedure_room(user):
     """Roles that can access the procedure room queue and record procedures."""
     return (user.is_doctor or user.is_super_admin or user.is_medical_director
-            or user.role in ('nurse', 'consultation_nurse', 'ward_nurse'))
+            or user.is_nurse or user.is_consultation_nurse or user.is_ward_nurse
+            or user.is_theatre_nurse or user.is_admission_officer)
 
 
 @login_required
@@ -3112,7 +3109,7 @@ def procedure_room_stats(request):
     """
     if not (request.user.is_super_admin or request.user.is_medical_director
             or request.user.is_admin_director or request.user.is_ceo
-            or request.user.is_doctor or request.user.role == 'admission_officer'):
+            or request.user.is_doctor or request.user.is_admission_officer):
         return HttpResponseForbidden()
 
     from django.db.models import Count, Q
