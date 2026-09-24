@@ -525,6 +525,9 @@ def investigation_detail_view(request, pk):
         is_deleted=False,
     ).exclude(pk=pk).select_related('result').order_by('-created_at')[:5]
 
+    _OPTOMETRY_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+    is_optometry = order.investigation_type.category in _OPTOMETRY_CATS
+
     return render(request, 'investigations/detail.html', {
         'order': order,
         'result': result,
@@ -533,6 +536,7 @@ def investigation_detail_view(request, pk):
         'contrast_reactions': contrast_reactions,
         'amendments': amendments,
         'prior_orders': prior_orders,
+        'is_optometry': is_optometry,
     })
 
 

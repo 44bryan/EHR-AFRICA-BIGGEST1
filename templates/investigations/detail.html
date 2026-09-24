@@ -3,57 +3,39 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">{{ order.investigation_type.name }}</h5>
-      <div class="text-muted small">
-        <strong>{{ order.patient.full_name }}</strong>
-        &bull; {{ order.patient.patient_id }}
-        &bull; Eye: <span class="badge bg-secondary">{{ order.get_eye_display }}</span>
-        &bull; Ordered by Dr. {{ order.ordered_by.full_name }}
-        &bull; {{ order.created_at|date:"d M Y, H:i" }}
-      </div>
+  <div>
+    <h5 class="mb-0 fw-bold">{{ order.investigation_type.name }}</h5>
+    <div class="text-muted small">
+      <strong>{{ order.patient.full_name }}</strong>
+      &bull; {{ order.patient.patient_id }}
+      &bull; Eye: <span class="badge bg-secondary">{{ order.get_eye_display }}</span>
+      &bull; Ordered by Dr. {{ order.ordered_by.full_name }}
+      &bull; {{ order.created_at|date:"d M Y, H:i" }}
     </div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     {% if request.user.can_record_investigation_results %}
     {% if not result %}
-    <a href="{% url 'investigations:structured_result' order.pk %}" class="btn btn-primary btn-sm">
-      Enter Result
-    </a>
+    <a href="{% url 'investigations:structured_result' order.pk %}" class="btn btn-primary btn-sm">Enter Result</a>
     {% endif %}
     {% if order.status == 'ORDERED' %}
-    <form method="post" action="{% url 'investigations:start' order.pk %}" class="d-inline">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-info btn-sm">Start</button>
-    </form>
+    <form method="post" action="{% url 'investigations:start' order.pk %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-info btn-sm">Start</button></form>
     {% endif %}
     {% endif %}
     {% if result and not result.is_verified %}
     {% if request.user.can_record_investigation_results or request.user.is_doctor or request.user.is_medical_director %}
-    <form method="post" action="{% url 'investigations:verify' order.pk %}" class="d-inline">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-success btn-sm">Verify</button>
-    </form>
+    <form method="post" action="{% url 'investigations:verify' order.pk %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-success btn-sm">Verify</button></form>
     {% endif %}
     {% endif %}
     {% if result and result.is_verified %}
-    <a href="{% url 'reports:investigation_pdf' pk=order.pk %}" class="btn btn-outline-danger btn-sm" target="_blank">
-      PDF
-    </a>
+    <a href="{% url 'reports:investigation_pdf' pk=order.pk %}" class="btn btn-outline-danger btn-sm" target="_blank">PDF</a>
     {% endif %}
-    <a href="{% url 'investigations:print_slip' order.pk %}" class="btn btn-outline-dark btn-sm" target="_blank">
-      Print Slip
-    </a>
+    <a href="{% url 'investigations:print_slip' order.pk %}" class="btn btn-outline-dark btn-sm" target="_blank">Print Slip</a>
     {% if order.status == 'ORDERED' %}
-    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#cancelModal">
-      Cancel
-    </button>
+    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancel</button>
     {% endif %}
     {% if order.consultation %}
-    <a href="{% url 'consultations:detail' pk=order.consultation.pk %}" class="btn btn-outline-secondary btn-sm">
-      Consultation
-    </a>
+    <a href="{% url 'consultations:detail' pk=order.consultation.pk %}" class="btn btn-outline-secondary btn-sm">Consultation</a>
     {% endif %}
   </div>
 </div>
@@ -61,80 +43,372 @@
 
 {% block content %}
 
-{# ── 4 State Machine Status Row ─────────────────────────────────────────── #}
-<div class="row g-2 mb-3">
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-2">
-        <div class="small text-muted">Order</div>
-        <span class="badge fs-6 {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% elif order.status == 'CANCELLED' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
-          {{ order.get_status_display }}
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-2">
-        <div class="small text-muted">Payment</div>
-        <span class="badge fs-6 {% if order.payment_status == 'PAID' or order.payment_status == 'INSURED' %}bg-success{% elif order.payment_status == 'UNPAID' %}bg-danger{% elif order.payment_status == 'STAT_OVERRIDE' %}bg-dark{% else %}bg-info text-dark{% endif %}">
-          {{ order.get_payment_status_display }}
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-2">
-        <div class="small text-muted">Acquisition</div>
-        <span class="badge fs-6 {% if order.acquisition_status == 'ACQUIRED' %}bg-success{% elif order.acquisition_status == 'IN_PROGRESS' %}bg-primary{% elif order.acquisition_status == 'QUALITY_FAILED' %}bg-danger{% elif order.acquisition_status == 'REPEAT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-          {{ order.get_acquisition_status_display }}
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-2">
-        <div class="small text-muted">Report</div>
-        <span class="badge fs-6 {% if order.report_status == 'VERIFIED' %}bg-success{% elif order.report_status == 'REPORTED' %}bg-info text-dark{% elif order.report_status == 'AMENDED' %}bg-dark{% else %}bg-secondary{% endif %}">
-          {{ order.get_report_status_display }}
-        </span>
-      </div>
-    </div>
-  </div>
+{# ── Compact status strip ────────────────────────────────────────────────── #}
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+  <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% elif order.status == 'CANCELLED' %}bg-danger{% else %}bg-warning text-dark{% endif %}" style="font-size:.78rem;">
+    <i class="bi bi-clipboard-check me-1"></i>{{ order.get_status_display }}
+  </span>
+  <span class="badge {% if order.payment_status == 'PAID' or order.payment_status == 'INSURED' %}bg-success{% elif order.payment_status == 'UNPAID' %}bg-danger{% else %}bg-info text-dark{% endif %}" style="font-size:.78rem;">
+    <i class="bi bi-credit-card me-1"></i>{{ order.get_payment_status_display }}
+  </span>
+  {% if result %}
+  {% if result.is_verified %}
+  <span class="badge bg-success" style="font-size:.78rem;"><i class="bi bi-patch-check-fill me-1"></i>Verified — {{ result.verified_by.get_full_name|default:"" }}</span>
+  {% else %}
+  <span class="badge bg-warning text-dark" style="font-size:.78rem;"><i class="bi bi-clock me-1"></i>Pending verification</span>
+  {% endif %}
+  {% endif %}
+  {% if result and result.acknowledged_by %}
+  <span class="badge bg-info text-dark" style="font-size:.78rem;"><i class="bi bi-check-lg me-1"></i>Acknowledged</span>
+  {% endif %}
+  {% if order.assigned_to %}
+  <span class="text-muted small ms-auto">Examiner: <strong>{{ order.assigned_to.get_full_name }}</strong></span>
+  {% endif %}
 </div>
 
-{# ── Prior Study Warning ────────────────────────────────────────────────── #}
 {% if order.prior_study_warning %}
 <div class="alert alert-info py-2 small mb-3">
-  <i class="bi bi-info-circle me-1"></i>
-  <strong>Prior study:</strong> {{ order.prior_study_warning_text }}
+  <i class="bi bi-info-circle me-1"></i><strong>Prior study:</strong> {{ order.prior_study_warning_text }}
 </div>
 {% endif %}
 
+{% if order.clinical_indication %}
+<div class="small text-muted mb-3"><strong>Clinical Indication:</strong> {{ order.clinical_indication }}</div>
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# OPTOMETRY LAYOUT — result-focused, no irrelevant acquisition/dilation     #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{% if is_optometry %}
+
+  {% if result %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center flex-wrap gap-2 bg-white">
+      <div class="d-flex align-items-center gap-2">
+        <span class="fw-bold {% if result.is_normal %}text-success{% elif result.is_normal == False %}text-danger{% else %}text-secondary{% endif %}" style="font-size:.85rem;">
+          {% if result.is_normal %}<i class="bi bi-check-circle me-1"></i>Normal{% elif result.is_normal == False %}<i class="bi bi-exclamation-circle me-1"></i>Abnormal{% else %}Recorded{% endif %}
+        </span>
+        <h6 class="mb-0 fw-semibold">{{ order.investigation_type.name }} — Result</h6>
+        {% if result.version_number > 1 %}<span class="badge bg-dark">v{{ result.version_number }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="card-body">
+
+      {% if result.interpretation %}
+      <div class="p-3 rounded mb-3" style="background:#f8fafc;border-left:3px solid #0d6efd;">
+        <div class="fw-semibold small text-muted mb-1">Interpretation / Findings</div>
+        <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6;">{{ result.interpretation }}</div>
+      </div>
+      {% endif %}
+
+      {# ── Structured result data — proper clinical display ── #}
+      {% if result.result_data %}
+      {% with rd=result.result_data %}
+
+        {# ── SUBJECTIVE REFRACTION ── #}
+        {% if rd.sph_od or rd.sph_os %}
+        <div class="fw-semibold small text-muted mb-2">Refraction</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_od|default:"—" }}</td></tr>
+            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+        {% if rd.pd_dist or rd.pd_near %}<div class="small text-muted mb-2">PD: {{ rd.pd_dist|default:"—" }} (distance) / {{ rd.pd_near|default:"—" }} (near)</div>{% endif %}
+        {% if rd.pd %}<div class="small text-muted mb-2">PD: {{ rd.pd }} mm</div>{% endif %}
+
+        {# ── AUTOREFRACTION / KERATOMETRY ── #}
+        {% elif rd.k1_od or rd.k2_od %}
+        <div class="fw-semibold small text-muted mb-2">Autorefraction / Keratometry</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td></tr>
+            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        {# ── VISUAL ACUITY ── #}
+        {% elif rd.unaided_od or rd.unaided_os or rd.aided_od or rd.aided_os %}
+        <div class="fw-semibold small text-muted mb-2">Visual Acuity</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">Unaided (Distance)</td><td>{{ rd.unaided_od|default:"—" }}</td><td>{{ rd.unaided_os|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Aided (Distance)</td><td>{{ rd.aided_od|default:"—" }}</td><td>{{ rd.aided_os|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Pinhole</td><td>{{ rd.pinhole_od|default:"—" }}</td><td>{{ rd.pinhole_os|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_od|default:"—" }}</td><td>{{ rd.near_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+        {% if rd.chart_used %}<div class="small text-muted mb-2">Chart used: {{ rd.chart_used }}</div>{% endif %}
+
+        {# ── LOW VISION ASSESSMENT ── #}
+        {% elif rd.distance_va_od or rd.distance_va_os or rd.magnification_required %}
+        <div class="fw-semibold small text-muted mb-2">Low Vision Assessment</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">Distance VA</td><td>{{ rd.distance_va_od|default:"—" }}</td><td>{{ rd.distance_va_os|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+        {% if rd.contrast_sensitivity %}<div class="small mb-1"><strong>Contrast Sensitivity:</strong> {{ rd.contrast_sensitivity }}</div>{% endif %}
+        {% if rd.magnification_required %}<div class="small mb-1"><strong>Magnification Required:</strong> {{ rd.magnification_required }}</div>{% endif %}
+        {% if rd.aids_tried %}<div class="small mb-1"><strong>Aids Tried:</strong> {{ rd.aids_tried }}</div>{% endif %}
+        {% if rd.functional_goals %}<div class="small mb-1"><strong>Functional Goals:</strong> {{ rd.functional_goals }}</div>{% endif %}
+
+        {# ── COVER TEST ── #}
+        {% elif rd.dist_type or rd.near_type %}
+        <div class="fw-semibold small text-muted mb-2">Cover Test</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="90"></th><th>Type</th><th>Amount (PD)</th><th>Vertical</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">Distance</td><td>{{ rd.dist_type|default:"—" }}</td><td>{{ rd.dist_amount_pd|default:"—" }}</td><td>{{ rd.dist_vertical|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Near</td><td>{{ rd.near_type|default:"—" }}</td><td>{{ rd.near_amount_pd|default:"—" }}</td><td>{{ rd.near_vertical|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        {# ── COLOUR VISION ── #}
+        {% elif rd.plates_correct_od or rd.result_od %}
+        <div class="fw-semibold small text-muted mb-2">Colour Vision</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="130"></th><th>OD</th><th>OS</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">Plates Correct</td><td>{{ rd.plates_correct_od|default:"—" }}</td><td>{{ rd.plates_correct_os|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Result</td><td>{{ rd.result_od|default:"—" }}</td><td>{{ rd.result_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+        {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
+        {% if rd.deficiency_type %}<div class="small text-muted mb-1">Deficiency: {{ rd.deficiency_type }}</div>{% endif %}
+
+        {# ── MOTILITY ── #}
+        {% elif rd.sr_od or rd.lr_od %}
+        <div class="fw-semibold small text-muted mb-2">Ocular Motility</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="50"></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">OD</td><td>{{ rd.sr_od|default:"—" }}</td><td>{{ rd.ir_od|default:"—" }}</td><td>{{ rd.mr_od|default:"—" }}</td><td>{{ rd.lr_od|default:"—" }}</td><td>{{ rd.so_od|default:"—" }}</td><td>{{ rd.io_od|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">OS</td><td>{{ rd.sr_os|default:"—" }}</td><td>{{ rd.ir_os|default:"—" }}</td><td>{{ rd.mr_os|default:"—" }}</td><td>{{ rd.lr_os|default:"—" }}</td><td>{{ rd.so_os|default:"—" }}</td><td>{{ rd.io_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+        {% if rd.saccades %}<div class="small mb-1"><strong>Saccades:</strong> {{ rd.saccades }} &nbsp;|&nbsp; <strong>Pursuits:</strong> {{ rd.pursuits|default:"—" }}</div>{% endif %}
+        {% if rd.nystagmus %}<div class="small mb-1"><strong>Nystagmus:</strong> {{ rd.nystagmus }}</div>{% endif %}
+        {% if rd.head_posture %}<div class="small mb-1"><strong>Head Posture:</strong> {{ rd.head_posture }}</div>{% endif %}
+
+        {# ── NPC/NPA ── #}
+        {% elif rd.break_point_cm %}
+        <div class="fw-semibold small text-muted mb-2">NPC / NPA</div>
+        <div class="small mb-1"><strong>Break Point:</strong> {{ rd.break_point_cm }} cm &nbsp;|&nbsp; <strong>Recovery:</strong> {{ rd.recovery_point_cm|default:"—" }} cm</div>
+        {% if rd.method %}<div class="small text-muted mb-1">Method: {{ rd.method }}</div>{% endif %}
+
+        {# ── STEREOPSIS ── #}
+        {% elif rd.result_seconds_arc %}
+        <div class="fw-semibold small text-muted mb-2">Stereopsis</div>
+        <div class="small mb-1"><strong>Stereoacuity:</strong> {{ rd.result_seconds_arc }} seconds of arc &nbsp;|&nbsp; <strong>Grade:</strong> {{ rd.grade|default:"—" }}</div>
+        {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
+
+        {# ── FUSIONAL VERGENCE ── #}
+        {% elif rd.bo_break_dist or rd.bi_break_dist %}
+        <div class="fw-semibold small text-muted mb-2">Fusional Vergence</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th></th><th colspan="2">Base Out (Convergence)</th><th colspan="2">Base In (Divergence)</th></tr><tr class="table-light"><th></th><th>Break</th><th>Recovery</th><th>Break</th><th>Recovery</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold">Distance</td><td>{{ rd.bo_break_dist|default:"—" }}</td><td>{{ rd.bo_recovery_dist|default:"—" }}</td><td>{{ rd.bi_break_dist|default:"—" }}</td><td>{{ rd.bi_recovery_dist|default:"—" }}</td></tr>
+            <tr><td class="fw-bold">Near</td><td>{{ rd.bo_break_near|default:"—" }}</td><td>{{ rd.bo_recovery_near|default:"—" }}</td><td>{{ rd.bi_break_near|default:"—" }}</td><td>{{ rd.bi_recovery_near|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        {# ── CYCLOPLEGIC REFRACTION ── #}
+        {% elif rd.cycloplegic_agent %}
+        <div class="fw-semibold small text-muted mb-2">Cycloplegic Refraction</div>
+        <div class="small mb-1"><strong>Agent:</strong> {{ rd.cycloplegic_agent }} &nbsp;|&nbsp; <strong>Instilled:</strong> {{ rd.instillation_time|default:"—" }} &nbsp;|&nbsp; <strong>Exam:</strong> {{ rd.exam_time|default:"—" }}</div>
+        <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
+          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
+          <tbody>
+            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td></tr>
+            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        {# ── FALLBACK: generic key-value ── #}
+        {% else %}
+        <div class="fw-semibold small text-muted mb-2">Measurements</div>
+        <table class="table table-sm table-bordered mb-0 small">
+          <tbody>
+            {% for key, val in rd.items %}
+            {% if key != 'management_plan' and key != 'notes' %}
+            <tr><td class="fw-semibold text-nowrap" style="width:35%;">{{ key|cut:"_"|title }}</td><td>{{ val }}</td></tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        {# ── Management Plan ── #}
+        {% if rd.management_plan %}
+        <div class="p-2 rounded mt-2" style="background:#eff6ff;border-left:3px solid #3b82f6;">
+          <div class="fw-semibold small text-primary mb-1">Management Plan</div>
+          <div style="white-space:pre-wrap;font-size:.85rem;">{{ rd.management_plan }}</div>
+        </div>
+        {% endif %}
+
+        {% if rd.notes %}
+        <div class="small text-muted mt-2"><strong>Tech Notes:</strong> {{ rd.notes }}</div>
+        {% endif %}
+
+      {% endwith %}
+      {% endif %}
+
+      {# ── Result footer ── #}
+      <div class="row small text-muted mt-3 pt-2 border-top">
+        <div class="col-auto">Performed by: <strong>{{ result.performed_by.full_name|default:"—" }}</strong></div>
+        <div class="col-auto">{{ result.result_date|date:"d M Y, H:i" }}</div>
+        {% if result.verified_by %}
+        <div class="col-auto">Verified by: <strong class="text-success">{{ result.verified_by.full_name }}</strong> {{ result.verified_at|date:"d M Y, H:i" }}</div>
+        {% endif %}
+        {% if result.acknowledged_by %}
+        <div class="col-auto">Acknowledged by: <strong>{{ result.acknowledged_by.full_name }}</strong> {{ result.acknowledged_at|date:"d M Y, H:i" }}</div>
+        {% endif %}
+      </div>
+
+      {% if result.files.exists %}
+      <div class="mt-3">
+        <div class="fw-semibold small mb-2">Attached Files</div>
+        <div class="d-flex flex-wrap gap-2">
+          {% for f in result.files.all %}
+          {% if f.file_type == 'IMAGE' %}
+          <a href="{{ f.file.url }}" target="_blank"><img src="{{ f.file.url }}" class="border rounded shadow-sm" style="max-height:200px;max-width:280px;object-fit:contain;"></a>
+          {% elif f.file_type == 'PDF' or f.file_type == 'DICOM_PDF' %}
+          <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"PDF" }}</a>
+          {% else %}
+          <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"File" }}</a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Doctor Acknowledge #}
+      {% if not result.acknowledged_by and request.user.is_doctor %}
+      <div class="mt-3 pt-2 border-top">
+        <form method="post" action="{% url 'investigations:acknowledge' order.pk %}" class="d-inline">{% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check-lg me-1"></i>Acknowledge Result</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {# Amend Result #}
+      {% if result.is_verified and request.user.can_record_investigation_results %}
+      <div class="mt-3 pt-2 border-top">
+        <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#amendForm"><i class="bi bi-pencil me-1"></i>Amend Result</button>
+        <div class="collapse mt-2" id="amendForm">
+          <form method="post" action="{% url 'investigations:amend' order.pk %}" class="border rounded p-2">{% csrf_token %}
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Amendment Reason</label><input type="text" name="amendment_reason" class="form-control form-control-sm" required></div>
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Updated Interpretation</label><textarea name="interpretation" class="form-control form-control-sm" rows="3">{{ result.interpretation }}</textarea></div>
+            <div class="mb-2"><select name="is_normal" class="form-select form-select-sm"><option value="">-- Normal/Abnormal --</option><option value="True" {% if result.is_normal %}selected{% endif %}>Normal</option><option value="False" {% if result.is_normal == False %}selected{% endif %}>Abnormal</option></select></div>
+            <button type="submit" class="btn btn-sm btn-warning">Save Amendment</button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Amendment History #}
+  {% if amendments %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clock-history me-1"></i>Amendment History</h6></div>
+    <div class="card-body p-0">
+      <table class="table table-sm small mb-0">
+        <thead class="table-light"><tr><th>Version</th><th>Amended By</th><th>Reason</th><th>Date</th></tr></thead>
+        <tbody>
+          {% for a in amendments %}
+          <tr><td>v{{ a.version_number }}</td><td>{{ a.amended_by.full_name|default:"—" }}</td><td>{{ a.reason }}</td><td>{{ a.created_at|date:"d M Y, H:i" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  {# No result yet #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-hourglass-split" style="font-size:2.5rem;"></i>
+      <p class="mt-2 mb-3">No result entered yet.</p>
+      {% if request.user.can_record_investigation_results %}
+      <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Result</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Prior Studies #}
+  {% if prior_orders %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clock-history me-1"></i>Prior Studies</h6></div>
+    <div class="card-body p-0">
+      <table class="table table-sm small mb-0 table-hover">
+        <thead class="table-light"><tr><th>Date</th><th>Eye</th><th>Normal</th><th>Interpretation</th><th></th></tr></thead>
+        <tbody>
+          {% for po in prior_orders %}
+          <tr>
+            <td>{{ po.created_at|date:"d M Y" }}</td>
+            <td>{{ po.get_eye_display }}</td>
+            <td>{% if po.result %}{% if po.result.is_normal %}<span class="badge bg-success">N</span>{% elif po.result.is_normal == False %}<span class="badge bg-danger">Abn</span>{% else %}—{% endif %}{% else %}—{% endif %}</td>
+            <td>{{ po.result.interpretation|default:"—"|truncatechars:60 }}</td>
+            <td><a href="{% url 'investigations:detail' po.pk %}" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:1px 6px;">View</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# NON-OPTOMETRY (INVESTIGATION) LAYOUT — full 4/8 split with acquisition   #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{% else %}
+
 <div class="row g-3">
-  {# ── Left Column: Order + Acquisition + Actions ──────────────────────── #}
+  {# ── Left Column: Order Details ──────────────────────────────────────── #}
   <div class="col-md-4">
-    {# Order Details #}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard me-1"></i>Order Details</h6></div>
-      <div class="card-body">
+      <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold small"><i class="bi bi-clipboard me-1"></i>Order Details</h6></div>
+      <div class="card-body py-2">
         <dl class="row mb-0 small">
           <dt class="col-5 text-muted">Patient</dt>
           <dd class="col-7 fw-semibold">{{ order.patient.full_name }}</dd>
           <dt class="col-5 text-muted">Eye</dt>
-          <dd class="col-7"><span class="badge bg-dark">{{ order.get_eye_display }}</span></dd>
+          <dd class="col-7"><span class="badge bg-dark" style="font-size:.7rem;">{{ order.get_eye_display }}</span></dd>
           <dt class="col-5 text-muted">Urgency</dt>
-          <dd class="col-7">
-            <span class="badge {% if order.urgency == 'URGENT' or order.urgency == 'EMERGENCY' or order.urgency == 'STAT' %}bg-danger{% else %}bg-secondary{% endif %}">
-              {{ order.urgency }}
-            </span>
-          </dd>
-          <dt class="col-5 text-muted">Ordered By</dt>
-          <dd class="col-7">Dr. {{ order.ordered_by.full_name }}</dd>
-          <dt class="col-5 text-muted">Date</dt>
-          <dd class="col-7">{{ order.created_at|date:"d M Y, H:i" }}</dd>
+          <dd class="col-7"><span class="badge {% if order.urgency == 'URGENT' or order.urgency == 'EMERGENCY' or order.urgency == 'STAT' %}bg-danger{% else %}bg-secondary{% endif %}" style="font-size:.7rem;">{{ order.urgency }}</span></dd>
+          {% if order.assigned_to %}
+          <dt class="col-5 text-muted">Examiner</dt>
+          <dd class="col-7">{{ order.assigned_to.get_full_name }}</dd>
+          {% endif %}
           {% if order.device %}
           <dt class="col-5 text-muted">Device</dt>
           <dd class="col-7">{{ order.device.name }}</dd>
@@ -143,13 +417,13 @@
           <dt class="col-5 text-muted">Dilation</dt>
           <dd class="col-7">{{ order.dilation_status }} {% if order.dilation_agent %}({{ order.dilation_agent }}){% endif %}</dd>
           {% endif %}
+          {% if result %}
+          <dt class="col-5 text-muted">Performed by</dt>
+          <dd class="col-7">{{ result.performed_by.get_full_name|default:"—" }}</dd>
+          <dt class="col-5 text-muted">Reported</dt>
+          <dd class="col-7">{{ result.reported_at|date:"d M Y, H:i" }}</dd>
+          {% endif %}
         </dl>
-        {% if order.clinical_indication %}
-        <div class="mt-2 pt-2 border-top">
-          <div class="text-muted small fw-semibold">Clinical Indication</div>
-          <div class="small">{{ order.clinical_indication }}</div>
-        </div>
-        {% endif %}
       </div>
     </div>
 
@@ -171,13 +445,9 @@
           {% endif %}
           <dt class="col-5 text-muted">Quality</dt>
           <dd class="col-7">
-            {% if acquisition.quality_passed %}
-            <span class="badge bg-success">Passed</span>
-            {% elif acquisition.quality_passed == False %}
-            <span class="badge bg-danger">Failed</span>
-            {% else %}
-            <span class="text-muted">—</span>
-            {% endif %}
+            {% if acquisition.quality_passed %}<span class="badge bg-success">Passed</span>
+            {% elif acquisition.quality_passed == False %}<span class="badge bg-danger">Failed</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
             {% if acquisition.quality_metric_value %}({{ acquisition.quality_metric_value }}){% endif %}
           </dd>
           {% if acquisition.is_repeat %}
@@ -194,75 +464,35 @@
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-gear me-1"></i>Actions</h6></div>
       <div class="card-body">
-        {# Complete Acquisition #}
-        <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" data-bs-toggle="collapse" data-bs-target="#acqForm">
-          <i class="bi bi-check2-circle me-1"></i>Complete Acquisition
-        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" data-bs-toggle="collapse" data-bs-target="#acqForm"><i class="bi bi-check2-circle me-1"></i>Complete Acquisition</button>
         <div class="collapse" id="acqForm">
-          <form method="post" action="{% url 'investigations:complete_acquisition' order.pk %}" class="border rounded p-2 mb-2">
-            {% csrf_token %}
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-0">Laterality Confirmed</label>
-              <select name="laterality_confirmed" class="form-select form-select-sm">
-                <option value="OD" {% if order.eye == 'OD' %}selected{% endif %}>OD (Right)</option>
-                <option value="OS" {% if order.eye == 'OS' %}selected{% endif %}>OS (Left)</option>
-                <option value="OU" {% if order.eye == 'OU' %}selected{% endif %}>OU (Both)</option>
-              </select>
-            </div>
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-0">Protocol Used</label>
-              <input type="text" name="protocol_used" class="form-control form-control-sm" placeholder="e.g. SITA-Standard 24-2">
-            </div>
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-0">Quality Metric</label>
-              <input type="number" name="quality_metric_value" class="form-control form-control-sm" step="0.01" placeholder="e.g. Signal Strength">
-            </div>
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-0">Signal Strength (OCT)</label>
-              <input type="number" name="signal_strength" class="form-control form-control-sm" step="0.1">
-            </div>
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-0">Notes</label>
-              <textarea name="quality_notes" class="form-control form-control-sm" rows="2"></textarea>
-            </div>
+          <form method="post" action="{% url 'investigations:complete_acquisition' order.pk %}" class="border rounded p-2 mb-2">{% csrf_token %}
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Laterality Confirmed</label><select name="laterality_confirmed" class="form-select form-select-sm"><option value="OD" {% if order.eye == 'OD' %}selected{% endif %}>OD (Right)</option><option value="OS" {% if order.eye == 'OS' %}selected{% endif %}>OS (Left)</option><option value="OU" {% if order.eye == 'OU' %}selected{% endif %}>OU (Both)</option></select></div>
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Protocol Used</label><input type="text" name="protocol_used" class="form-control form-control-sm" placeholder="e.g. SITA-Standard 24-2"></div>
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Quality Metric</label><input type="number" name="quality_metric_value" class="form-control form-control-sm" step="0.01" placeholder="e.g. Signal Strength"></div>
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Signal Strength (OCT)</label><input type="number" name="signal_strength" class="form-control form-control-sm" step="0.1"></div>
+            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Notes</label><textarea name="quality_notes" class="form-control form-control-sm" rows="2"></textarea></div>
             <button type="submit" class="btn btn-sm btn-primary w-100">Submit Acquisition</button>
           </form>
         </div>
 
-        {# Dilation #}
         {% if not order.dilation_status %}
-        <button type="button" class="btn btn-sm btn-outline-warning w-100 mb-2" data-bs-toggle="collapse" data-bs-target="#dilForm">
-          <i class="bi bi-eye me-1"></i>Record Dilation
-        </button>
+        <button type="button" class="btn btn-sm btn-outline-warning w-100 mb-2" data-bs-toggle="collapse" data-bs-target="#dilForm"><i class="bi bi-eye me-1"></i>Record Dilation</button>
         <div class="collapse" id="dilForm">
-          <form method="post" action="{% url 'investigations:record_dilation' order.pk %}" class="border rounded p-2 mb-2">
-            {% csrf_token %}
-            <div class="mb-2">
-              <select name="dilation_status" class="form-select form-select-sm">
-                <option value="dilating">Dilating</option>
-                <option value="dilated">Dilated</option>
-              </select>
-            </div>
-            <div class="mb-2">
-              <input type="text" name="dilation_agent" class="form-control form-control-sm" placeholder="Agent: Tropicamide 1%">
-            </div>
+          <form method="post" action="{% url 'investigations:record_dilation' order.pk %}" class="border rounded p-2 mb-2">{% csrf_token %}
+            <div class="mb-2"><select name="dilation_status" class="form-select form-select-sm"><option value="dilating">Dilating</option><option value="dilated">Dilated</option></select></div>
+            <div class="mb-2"><input type="text" name="dilation_agent" class="form-control form-control-sm" placeholder="Agent: Tropicamide 1%"></div>
             <button type="submit" class="btn btn-sm btn-warning w-100">Save</button>
           </form>
         </div>
         {% endif %}
 
-        {# Contrast Safety #}
         {% if order.investigation_type.contrast_involved %}
-        <a href="{% url 'investigations:contrast_safety' order.pk %}" class="btn btn-sm btn-outline-danger w-100 mb-2">
-          <i class="bi bi-shield-exclamation me-1"></i>Contrast Safety Checklist
-        </a>
+        <a href="{% url 'investigations:contrast_safety' order.pk %}" class="btn btn-sm btn-outline-danger w-100 mb-2"><i class="bi bi-shield-exclamation me-1"></i>Contrast Safety Checklist</a>
         {% endif %}
 
-        {# Biometry #}
         {% if order.investigation_type.category == 'BIOMETRY' %}
-        <a href="{% url 'investigations:biometry' order.pk %}" class="btn btn-sm btn-outline-dark w-100 mb-2">
-          <i class="bi bi-rulers me-1"></i>Biometry Record
-        </a>
+        <a href="{% url 'investigations:biometry' order.pk %}" class="btn btn-sm btn-outline-dark w-100 mb-2"><i class="bi bi-rulers me-1"></i>Biometry Record</a>
         {% endif %}
       </div>
     </div>
@@ -271,26 +501,17 @@
     {# Quality Failed — Repeat / Override #}
     {% if order.acquisition_status == 'QUALITY_FAILED' %}
     <div class="card border-danger border shadow-sm mb-3">
-      <div class="card-header bg-light py-2">
-        <h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Quality Failed</h6>
-      </div>
+      <div class="card-header bg-light py-2"><h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Quality Failed</h6></div>
       <div class="card-body">
         {% if request.user.can_record_investigation_results %}
-        <form method="post" action="{% url 'investigations:repeat_acquisition' order.pk %}" class="mb-2">
-          {% csrf_token %}
+        <form method="post" action="{% url 'investigations:repeat_acquisition' order.pk %}" class="mb-2">{% csrf_token %}
           <input type="text" name="repeat_reason" class="form-control form-control-sm mb-2" placeholder="Repeat reason">
-          <button type="submit" class="btn btn-sm btn-warning w-100">
-            <i class="bi bi-arrow-repeat me-1"></i>Repeat Acquisition
-          </button>
+          <button type="submit" class="btn btn-sm btn-warning w-100"><i class="bi bi-arrow-repeat me-1"></i>Repeat Acquisition</button>
         </form>
         {% endif %}
         {% if request.user.is_medical_director or request.user.is_super_admin %}
-        <form method="post" action="{% url 'investigations:override_quality' order.pk %}">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-success w-100"
-                  onclick="return confirm('Override quality failure?')">
-            <i class="bi bi-check-lg me-1"></i>Override (MD)
-          </button>
+        <form method="post" action="{% url 'investigations:override_quality' order.pk %}">{% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-success w-100" onclick="return confirm('Override quality failure?')"><i class="bi bi-check-lg me-1"></i>Override (MD)</button>
         </form>
         {% endif %}
       </div>
@@ -302,21 +523,9 @@
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-cash me-1"></i>Payment</h6></div>
       <div class="card-body">
-        <form method="post" action="{% url 'investigations:authorize_payment' order.pk %}">
-          {% csrf_token %}
-          <div class="mb-2">
-            <select name="payment_status" class="form-select form-select-sm">
-              <option value="PAID">Paid</option>
-              <option value="INSURED">Insurance</option>
-              <option value="WAIVED">Waived</option>
-              <option value="BILL_LATER">Bill Later</option>
-              <option value="STAT_OVERRIDE">STAT Override</option>
-              <option value="FREE_REPEAT">Free Repeat</option>
-            </select>
-          </div>
-          <div class="mb-2">
-            <input type="text" name="reason" class="form-control form-control-sm" placeholder="Reason (required for waiver/override)">
-          </div>
+        <form method="post" action="{% url 'investigations:authorize_payment' order.pk %}">{% csrf_token %}
+          <div class="mb-2"><select name="payment_status" class="form-select form-select-sm"><option value="PAID">Paid</option><option value="INSURED">Insurance</option><option value="WAIVED">Waived</option><option value="BILL_LATER">Bill Later</option><option value="STAT_OVERRIDE">STAT Override</option><option value="FREE_REPEAT">Free Repeat</option></select></div>
+          <div class="mb-2"><input type="text" name="reason" class="form-control form-control-sm" placeholder="Reason (required for waiver/override)"></div>
           <button type="submit" class="btn btn-sm btn-success w-100">Authorize</button>
         </form>
       </div>
@@ -334,19 +543,12 @@
             {% if result.is_normal %}<i class="bi bi-check-circle me-1"></i>Normal{% elif result.is_normal == False %}<i class="bi bi-exclamation-circle me-1"></i>Abnormal{% else %}Recorded{% endif %}
           </span>
           <h6 class="mb-0 fw-semibold">Result — {{ order.investigation_type.name }}</h6>
-          {% if result.version_number > 1 %}
-          <span class="badge bg-dark">v{{ result.version_number }}</span>
-          {% endif %}
+          {% if result.version_number > 1 %}<span class="badge bg-dark">v{{ result.version_number }}</span>{% endif %}
         </div>
         <div class="d-flex gap-1 flex-wrap align-items-center">
-          {% if result.is_verified %}
-          <span class="badge bg-success"><i class="bi bi-patch-check-fill me-1"></i>Verified</span>
-          {% else %}
-          <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Awaiting Verification</span>
-          {% endif %}
-          {% if result.acknowledged_by %}
-          <span class="badge bg-info text-dark"><i class="bi bi-check-lg me-1"></i>Acknowledged</span>
-          {% endif %}
+          {% if result.is_verified %}<span class="badge bg-success"><i class="bi bi-patch-check-fill me-1"></i>Verified</span>
+          {% else %}<span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Awaiting Verification</span>{% endif %}
+          {% if result.acknowledged_by %}<span class="badge bg-info text-dark"><i class="bi bi-check-lg me-1"></i>Acknowledged</span>{% endif %}
         </div>
       </div>
       <div class="card-body">
@@ -357,139 +559,10 @@
         </div>
         {% endif %}
 
-        {# ── Structured result data — proper clinical display ── #}
         {% if result.result_data %}
         {% with rd=result.result_data %}
         <div class="mb-3">
-
-          {# ── SUBJECTIVE REFRACTION ── #}
-          {% if rd.sph_od or rd.sph_os %}
-          <div class="fw-semibold small text-muted mb-2">Refraction</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_od|default:"—" }}</td></tr>
-              <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-          {% if rd.pd_dist or rd.pd_near %}<div class="small text-muted mb-2">PD: {{ rd.pd_dist|default:"—" }} (distance) / {{ rd.pd_near|default:"—" }} (near)</div>{% endif %}
-          {% if rd.pd %}<div class="small text-muted mb-2">PD: {{ rd.pd }} mm</div>{% endif %}
-
-          {# ── AUTOREFRACTION / KERATOMETRY ── #}
-          {% elif rd.k1_od or rd.k2_od %}
-          <div class="fw-semibold small text-muted mb-2">Autorefraction / Keratometry</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td></tr>
-              <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-
-          {# ── VISUAL ACUITY ── #}
-          {% elif rd.unaided_od or rd.unaided_os or rd.aided_od or rd.aided_os %}
-          <div class="fw-semibold small text-muted mb-2">Visual Acuity</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">Unaided (Distance)</td><td>{{ rd.unaided_od|default:"—" }}</td><td>{{ rd.unaided_os|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Aided (Distance)</td><td>{{ rd.aided_od|default:"—" }}</td><td>{{ rd.aided_os|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Pinhole</td><td>{{ rd.pinhole_od|default:"—" }}</td><td>{{ rd.pinhole_os|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_od|default:"—" }}</td><td>{{ rd.near_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-          {% if rd.chart_used %}<div class="small text-muted mb-2">Chart used: {{ rd.chart_used }}</div>{% endif %}
-
-          {# ── LOW VISION ASSESSMENT ── #}
-          {% elif rd.distance_va_od or rd.distance_va_os or rd.magnification_required %}
-          <div class="fw-semibold small text-muted mb-2">Low Vision Assessment</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">Distance VA</td><td>{{ rd.distance_va_od|default:"—" }}</td><td>{{ rd.distance_va_os|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-          {% if rd.contrast_sensitivity %}<div class="small mb-1"><strong>Contrast Sensitivity:</strong> {{ rd.contrast_sensitivity }}</div>{% endif %}
-          {% if rd.magnification_required %}<div class="small mb-1"><strong>Magnification Required:</strong> {{ rd.magnification_required }}</div>{% endif %}
-          {% if rd.aids_tried %}<div class="small mb-1"><strong>Aids Tried:</strong> {{ rd.aids_tried }}</div>{% endif %}
-          {% if rd.functional_goals %}<div class="small mb-1"><strong>Functional Goals:</strong> {{ rd.functional_goals }}</div>{% endif %}
-
-          {# ── COVER TEST ── #}
-          {% elif rd.dist_type or rd.near_type %}
-          <div class="fw-semibold small text-muted mb-2">Cover Test</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="90"></th><th>Type</th><th>Amount (PD)</th><th>Vertical</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">Distance</td><td>{{ rd.dist_type|default:"—" }}</td><td>{{ rd.dist_amount_pd|default:"—" }}</td><td>{{ rd.dist_vertical|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Near</td><td>{{ rd.near_type|default:"—" }}</td><td>{{ rd.near_amount_pd|default:"—" }}</td><td>{{ rd.near_vertical|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-
-          {# ── COLOUR VISION ── #}
-          {% elif rd.plates_correct_od or rd.result_od %}
-          <div class="fw-semibold small text-muted mb-2">Colour Vision</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="130"></th><th>OD</th><th>OS</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">Plates Correct</td><td>{{ rd.plates_correct_od|default:"—" }}</td><td>{{ rd.plates_correct_os|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Result</td><td>{{ rd.result_od|default:"—" }}</td><td>{{ rd.result_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-          {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
-          {% if rd.deficiency_type %}<div class="small text-muted mb-1">Deficiency: {{ rd.deficiency_type }}</div>{% endif %}
-
-          {# ── MOTILITY ── #}
-          {% elif rd.sr_od or rd.lr_od %}
-          <div class="fw-semibold small text-muted mb-2">Ocular Motility</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="50"></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">OD</td><td>{{ rd.sr_od|default:"—" }}</td><td>{{ rd.ir_od|default:"—" }}</td><td>{{ rd.mr_od|default:"—" }}</td><td>{{ rd.lr_od|default:"—" }}</td><td>{{ rd.so_od|default:"—" }}</td><td>{{ rd.io_od|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">OS</td><td>{{ rd.sr_os|default:"—" }}</td><td>{{ rd.ir_os|default:"—" }}</td><td>{{ rd.mr_os|default:"—" }}</td><td>{{ rd.lr_os|default:"—" }}</td><td>{{ rd.so_os|default:"—" }}</td><td>{{ rd.io_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-          {% if rd.saccades %}<div class="small mb-1"><strong>Saccades:</strong> {{ rd.saccades }} &nbsp;|&nbsp; <strong>Pursuits:</strong> {{ rd.pursuits|default:"—" }}</div>{% endif %}
-          {% if rd.nystagmus %}<div class="small mb-1"><strong>Nystagmus:</strong> {{ rd.nystagmus }}</div>{% endif %}
-          {% if rd.head_posture %}<div class="small mb-1"><strong>Head Posture:</strong> {{ rd.head_posture }}</div>{% endif %}
-
-          {# ── NPC/NPA ── #}
-          {% elif rd.break_point_cm %}
-          <div class="fw-semibold small text-muted mb-2">NPC / NPA</div>
-          <div class="small mb-1"><strong>Break Point:</strong> {{ rd.break_point_cm }} cm &nbsp;|&nbsp; <strong>Recovery:</strong> {{ rd.recovery_point_cm|default:"—" }} cm</div>
-          {% if rd.method %}<div class="small text-muted mb-1">Method: {{ rd.method }}</div>{% endif %}
-
-          {# ── STEREOPSIS ── #}
-          {% elif rd.result_seconds_arc %}
-          <div class="fw-semibold small text-muted mb-2">Stereopsis</div>
-          <div class="small mb-1"><strong>Stereoacuity:</strong> {{ rd.result_seconds_arc }} seconds of arc &nbsp;|&nbsp; <strong>Grade:</strong> {{ rd.grade|default:"—" }}</div>
-          {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
-
-          {# ── FUSIONAL VERGENCE ── #}
-          {% elif rd.bo_break_dist or rd.bi_break_dist %}
-          <div class="fw-semibold small text-muted mb-2">Fusional Vergence</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th></th><th colspan="2">Base Out (Convergence)</th><th colspan="2">Base In (Divergence)</th></tr><tr class="table-light"><th></th><th>Break</th><th>Recovery</th><th>Break</th><th>Recovery</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold">Distance</td><td>{{ rd.bo_break_dist|default:"—" }}</td><td>{{ rd.bo_recovery_dist|default:"—" }}</td><td>{{ rd.bi_break_dist|default:"—" }}</td><td>{{ rd.bi_recovery_dist|default:"—" }}</td></tr>
-              <tr><td class="fw-bold">Near</td><td>{{ rd.bo_break_near|default:"—" }}</td><td>{{ rd.bo_recovery_near|default:"—" }}</td><td>{{ rd.bi_break_near|default:"—" }}</td><td>{{ rd.bi_recovery_near|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-
-          {# ── CYCLOPLEGIC REFRACTION ── #}
-          {% elif rd.cycloplegic_agent %}
-          <div class="fw-semibold small text-muted mb-2">Cycloplegic Refraction</div>
-          <div class="small mb-1"><strong>Agent:</strong> {{ rd.cycloplegic_agent }} &nbsp;|&nbsp; <strong>Instilled:</strong> {{ rd.instillation_time|default:"—" }} &nbsp;|&nbsp; <strong>Exam:</strong> {{ rd.exam_time|default:"—" }}</div>
-          <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-            <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
-            <tbody>
-              <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td></tr>
-              <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td></tr>
-            </tbody>
-          </table>
-
-          {# ── FALLBACK: generic key-value ── #}
-          {% else %}
+          {# Generic key-value for non-optometry investigations #}
           <div class="fw-semibold small text-muted mb-2">Measurements</div>
           <table class="table table-sm table-bordered mb-0 small">
             <tbody>
@@ -500,21 +573,15 @@
               {% endfor %}
             </tbody>
           </table>
-          {% endif %}
-
-          {# ── Management Plan ── #}
           {% if rd.management_plan %}
           <div class="p-2 rounded mt-2" style="background:#eff6ff;border-left:3px solid #3b82f6;">
             <div class="fw-semibold small text-primary mb-1">Management Plan</div>
             <div style="white-space:pre-wrap;font-size:.85rem;">{{ rd.management_plan }}</div>
           </div>
           {% endif %}
-
-          {# ── Notes ── #}
           {% if rd.notes %}
           <div class="small text-muted mt-2"><strong>Tech Notes:</strong> {{ rd.notes }}</div>
           {% endif %}
-
         </div>
         {% endwith %}
         {% endif %}
@@ -536,63 +603,33 @@
           <div class="d-flex flex-wrap gap-2">
             {% for f in result.files.all %}
             {% if f.file_type == 'IMAGE' %}
-            <div class="text-center">
-              <a href="{{ f.file.url }}" target="_blank">
-                <img src="{{ f.file.url }}" class="border rounded shadow-sm"
-                     style="max-height:200px;max-width:280px;object-fit:contain;">
-              </a>
-              {% if f.laterality != 'NA' %}<div class="small text-muted mt-1">{{ f.laterality }}</div>{% endif %}
-            </div>
+            <a href="{{ f.file.url }}" target="_blank"><img src="{{ f.file.url }}" class="border rounded shadow-sm" style="max-height:200px;max-width:280px;object-fit:contain;"></a>
             {% elif f.file_type == 'PDF' or f.file_type == 'DICOM_PDF' %}
-            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger btn-sm">
-              <i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"PDF" }}
-            </a>
+            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"PDF" }}</a>
             {% else %}
-            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
-              <i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"File" }}
-            </a>
+            <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"File" }}</a>
             {% endif %}
             {% endfor %}
           </div>
         </div>
         {% endif %}
 
-        {# Doctor Acknowledge #}
-        {% if result and not result.acknowledged_by and request.user.is_doctor %}
+        {% if not result.acknowledged_by and request.user.is_doctor %}
         <div class="mt-3 pt-2 border-top">
-          <form method="post" action="{% url 'investigations:acknowledge' order.pk %}" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-success">
-              <i class="bi bi-check-lg me-1"></i>Acknowledge Result
-            </button>
+          <form method="post" action="{% url 'investigations:acknowledge' order.pk %}" class="d-inline">{% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check-lg me-1"></i>Acknowledge Result</button>
           </form>
         </div>
         {% endif %}
 
-        {# Amend Result #}
         {% if result.is_verified and request.user.can_record_investigation_results %}
         <div class="mt-3 pt-2 border-top">
-          <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#amendForm">
-            <i class="bi bi-pencil me-1"></i>Amend Result
-          </button>
+          <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#amendForm"><i class="bi bi-pencil me-1"></i>Amend Result</button>
           <div class="collapse mt-2" id="amendForm">
-            <form method="post" action="{% url 'investigations:amend' order.pk %}" class="border rounded p-2">
-              {% csrf_token %}
-              <div class="mb-2">
-                <label class="form-label small fw-semibold mb-0">Amendment Reason</label>
-                <input type="text" name="amendment_reason" class="form-control form-control-sm" required>
-              </div>
-              <div class="mb-2">
-                <label class="form-label small fw-semibold mb-0">Updated Interpretation</label>
-                <textarea name="interpretation" class="form-control form-control-sm" rows="3">{{ result.interpretation }}</textarea>
-              </div>
-              <div class="mb-2">
-                <select name="is_normal" class="form-select form-select-sm">
-                  <option value="">-- Normal/Abnormal --</option>
-                  <option value="True" {% if result.is_normal %}selected{% endif %}>Normal</option>
-                  <option value="False" {% if result.is_normal == False %}selected{% endif %}>Abnormal</option>
-                </select>
-              </div>
+            <form method="post" action="{% url 'investigations:amend' order.pk %}" class="border rounded p-2">{% csrf_token %}
+              <div class="mb-2"><label class="form-label small fw-semibold mb-0">Amendment Reason</label><input type="text" name="amendment_reason" class="form-control form-control-sm" required></div>
+              <div class="mb-2"><label class="form-label small fw-semibold mb-0">Updated Interpretation</label><textarea name="interpretation" class="form-control form-control-sm" rows="3">{{ result.interpretation }}</textarea></div>
+              <div class="mb-2"><select name="is_normal" class="form-select form-select-sm"><option value="">-- Normal/Abnormal --</option><option value="True" {% if result.is_normal %}selected{% endif %}>Normal</option><option value="False" {% if result.is_normal == False %}selected{% endif %}>Abnormal</option></select></div>
               <button type="submit" class="btn btn-sm btn-warning">Save Amendment</button>
             </form>
           </div>
@@ -607,17 +644,10 @@
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clock-history me-1"></i>Amendment History</h6></div>
       <div class="card-body p-0">
         <table class="table table-sm small mb-0">
-          <thead class="table-light">
-            <tr><th>Version</th><th>Amended By</th><th>Reason</th><th>Date</th></tr>
-          </thead>
+          <thead class="table-light"><tr><th>Version</th><th>Amended By</th><th>Reason</th><th>Date</th></tr></thead>
           <tbody>
             {% for a in amendments %}
-            <tr>
-              <td>v{{ a.version_number }}</td>
-              <td>{{ a.amended_by.full_name|default:"—" }}</td>
-              <td>{{ a.reason }}</td>
-              <td>{{ a.created_at|date:"d M Y, H:i" }}</td>
-            </tr>
+            <tr><td>v{{ a.version_number }}</td><td>{{ a.amended_by.full_name|default:"—" }}</td><td>{{ a.reason }}</td><td>{{ a.created_at|date:"d M Y, H:i" }}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -631,9 +661,7 @@
         <i class="bi bi-hourglass-split" style="font-size:2.5rem;"></i>
         <p class="mt-2 mb-3">No result entered yet.</p>
         {% if request.user.can_record_investigation_results %}
-        <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary">
-          <i class="bi bi-pencil-square me-1"></i>Enter Result
-        </a>
+        <a href="{% url 'investigations:add_result' order.pk %}" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i>Enter Result</a>
         {% endif %}
       </div>
     </div>
@@ -671,19 +699,13 @@
               <dt class="col-6 text-muted">A-Constant</dt><dd class="col-6">{{ biometry.a_constant|default:"—" }}</dd>
               <dt class="col-6 text-muted">AL Method</dt><dd class="col-6">{{ biometry.al_method|default:"—" }}</dd>
               <dt class="col-6 text-muted">Inter-eye AL</dt>
-              <dd class="col-6 {% if biometry.inter_eye_al_flagged %}text-danger fw-bold{% endif %}">
-                {{ biometry.inter_eye_al_difference|default:"—" }}mm
-              </dd>
+              <dd class="col-6 {% if biometry.inter_eye_al_flagged %}text-danger fw-bold{% endif %}">{{ biometry.inter_eye_al_difference|default:"—" }}mm</dd>
             </dl>
             {% if biometry.surgeon_approved %}
-            <div class="alert alert-success py-1 small mt-2 mb-0">
-              <i class="bi bi-check-circle me-1"></i>Surgeon: {{ biometry.surgeon.full_name }} ({{ biometry.surgeon_approved_at|date:"d M Y" }})
-            </div>
+            <div class="alert alert-success py-1 small mt-2 mb-0"><i class="bi bi-check-circle me-1"></i>Surgeon: {{ biometry.surgeon.full_name }} ({{ biometry.surgeon_approved_at|date:"d M Y" }})</div>
             {% endif %}
             {% if biometry.second_verified_by %}
-            <div class="alert alert-info py-1 small mt-1 mb-0">
-              <i class="bi bi-check2-all me-1"></i>2nd verify: {{ biometry.second_verified_by.full_name }}
-            </div>
+            <div class="alert alert-info py-1 small mt-1 mb-0"><i class="bi bi-check2-all me-1"></i>2nd verify: {{ biometry.second_verified_by.full_name }}</div>
             {% endif %}
           </div>
         </div>
@@ -701,14 +723,10 @@
     {# Contrast Reactions #}
     {% if contrast_reactions %}
     <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-light py-2">
-        <h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Contrast Reactions</h6>
-      </div>
+      <div class="card-header bg-light py-2"><h6 class="mb-0 fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Contrast Reactions</h6></div>
       <div class="card-body p-0">
         <table class="table table-sm small mb-0">
-          <thead class="table-light">
-            <tr><th>Severity</th><th>Dye</th><th>Symptoms</th><th>Treatment</th><th>Time</th></tr>
-          </thead>
+          <thead class="table-light"><tr><th>Severity</th><th>Dye</th><th>Symptoms</th><th>Treatment</th><th>Time</th></tr></thead>
           <tbody>
             {% for r in contrast_reactions %}
             <tr class="{% if r.severity == 'SEVERE' %}table-danger{% elif r.severity == 'MODERATE' %}table-warning{% endif %}">
@@ -731,19 +749,13 @@
       <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-clock-history me-1"></i>Prior Studies</h6></div>
       <div class="card-body p-0">
         <table class="table table-sm small mb-0 table-hover">
-          <thead class="table-light">
-            <tr><th>Date</th><th>Eye</th><th>Normal</th><th>Interpretation</th><th></th></tr>
-          </thead>
+          <thead class="table-light"><tr><th>Date</th><th>Eye</th><th>Normal</th><th>Interpretation</th><th></th></tr></thead>
           <tbody>
             {% for po in prior_orders %}
             <tr>
               <td>{{ po.created_at|date:"d M Y" }}</td>
               <td>{{ po.get_eye_display }}</td>
-              <td>
-                {% if po.result %}
-                {% if po.result.is_normal %}<span class="badge bg-success">N</span>{% elif po.result.is_normal == False %}<span class="badge bg-danger">Abn</span>{% else %}—{% endif %}
-                {% else %}—{% endif %}
-              </td>
+              <td>{% if po.result %}{% if po.result.is_normal %}<span class="badge bg-success">N</span>{% elif po.result.is_normal == False %}<span class="badge bg-danger">Abn</span>{% else %}—{% endif %}{% else %}—{% endif %}</td>
               <td>{{ po.result.interpretation|default:"—"|truncatechars:60 }}</td>
               <td><a href="{% url 'investigations:detail' po.pk %}" class="btn btn-xs btn-outline-primary" style="font-size:.7rem;padding:1px 6px;">View</a></td>
             </tr>
@@ -756,6 +768,8 @@
   </div>
 </div>
 
+{% endif %}
+
 {# ── Cancel Modal ────────────────────────────────────────────────────────── #}
 {% if order.status == 'ORDERED' %}
 <div class="modal fade" id="cancelModal" tabindex="-1">
@@ -765,12 +779,9 @@
         <h5 class="modal-title fw-semibold text-danger">Cancel Investigation</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="post" action="{% url 'investigations:cancel' order.pk %}">
-        {% csrf_token %}
+      <form method="post" action="{% url 'investigations:cancel' order.pk %}">{% csrf_token %}
         <div class="modal-body">
-          <p class="text-muted small mb-3">
-            Cancel <strong>{{ order.investigation_type.name }}</strong> ({{ order.get_eye_display }}) for <strong>{{ order.patient.full_name }}</strong>?
-          </p>
+          <p class="text-muted small mb-3">Cancel <strong>{{ order.investigation_type.name }}</strong> ({{ order.get_eye_display }}) for <strong>{{ order.patient.full_name }}</strong>?</p>
           <textarea name="cancel_reason" class="form-control" rows="2" placeholder="Reason (optional)"></textarea>
         </div>
         <div class="modal-footer border-0 pt-0">
