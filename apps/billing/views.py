@@ -1248,6 +1248,33 @@ def pos_add_item(request, invoice_id):
     if not description:
         return JsonResponse({'success': False, 'error': 'Description is required.'}, status=400)
 
+    # ── Double-billing prevention ───────────────────────────────────────────
+    # Check if this patient already has a PAID invoice today with the same item.
+    _desc_lc = description.lower()
+    _already_paid_items = InvoiceItem.objects.filter(
+        invoice__patient=invoice.patient,
+        invoice__issue_date=timezone.localdate(),
+        invoice__status=InvoiceStatus.PAID,
+        invoice__is_deleted=False,
+        is_deleted=False,
+    ).values_list('description', flat=True)
+    for _paid_desc in _already_paid_items:
+        if _paid_desc.lower() == _desc_lc:
+            return JsonResponse({
+                'success': False,
+                'error': f'Already Paid — "{description}" was already billed and paid today. '
+                         f'Cannot bill the same item twice.'
+            }, status=400)
+
+    # Also check items on the CURRENT invoice to prevent duplicate line items
+    if invoice.items.filter(
+        description__iexact=description, is_deleted=False,
+    ).exists():
+        return JsonResponse({
+            'success': False,
+            'error': f'Duplicate — "{description}" is already on this invoice.'
+        }, status=400)
+
     item = InvoiceItem.objects.create(
         invoice=invoice,
         description=description,

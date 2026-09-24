@@ -1212,9 +1212,9 @@ function _doAdd(desc, cat, qty, unitPrice) {
   fd.append('quantity', qty);
   fd.append('unit_price', unitPrice);
   fetch(`/billing/invoice/${INV_ID}/add-item/`, { method: 'POST', body: fd })
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(r => r.json().then(d => { d._ok = r.ok; return d; }))
     .then(data => {
-      if (!data.success) { toast(data.error || 'Could not add item.', 'danger'); return; }
+      if (!data.success || !data._ok) { toast(data.error || 'Could not add item.', 'danger'); return; }
       removeEmptyRow();
       rowCount++;
       const tbody = document.getElementById('itemsBody');
