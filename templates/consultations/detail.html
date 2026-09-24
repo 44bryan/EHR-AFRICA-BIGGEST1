@@ -1051,48 +1051,149 @@
 
               {# ── Inline result display ── #}
               {% if order.status == 'COMPLETED' %}
-              {% with result=order.result %}
+              {% with result=order.result rd=order.result.result_data %}
               {% if result %}
-              <div class="rounded p-2 {% if result.is_normal %}bg-success bg-opacity-10{% else %}bg-danger bg-opacity-10{% endif %}">
-                <div class="d-flex justify-content-between align-items-center mb-1">
+              <div class="rounded p-2" style="background:{% if result.is_normal %}#f0fdf4{% elif result.is_normal == False %}#fef2f2{% else %}#f8fafc{% endif %};">
+                <div class="d-flex justify-content-between align-items-center mb-2">
                   <span class="badge {% if result.is_normal %}bg-success{% elif result.is_normal == False %}bg-danger{% else %}bg-secondary{% endif %}" style="font-size:.68rem;">
                     {% if result.is_normal %}Normal{% elif result.is_normal == False %}Abnormal{% else %}Recorded{% endif %}
                   </span>
-                  {% if result.is_verified %}
-                  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Verified by Dr. {% if result.verified_by %}{{ result.verified_by.last_name|default:result.verified_by.full_name }}{% else %}Unknown{% endif %}</span>
-                  {% else %}
-                  <span class="text-warning small"><i class="bi bi-clock me-1"></i>Awaiting verification</span>
-                  {% endif %}
+                  <div class="d-flex gap-2 align-items-center">
+                    {% if result.is_verified %}
+                    <span class="text-success" style="font-size:.72rem;"><i class="bi bi-patch-check-fill me-1"></i>Verified — {{ result.verified_by.get_full_name|default:"" }}</span>
+                    {% else %}
+                    <span class="text-warning" style="font-size:.72rem;"><i class="bi bi-clock me-1"></i>Pending verification</span>
+                    {% endif %}
+                    <span class="text-muted" style="font-size:.68rem;">{{ result.reported_at|date:"d M, H:i" }}</span>
+                  </div>
                 </div>
-                {% if result.result_data.sub_sph_dist_od or result.result_data.sub_sph_dist_os %}
-                {# Inline refraction summary for optometry results #}
-                <div class="small mb-1">
-                  <strong>Subjective Rx:</strong>
-                  OD: {{ result.result_data.sub_sph_dist_od|default:"—" }}/{{ result.result_data.sub_cyl_dist_od|default:"—" }}×{{ result.result_data.sub_axis_dist_od|default:"—" }} → {{ result.result_data.sub_va_dist_od|default:"—" }}
-                  &nbsp;|&nbsp;
-                  OS: {{ result.result_data.sub_sph_dist_os|default:"—" }}/{{ result.result_data.sub_cyl_dist_os|default:"—" }}×{{ result.result_data.sub_axis_dist_os|default:"—" }} → {{ result.result_data.sub_va_dist_os|default:"—" }}
-                </div>
+
+                {# ── SUBJECTIVE REFRACTION ── #}
+                {% if rd.sph_od or rd.sph_os %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="60"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_od|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+                {% if rd.pd_dist or rd.pd_near %}<div class="small text-muted mb-1">PD: {{ rd.pd_dist|default:"—" }} (dist) / {{ rd.pd_near|default:"—" }} (near)</div>{% endif %}
+
+                {# ── AUTOREFRACTION / KERATOMETRY ── #}
+                {% elif rd.k1_od or rd.k2_od %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="60"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+                {% if rd.pd %}<div class="small text-muted mb-1">PD: {{ rd.pd }} mm</div>{% endif %}
+
+                {# ── VISUAL ACUITY ── #}
+                {% elif rd.unaided_od or rd.unaided_os or rd.aided_od or rd.aided_os %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="120"></th><th>OD</th><th>OS</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">Unaided</td><td>{{ rd.unaided_od|default:"—" }}</td><td>{{ rd.unaided_os|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Aided</td><td>{{ rd.aided_od|default:"—" }}</td><td>{{ rd.aided_os|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Pinhole</td><td>{{ rd.pinhole_od|default:"—" }}</td><td>{{ rd.pinhole_os|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Near</td><td>{{ rd.near_od|default:"—" }}</td><td>{{ rd.near_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+                {% if rd.chart_used %}<div class="small text-muted mb-1">Chart: {{ rd.chart_used }}</div>{% endif %}
+
+                {# ── LOW VISION ASSESSMENT ── #}
+                {% elif rd.distance_va_od or rd.distance_va_os or rd.magnification_required %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="120"></th><th>OD</th><th>OS</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">Distance VA</td><td>{{ rd.distance_va_od|default:"—" }}</td><td>{{ rd.distance_va_os|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+                {% if rd.contrast_sensitivity %}<div class="small mb-1"><strong>Contrast:</strong> {{ rd.contrast_sensitivity }}</div>{% endif %}
+                {% if rd.magnification_required %}<div class="small mb-1"><strong>Magnification:</strong> {{ rd.magnification_required }}</div>{% endif %}
+                {% if rd.aids_tried %}<div class="small mb-1"><strong>Aids tried:</strong> {{ rd.aids_tried }}</div>{% endif %}
+                {% if rd.functional_goals %}<div class="small mb-1"><strong>Goals:</strong> {{ rd.functional_goals }}</div>{% endif %}
+
+                {# ── COVER TEST / ORTHOPTICS ── #}
+                {% elif rd.dist_type or rd.near_type %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="80"></th><th>Type</th><th>Amount (PD)</th><th>Vertical</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">Distance</td><td>{{ rd.dist_type|default:"—" }}</td><td>{{ rd.dist_amount_pd|default:"—" }}</td><td>{{ rd.dist_vertical|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Near</td><td>{{ rd.near_type|default:"—" }}</td><td>{{ rd.near_amount_pd|default:"—" }}</td><td>{{ rd.near_vertical|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+
+                {# ── COLOUR VISION ── #}
+                {% elif rd.plates_correct_od or rd.result_od %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="120"></th><th>OD</th><th>OS</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">Plates</td><td>{{ rd.plates_correct_od|default:"—" }}</td><td>{{ rd.plates_correct_os|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Result</td><td>{{ rd.result_od|default:"—" }}</td><td>{{ rd.result_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+                {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
+                {% if rd.deficiency_type %}<div class="small text-muted mb-1">Deficiency: {{ rd.deficiency_type }}</div>{% endif %}
+
+                {# ── MOTILITY ── #}
+                {% elif rd.sr_od or rd.lr_od %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th width="40"></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">OD</td><td>{{ rd.sr_od|default:"—" }}</td><td>{{ rd.ir_od|default:"—" }}</td><td>{{ rd.mr_od|default:"—" }}</td><td>{{ rd.lr_od|default:"—" }}</td><td>{{ rd.so_od|default:"—" }}</td><td>{{ rd.io_od|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">OS</td><td>{{ rd.sr_os|default:"—" }}</td><td>{{ rd.ir_os|default:"—" }}</td><td>{{ rd.mr_os|default:"—" }}</td><td>{{ rd.lr_os|default:"—" }}</td><td>{{ rd.so_os|default:"—" }}</td><td>{{ rd.io_os|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+
+                {# ── NPC/NPA ── #}
+                {% elif rd.break_point_cm %}
+                <div class="small mb-1"><strong>Break:</strong> {{ rd.break_point_cm }} cm &nbsp;|&nbsp; <strong>Recovery:</strong> {{ rd.recovery_point_cm|default:"—" }} cm</div>
+                {% if rd.method %}<div class="small text-muted mb-1">Method: {{ rd.method }}</div>{% endif %}
+
+                {# ── STEREOPSIS ── #}
+                {% elif rd.result_seconds_arc %}
+                <div class="small mb-1"><strong>Stereoacuity:</strong> {{ rd.result_seconds_arc }} sec arc &nbsp;|&nbsp; <strong>Grade:</strong> {{ rd.grade|default:"—" }}</div>
+                {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
+
+                {# ── FUSIONAL VERGENCE ── #}
+                {% elif rd.bo_break_dist or rd.bi_break_dist %}
+                <table class="table table-sm table-bordered mb-1" style="font-size:.78rem;background:#fff;">
+                  <thead><tr class="table-light"><th></th><th colspan="2">Base Out</th><th colspan="2">Base In</th></tr><tr class="table-light"><th></th><th>Break</th><th>Rec</th><th>Break</th><th>Rec</th></tr></thead>
+                  <tbody>
+                    <tr><td class="fw-bold">Dist</td><td>{{ rd.bo_break_dist|default:"—" }}</td><td>{{ rd.bo_recovery_dist|default:"—" }}</td><td>{{ rd.bi_break_dist|default:"—" }}</td><td>{{ rd.bi_recovery_dist|default:"—" }}</td></tr>
+                    <tr><td class="fw-bold">Near</td><td>{{ rd.bo_break_near|default:"—" }}</td><td>{{ rd.bo_recovery_near|default:"—" }}</td><td>{{ rd.bi_break_near|default:"—" }}</td><td>{{ rd.bi_recovery_near|default:"—" }}</td></tr>
+                  </tbody>
+                </table>
+
+                {# ── FALLBACK: show interpretation or raw data ── #}
                 {% elif result.interpretation %}
-                <div class="result-text text-dark mb-2">{{ result.interpretation }}</div>
+                <div class="small text-dark mb-1">{{ result.interpretation }}</div>
                 {% endif %}
-                {# ── File attachments — images shown inline, PDFs as download button ── #}
+
+                {# ── Interpretation + Management Plan (if any) ── #}
+                {% if result.interpretation and rd.sph_od or rd.unaided_od or rd.distance_va_od %}
+                <div class="small mt-1"><strong>Interpretation:</strong> {{ result.interpretation }}</div>
+                {% endif %}
+                {% if rd.management_plan %}
+                <div class="small mt-1"><strong>Management Plan:</strong> {{ rd.management_plan }}</div>
+                {% endif %}
+
+                {# ── File attachments ── #}
                 {% if result.files.exists %}
-                <div class="d-flex flex-wrap gap-2 mt-1">
+                <div class="d-flex flex-wrap gap-2 mt-2">
                   {% for f in result.files.all %}
                   {% if f.file_type == 'IMAGE' %}
-                  <a href="{{ f.file.url }}" target="_blank" title="{{ f.description|default:'View image' }}">
-                    <img src="{{ f.file.url }}" alt="{{ f.description|default:'Investigation image' }}"
-                         class="border rounded shadow-sm"
-                         style="max-height:180px;max-width:260px;object-fit:contain;cursor:zoom-in;">
+                  <a href="{{ f.file.url }}" target="_blank">
+                    <img src="{{ f.file.url }}" class="border rounded shadow-sm" style="max-height:140px;max-width:200px;object-fit:contain;cursor:zoom-in;">
                   </a>
                   {% elif f.file_type == 'PDF' %}
-                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"Open PDF" }}
-                  </a>
+                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
                   {% else %}
-                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
-                    <i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"Download File" }}
-                  </a>
+                  <a href="{{ f.file.url }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-file-earmark me-1"></i>File</a>
                   {% endif %}
                   {% endfor %}
                 </div>
@@ -1101,7 +1202,7 @@
               {% endif %}
               {% endwith %}
               {% else %}
-              <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Waiting for investigation technician to enter results.</div>
+              <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Waiting for results...</div>
               {% endif %}
             </div>
             {% endfor %}
