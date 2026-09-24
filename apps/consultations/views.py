@@ -2451,7 +2451,8 @@ def reject_and_reroute_view(request):
 
         try:
             from apps.core.ws_notify import notify_queue as _ws_nq
-            _ws_nq('WAITING')
+            _ws_nq('workstation')
+            _ws_nq('opd')
         except Exception:
             pass
 
@@ -2624,7 +2625,8 @@ def return_to_referring_doctor_view(request):
         # WebSocket notify the doctor's queue
         try:
             from apps.core.ws_notify import notify_queue as _ws_nq
-            _ws_nq('WAITING')
+            _ws_nq('workstation')
+            _ws_nq('opd')
         except Exception:
             pass
 

@@ -70,7 +70,7 @@ _STATUS_ROOMS = {
     'IN_CONSULTATION':   ['workstation'],
     'INSURANCE_CONSULT': ['workstation'],
     # ── Specialties — all land on workstation ───────────────────────────
-    'REFRACTION':        ['workstation'],
+    'REFRACTION':        ['workstation', 'invest'],
     'UVEITIS':           ['workstation'],
     'AT_RETINA':         ['workstation'],
     'AT_GLAUCOMA':       ['workstation'],

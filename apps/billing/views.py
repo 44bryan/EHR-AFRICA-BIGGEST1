@@ -1613,10 +1613,15 @@ def pos_finalize(request, token_id):
                 notes='Auto-routed after POS payment confirmation',
             )
 
-    # Notify triage AFTER atomic block so DB is fully committed before browser fetches
+    # Notify ALL relevant queues after payment — instant live updates everywhere
     try:
         from apps.core.ws_notify import notify_queue as _ws_nq3
         _ws_nq3('opd')
+        _ws_nq3('cashier')
+        _ws_nq3('workstation')
+        _ws_nq3('invest')
+        _ws_nq3('lab')
+        _ws_nq3('pharmacy')
     except Exception:
         pass
 
@@ -2058,10 +2063,11 @@ def _bridge_work_order_to_clinical(wo, user):
     try:
         from apps.core.ws_notify import notify_queue
         if wo.category == ServiceCategory.INVESTIGATION:
-            notify_queue('investigation')
-            notify_queue('refraction')
+            notify_queue('invest')
+            notify_queue('workstation')
         elif wo.category == ServiceCategory.LABORATORY:
             notify_queue('lab')
+        notify_queue('cashier')  # cashier POS should also update
     except Exception:
         pass
 

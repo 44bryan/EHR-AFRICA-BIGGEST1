@@ -436,6 +436,16 @@ def investigation_order_view(request, consultation_pk):
                         'Auto-route after investigation order failed for order %s: %s', order.pk, exc,
                     )
 
+                # Notify WebSocket — doctor workstation loses patient, target gains patient
+                try:
+                    from apps.core.ws_notify import notify_queue as _ws_nq_ord
+                    _ws_nq_ord('workstation')
+                    _ws_nq_ord('invest')
+                    if not payment_waived and not _already_paid:
+                        _ws_nq_ord('cashier')
+                except Exception:
+                    pass
+
                 _route_msg = 'examiner queue (already paid)' if _already_paid else ('cashier for payment' if not payment_waived else 'examiner queue')
                 messages.success(
                     request,
@@ -2961,6 +2971,16 @@ def multi_exam_order_view(request, consultation_pk):
             except Exception:
                 pass
 
+            # Notify WebSocket — doctor workstation loses patient, target gains patient
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq_multi
+                _ws_nq_multi('workstation')
+                _ws_nq_multi('invest')
+                if _any_needs_payment:
+                    _ws_nq_multi('cashier')
+            except Exception:
+                pass
+
             names = ', '.join(o.investigation_type.name for o in created_orders)
             if _any_needs_payment:
                 _route_msg = 'cashier for payment'
@@ -3114,6 +3134,15 @@ def structured_result_view(request, pk):
                 if visit:
                     from apps.core.patient_flow import check_and_autoreturn_to_doctor
                     check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+            except Exception:
+                pass
+
+            # Notify WebSocket — result done, doctor workstation + invest update
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq_res
+                _ws_nq_res('workstation')
+                _ws_nq_res('invest')
+                _ws_nq_res('opd')
             except Exception:
                 pass
 
@@ -3281,6 +3310,15 @@ def combined_structured_result_view(request, patient_id):
                 if visit:
                     from apps.core.patient_flow import check_and_autoreturn_to_doctor
                     check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+            except Exception:
+                pass
+
+            # Notify WebSocket — results done, doctor workstation + invest update
+            try:
+                from apps.core.ws_notify import notify_queue as _ws_nq_cres
+                _ws_nq_cres('workstation')
+                _ws_nq_cres('invest')
+                _ws_nq_cres('opd')
             except Exception:
                 pass
 
