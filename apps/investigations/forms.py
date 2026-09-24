@@ -332,19 +332,72 @@ class FusionalVergenceResultForm(forms.Form):
     notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
 
 
+class VisualAcuityResultForm(forms.Form):
+    """Visual Acuity measurement — distance and near, aided and unaided."""
+    _va_widget = forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'})
+    # Distance VA
+    unaided_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/18'}))
+    unaided_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/18'}))
+    aided_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
+    aided_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/6'}))
+    pinhole_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/9'}))
+    pinhole_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/9'}))
+    # Near VA
+    near_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N6'}))
+    near_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N6'}))
+    chart_used = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Snellen / LogMAR / E-chart'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class LowVisionAssessmentForm(forms.Form):
+    """Low Vision Assessment — functional vision, magnification, aids."""
+    distance_va_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/60'}))
+    distance_va_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 6/60'}))
+    near_va_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N36'}))
+    near_va_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. N36'}))
+    contrast_sensitivity = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. Normal / Reduced'}))
+    magnification_required = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 4x'}))
+    aids_tried = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Magnifiers, telescopes, filters tried...'}), required=False)
+    aids_prescribed = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Aids prescribed...'}), required=False)
+    functional_goals = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2, 'placeholder': 'Reading, writing, mobility...'}), required=False)
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
+class ColourVisionResultForm(forms.Form):
+    """Colour Vision Test result."""
+    test_used = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ishihara / D-15 / Farnsworth'}))
+    plates_correct_od = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 14/17'}))
+    plates_correct_os = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'e.g. 14/17'}))
+    result_od = forms.ChoiceField(choices=[('', '—'), ('NORMAL', 'Normal'), ('DEFICIENT', 'Deficient')], required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    result_os = forms.ChoiceField(choices=[('', '—'), ('NORMAL', 'Normal'), ('DEFICIENT', 'Deficient')], required=False, widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    deficiency_type = forms.CharField(max_length=50, required=False, widget=forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Protan / Deutan / Tritan'}))
+    notes = forms.CharField(widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}), required=False)
+
+
 # Map investigation type codes to their structured form classes
 STRUCTURED_RESULT_FORMS = {
+    # Refraction exams
     'AUTOREF': AutorefractionResultForm,
+    'AUTO-REF': AutorefractionResultForm,       # DB code alias
     'SUBJ-REF': SubjectiveRefractionResultForm,
-    'DRY-REF': SubjectiveRefractionResultForm,  # Same structure
+    'REF': SubjectiveRefractionResultForm,       # DB code alias
+    'DRY-REF': SubjectiveRefractionResultForm,
     'CYCLO-REF': CycloplegicRefractionResultForm,
     'CL-ASSESS': ContactLensResultForm,
     'LENSOMETRY': LensometryResultForm,
+    'KERAT': AutorefractionResultForm,           # Keratometry uses autorefraction form (K readings)
+    'VA': VisualAcuityResultForm,                # Visual Acuity
+    'LVA': LowVisionAssessmentForm,              # Low Vision Assessment
+    'COL': ColourVisionResultForm,               # Colour Vision Test
+    # Orthoptics exams
     'COVER': CoverTestResultForm,
     'PRISM-COVER': CoverTestResultForm,
+    'MUSC-BAL': CoverTestResultForm,             # DB code alias (muscle balance)
     'NPC': NPCResultForm,
-    'NPA': NPCResultForm,  # Similar structure
+    'NPA': NPCResultForm,
     'STEREO': StereopsisResultForm,
+    'BIN-VIS': StereopsisResultForm,             # DB code alias (binocular vision)
     'MOTILITY': MotilityResultForm,
+    'HESS': MotilityResultForm,                  # Hess chart uses motility form
     'PRISM-BAR': FusionalVergenceResultForm,
 }

@@ -218,3 +218,22 @@ def va_css(value):
     if denom > 18:
         return 'text-danger fw-bold'
     return ''
+
+
+@register.filter
+def time_ampm(value):
+    """
+    Convert a 24-hour time string like "14:30" to "2:30 PM".
+    Accepts HH:MM or HH:MM:SS strings. Returns the original value if unparseable.
+    """
+    if not value:
+        return value
+    s = str(value).strip()
+    try:
+        parts = s.split(':')
+        h, m = int(parts[0]), int(parts[1])
+        suffix = 'AM' if h < 12 else 'PM'
+        h12 = h % 12 or 12
+        return f'{h12}:{m:02d} {suffix}'
+    except (ValueError, IndexError):
+        return s

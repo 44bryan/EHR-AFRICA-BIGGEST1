@@ -319,6 +319,13 @@ def check_and_autoreturn_to_doctor(visit, triggered_by=None):
                 from django.db import transaction as _pf_tx
                 from django.utils import timezone as _tz
 
+                # Persist room assignments across days
+                ServiceCounter.objects.filter(
+                    staff_assigned__isnull=False, is_active=True, is_deleted=False,
+                ).exclude(checked_in_date=_tz.localdate()).update(
+                    checked_in_date=_tz.localdate()
+                )
+
                 # Try to find the referring doctor's active counter
                 target_counter = None
                 if referring_doc:

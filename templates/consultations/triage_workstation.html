@@ -3,153 +3,85 @@
 
 {% block extra_css %}
 <style>
-/* ── Search modal ── */
-#triageSearchResults { position:absolute;z-index:1060;width:100%;background:#fff;border:1px solid #dee2e6;border-radius:0 0 8px 8px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;display:none; }
-#triageSearchResults .t-item { display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0; }
-#triageSearchResults .t-item:last-child { border-bottom:none; }
-#triageSearchResults .t-item:hover { background:#fff5f5; }
-#triageSearchResults .t-avatar { width:38px;height:38px;border-radius:50%;background:#dc3545;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
-#triageSearchBox { position:relative; }
-
-/* ── Patient cards ── */
-.triage-patient-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 14px 16px;
-  background: #fff;
-  transition: all .15s ease;
-  cursor: pointer;
-  position: relative;
-}
-.triage-patient-card:hover {
-  border-color: #93c5fd;
-  box-shadow: 0 2px 8px rgba(59,130,246,.12);
-}
-.triage-patient-card.is-next {
-  border-color: #22c55e;
-  background: linear-gradient(135deg, #f0fdf4, #fff);
-  box-shadow: 0 2px 8px rgba(34,197,94,.12);
-}
-.triage-patient-card.is-next::before {
-  content: 'NEXT';
-  position: absolute;
-  top: -1px;
-  right: 12px;
-  background: #16a34a;
-  color: #fff;
-  font-size: .6rem;
-  font-weight: 800;
-  padding: 2px 8px 3px;
-  border-radius: 0 0 6px 6px;
-  letter-spacing: .06em;
-}
-
-/* ── Queue position ── */
-.q-pos {
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: .8rem;
-  flex-shrink: 0;
-}
-.q-pos-1 { background: #16a34a; color: #fff; }
-.q-pos-n { background: #f1f5f9; color: #64748b; }
-
-/* ── Tier badges ── */
-.tier-vip     { background:#7c3aed; color:#fff; }
-.tier-express { background:#d97706; color:#fff; }
-.tier-std     { background:#e2e8f0; color:#475569; }
-
-/* ── Stats pill row ── */
-.stat-pill {
-  display: flex; align-items: center; gap: 8px;
-  background: #fff; border: 1px solid #e2e8f0;
-  border-radius: 10px; padding: 10px 16px;
-  flex: 1; min-width: 120px;
-}
-.stat-pill .stat-num { font-size: 1.4rem; font-weight: 800; line-height: 1; }
-.stat-pill .stat-lbl { font-size: .7rem; color: #64748b; line-height: 1.2; }
-
-/* ── History sidebar ── */
-.history-item {
-  display: flex; gap: 10px; padding: 10px 14px;
-  border-bottom: 1px solid #f1f5f9;
-  text-decoration: none; color: inherit;
-}
-.history-item:hover { background: #f8fafc; }
-.history-item:last-child { border-bottom: none; }
-
-/* ── Responsive ── */
-@media (max-width: 991px) {
-  .stat-pill { padding: 8px 12px; }
-  .stat-pill .stat-num { font-size: 1.1rem; }
-  .triage-patient-card { padding: 12px; }
-}
+  #triageSearchResults { position:absolute;z-index:1060;width:100%;background:#fff;border:1px solid #dee2e6;border-radius:0 0 8px 8px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:320px;overflow-y:auto;display:none; }
+  #triageSearchResults .t-item { display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0; }
+  #triageSearchResults .t-item:last-child { border-bottom:none; }
+  #triageSearchResults .t-item:hover { background:#fff5f5; }
+  #triageSearchResults .t-avatar { width:38px;height:38px;border-radius:50%;background:#dc3545;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
+  #triageSearchBox { position:relative; }
+  /* Queue position badge */
+  .queue-pos { display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:50%;font-size:.75rem;font-weight:700;
+    flex-shrink:0; }
+  .queue-pos-1  { background:#198754;color:#fff; }   /* green — next up */
+  .queue-pos-gt { background:#dee2e6;color:#495057; } /* grey  — later */
+  /* Row highlight for next-up patient */
+  tr.is-next-up { background:#f0fff4 !important; }
 </style>
 {% endblock %}
 
 {% block content %}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   HEADER — Nurse info + tier filter + search
-   ══════════════════════════════════════════════════════════════════════════════ #}
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
-    <h4 class="fw-bold mb-1">
-      {% if show_mode == 'VIP' %}<i class="bi bi-gem me-2" style="color:#7c3aed;"></i>VIP Triage
-      {% elif show_mode == 'EXPRESS' %}<i class="bi bi-lightning-charge-fill me-2 text-warning"></i>Express Triage
-      {% elif show_mode == 'STANDARD' %}<i class="bi bi-heart-pulse-fill me-2 text-danger"></i>Standard Triage
-      {% else %}<i class="bi bi-heart-pulse-fill me-2 text-danger"></i>Triage Workstation{% endif %}
+    <h4 class="fw-bold mb-0">{% if show_mode == 'VIP' %}VIP Triage Workstation{% elif show_mode == 'EXPRESS' %}Express Triage Workstation{% elif show_mode == 'STANDARD' %}Standard Triage Workstation{% else %}All-Tier Triage Workstation{% endif %}
     </h4>
-    <div class="text-muted small d-flex align-items-center gap-2 flex-wrap">
-      <span>{{ request.user.full_name }}</span>
-      <span>&bull;</span>
-      <span>{{ today|date:"l, d M Y" }}</span>
+    <div class="text-muted small">
+      {{ request.user.full_name }} &bull; {{ today|date:"l, d F Y" }}
       {% if assigned_counter %}
-      <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25" style="font-size:.7rem;">
-        <i class="bi bi-display me-1"></i>{{ assigned_counter.name }}
-      </span>
+      &bull; <span class="badge bg-primary">{{ assigned_counter.name }}</span>
+      {% else %}
+      &bull; <span class="badge bg-secondary">No counter assigned</span>
       {% endif %}
     </div>
   </div>
-
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    {# Search button #}
-    <button class="btn btn-danger btn-sm fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#triagePatientModal">
-      <i class="bi bi-search me-1"></i>Find Patient
+  {# ── Tier filter + Triage button ── #}
+  <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+    <button class="btn btn-light btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#triagePatientModal">
+      <i class="bi bi-heart-pulse me-1 text-danger"></i>Triage Patient
     </button>
-    {# Tier filter — supervisors only #}
+    {# Tier filter buttons — only shown for head-of-triage / supervisors. Regular nurses are locked to their own tier. #}
     {% if is_head_of_triage %}
-    <div class="btn-group btn-group-sm" role="group">
-      <a href="?tier=STANDARD" class="btn {% if show_mode == 'STANDARD' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Standard</a>
-      <a href="?tier=EXPRESS" class="btn {% if show_mode == 'EXPRESS' %}btn-warning{% else %}btn-outline-secondary{% endif %}">Express</a>
-      <a href="?tier=VIP" class="btn {% if show_mode == 'VIP' %}btn-primary{% else %}btn-outline-secondary{% endif %}" style="{% if show_mode == 'VIP' %}background:#7c3aed;border-color:#7c3aed;{% endif %}">VIP</a>
-      <a href="?tier=ALL" class="btn {% if show_mode == 'ALL' %}btn-dark{% else %}btn-outline-secondary{% endif %}">All</a>
-    </div>
+    <div class="vr"></div>
+    <a href="?tier=STANDARD"
+       class="btn btn-sm {% if show_mode == 'STANDARD' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-person me-1"></i>Standard
+    </a>
+    <a href="?tier=EXPRESS"
+       class="btn btn-sm {% if show_mode == 'EXPRESS' %}active{% else %}btn-outline-warning{% endif %}"
+       style="{% if show_mode == 'EXPRESS' %}background:#d97706;color:white;border-color:#d97706;{% else %}color:#d97706;{% endif %}">
+      <i class="bi bi-lightning me-1"></i>Express
+    </a>
+    <a href="?tier=VIP"
+       class="btn btn-sm {% if show_mode == 'VIP' %}btn-purple{% else %}btn-outline-secondary{% endif %}"
+       style="{% if show_mode == 'VIP' %}background:#7c3aed;color:white;border-color:#7c3aed;{% endif %}">
+      <i class="bi bi-gem me-1"></i>VIP Only
+    </a>
+    <a href="?tier=ALL"
+       class="btn btn-sm {% if show_mode == 'ALL' %}btn-dark{% else %}btn-outline-dark{% endif %}">
+      <i class="bi bi-grid me-1"></i>All Tiers
+    </a>
     {% endif %}
   </div>
 </div>
 
-{% include "components/qr_scan_bar.html" with scan_url_prefix="/patients/" scan_url_suffix="/triage-start/" placeholder="Scan patient card to open triage immediately..." %}
+{% include "components/qr_scan_bar.html" with scan_url_prefix="/patients/" scan_url_suffix="/triage-start/" placeholder="Scan patient card to open triage immediately…" %}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   MODALS — Search + Skip Queue
-   ══════════════════════════════════════════════════════════════════════════════ #}
-
-{# Search Modal #}
-<div class="modal fade" id="triagePatientModal" tabindex="-1" aria-hidden="true">
+{# ══ Triage Patient Modal ══ #}
+<div class="modal fade" id="triagePatientModal" tabindex="-1" aria-labelledby="triagePatientModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg">
-      <div class="modal-header py-2 border-0" style="background:#fef2f2;">
-        <h6 class="modal-title fw-bold text-dark">
-          <i class="bi bi-search me-2 text-danger"></i>Find Patient for Triage
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold text-dark" id="triagePatientModalLabel">
+          <i class="bi bi-heart-pulse me-2 text-danger"></i>Triage a Patient
         </h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <p class="text-muted small mb-3">Search by name, patient ID or phone number. No queue token needed.</p>
         <div id="triageSearchBox">
-          <input type="text" id="triageSearchInput" class="form-control form-control-lg"
-                 placeholder="Name, patient ID, or phone..." autocomplete="off">
+          <input type="text" id="triageSearchInput" class="form-control"
+                 placeholder="Type patient name, ID or phone…" autocomplete="off">
           <div id="triageSearchResults"></div>
         </div>
       </div>
@@ -157,125 +89,141 @@
   </div>
 </div>
 
-{# Skip Queue Modal #}
-<div class="modal fade" id="skipQueueModal" tabindex="-1" aria-hidden="true">
+{# ══ Skip-Queue Reason Modal ══ #}
+<div class="modal fade" id="skipQueueModal" tabindex="-1" aria-labelledby="skipQueueModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg">
-      <div class="modal-header py-2 border-0" style="background:#fefce8;">
-        <h6 class="modal-title fw-bold text-dark">
-          <i class="bi bi-exclamation-triangle me-2 text-warning"></i>Skipping Queue — Reason Required
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom" style="background:#f8f9fa;">
+        <h6 class="modal-title fw-bold text-dark" id="skipQueueModalLabel">
+          <i class="bi bi-exclamation-triangle me-2 text-warning"></i>Queue Skip — Reason Required
         </h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-warning py-2 small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
           <strong id="skipPatientName">This patient</strong> is not next in queue.
           <span id="skipAheadMsg"></span>
-          An audit reason is required.
+          Please give an audit reason for skipping ahead.
         </div>
+        <label class="form-label fw-semibold">Reason for skipping ahead <span class="text-danger">*</span></label>
         <textarea id="skipReasonText" class="form-control" rows="3"
-                  placeholder="e.g. Urgent condition, interpreter available now..."></textarea>
+                  placeholder="e.g. Patient's condition is urgent, patient requested priority, interpreter available now…"></textarea>
         <div class="invalid-feedback" id="skipReasonError">Please enter a reason.</div>
       </div>
-      <div class="modal-footer py-2 border-0">
+      <div class="modal-footer py-2">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-warning btn-sm fw-bold" id="skipConfirmBtn">
-          <i class="bi bi-check2 me-1"></i>Log Reason & Proceed
+          <i class="bi bi-check2 me-1"></i>Record Reason &amp; Proceed
         </button>
       </div>
     </div>
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   STATS ROW
-   ══════════════════════════════════════════════════════════════════════════════ #}
 <div id="triage-queue-live">
-
-<div class="d-flex gap-2 mb-4 flex-wrap">
-  <div class="stat-pill">
-    <div class="stat-num text-warning">{% if show_mode == 'STANDARD' or show_mode == 'ALL' %}{{ parameters_queue|length }}{% else %}{{ vip_params_queue|length }}{% endif %}</div>
-    <div class="stat-lbl">{% if show_mode == 'VIP' %}VIP{% elif show_mode == 'EXPRESS' %}Express{% else %}Standard{% endif %}<br>Waiting</div>
+{# ── Stats Strip ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold text-warning mb-0">{% if show_mode == 'STANDARD' or show_mode == 'ALL' %}{{ parameters_queue|length }}{% else %}{{ vip_params_queue|length }}{% endif %}</div>
+      <div class="text-muted small mt-1">{% if show_mode == 'VIP' %}VIP Waiting{% elif show_mode == 'EXPRESS' %}Express / FT Waiting{% else %}Standard Waiting{% endif %}</div>
+      <div class="text-muted" style="font-size:.7rem;">{% if show_mode == 'VIP' %}{{ total_vip_only }}{% elif show_mode == 'EXPRESS' %}{{ total_express }}{% else %}{{ total_standard }}{% endif %} total today</div>
+    </div>
   </div>
   {% if show_mode == 'ALL' %}
-  <div class="stat-pill">
-    <div class="stat-num" style="color:#7c3aed;">{{ vip_params_queue|length }}</div>
-    <div class="stat-lbl">VIP / Express<br>Waiting</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold mb-0">{{ vip_params_queue|length }}</div>
+      <div class="text-muted small mt-1">VIP / Express Waiting</div>
+      <div class="text-muted" style="font-size:.7rem;">{{ total_vip_express }} total today</div>
+    </div>
   </div>
   {% endif %}
-  <div class="stat-pill">
-    <div class="stat-num text-success">{{ triaged_today }}</div>
-    <div class="stat-lbl">Triaged<br>by Me</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold text-success mb-0">{{ triaged_today }}</div>
+      <div class="text-muted small mt-1">Triaged by Me Today</div>
+    </div>
   </div>
-  <div class="stat-pill">
-    <div class="stat-num text-info">{{ total_waiting }}</div>
-    <div class="stat-lbl">Total in<br>My View</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold text-info mb-0">{{ total_waiting }}</div>
+      <div class="text-muted small mt-1">Currently in My View</div>
+    </div>
   </div>
-  <div class="stat-pill">
-    <div class="stat-num text-danger">{{ emergency_pathway_today }}</div>
-    <div class="stat-lbl">Emergency<br>Pathway</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold text-danger mb-0">{{ emergency_pathway_today }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-exclamation-octagon-fill text-danger me-1"></i>Emergency Pathway</div>
+      <div class="text-muted" style="font-size:.7rem;">Fast-track registrations today</div>
+    </div>
   </div>
-  <div class="stat-pill">
-    <div class="stat-num text-warning">{{ ai_urgent_count }}</div>
-    <div class="stat-lbl">Urgent /<br>{{ ai_emergency_count }} emerg.</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3 h-100">
+      <div class="h2 fw-bold text-warning mb-0">{{ ai_urgent_count }}</div>
+      <div class="text-muted small mt-1"><i class="bi bi-exclamation-circle text-warning me-1"></i>Urgent (My Triage)</div>
+      <div class="text-muted" style="font-size:.7rem;">{{ ai_emergency_count }} emergency flagged</div>
+    </div>
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   MAIN — Two columns: Queue (left) + History (right)
-   ══════════════════════════════════════════════════════════════════════════════ #}
+{# ══ Two-column layout: queues (left) + history (right) ══ #}
 <div class="row g-3">
 <div class="col-lg-8 col-12">
 
 {% if show_mode == 'VIP' and not assigned_counter and nurse_patient_tier != 'VIP' %}
 <div class="alert alert-warning py-2 small mb-3">
   <i class="bi bi-info-circle me-1"></i>
-  You are not assigned to a VIP counter. Ask your supervisor to assign you.
+  You are not assigned to a counter. Ask your supervisor to assign you to a VIP Parameters counter, or set your Patient Tier to <strong>VIP Only</strong> in the Staff Hub.
 </div>
 {% elif show_mode == 'EXPRESS' and not assigned_counter and nurse_patient_tier != 'EXPRESS' %}
 <div class="alert alert-warning py-2 small mb-3">
   <i class="bi bi-info-circle me-1"></i>
-  You are not assigned to an Express counter. Ask your supervisor.
+  You are not assigned to an Express counter. Ask your supervisor to set your Patient Tier to <strong>Express</strong> in the Staff Hub.
 </div>
 {% endif %}
 
-{# ── No-QMS mode: simple visit list ────────────────────────────────────────── #}
+{# ══ No-QMS: visits waiting at triage ══ #}
 {% if not qms_on %}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold text-danger">
       <i class="bi bi-people-fill me-2"></i>Patients Waiting for Triage
     </h6>
-    <span class="badge bg-danger rounded-pill">{{ triage_visits|length }}</span>
+    <span class="badge bg-danger">{{ triage_visits|length }}</span>
   </div>
   {% if triage_visits %}
-  <div class="p-3">
-    <div class="d-flex flex-column gap-2">
-      {% for v in triage_visits %}
-      <a href="{% url 'patients:triage' visit_number=v.visit_number %}" class="text-decoration-none">
-        <div class="triage-patient-card {% if forloop.first %}is-next{% endif %}">
-          <div class="d-flex align-items-center gap-3">
-            <div class="q-pos {% if forloop.first %}q-pos-1{% else %}q-pos-n{% endif %}">{{ forloop.counter }}</div>
-            <div style="flex:1;min-width:0;">
-              <div class="fw-bold" style="font-size:.9rem;">{{ v.patient.full_name }}</div>
-              <div class="text-muted" style="font-size:.72rem;">
-                {{ v.patient.patient_id }}
-                {% if v.chief_complaint %}&bull; {{ v.chief_complaint|truncatechars:40 }}{% endif %}
-              </div>
-            </div>
-            <div class="text-end" style="flex-shrink:0;">
-              {% if v.visit_type == 'NEW' %}<span class="badge bg-primary" style="font-size:.65rem;">New</span>
-              {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-secondary" style="font-size:.65rem;">Follow-up</span>
-              {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger" style="font-size:.65rem;">Emergency</span>
-              {% else %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">{{ v.get_visit_type_display }}</span>{% endif %}
-              <div class="text-muted mt-1" style="font-size:.68rem;">{{ v.visit_date|time:"H:i" }}</div>
-            </div>
-            <i class="bi bi-chevron-right text-muted"></i>
-          </div>
-        </div>
-      </a>
-      {% endfor %}
-    </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>#</th><th>Patient</th><th>Type</th><th>Complaint</th><th>Arrived</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for v in triage_visits %}
+        <tr>
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ v.patient.patient_id }}</div>
+          </td>
+          <td>
+            {% if v.visit_type == 'NEW' %}<span class="badge bg-primary">New</span>
+            {% elif v.visit_type == 'FOLLOW_UP' %}<span class="badge bg-secondary">Follow-up</span>
+            {% elif v.visit_type == 'EMERGENCY' %}<span class="badge bg-danger">Emergency</span>
+            {% else %}<span class="badge bg-warning text-dark">{{ v.get_visit_type_display }}</span>{% endif %}
+          </td>
+          <td class="text-muted" style="max-width:140px;">{{ v.chief_complaint|truncatechars:50 }}</td>
+          <td class="text-muted">{{ v.visit_date|time:"H:i" }}</td>
+          <td>
+            <a href="{% url 'patients:triage' visit_number=v.visit_number %}" class="btn btn-sm btn-danger">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
   <div class="card-body text-center text-muted py-5">
@@ -286,144 +234,222 @@
 </div>
 {% endif %}
 
-{# ── QMS: Standard Parameters Queue ────────────────────────────────────────── #}
+{# ══ Standard Parameters Queue (QMS mode) ══ #}
 {% if show_mode == 'STANDARD' or show_mode == 'ALL' and qms_on %}
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold">
-      <i class="bi bi-people-fill me-2 text-primary"></i>Standard Parameters
+      <i class="bi bi-people-fill me-2 text-primary"></i>Standard — Parameters Queue
     </h6>
     <span class="badge bg-primary rounded-pill">{{ parameters_queue|length }}</span>
   </div>
   {% if parameters_queue %}
-  <div class="p-3">
-    <div class="d-flex flex-column gap-2">
-      {% for tok in parameters_queue %}
-      <div class="triage-patient-card {% if forloop.first %}is-next{% endif %}"
-           {% if tok.patient and tok.ws_visit %}
-           data-position="{{ forloop.counter }}"
-           data-token-id="{{ tok.pk }}"
-           data-patient-name="{{ tok.display_name }}"
-           data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
-           onclick="handleTriageClick(this)"
-           {% elif tok.patient %}
-           data-position="{{ forloop.counter }}"
-           data-token-id="{{ tok.pk }}"
-           data-patient-name="{{ tok.display_name }}"
-           data-triage-url="{% url 'patients:triage_start' patient_id=tok.patient.patient_id %}"
-           onclick="handleTriageClick(this)"
-           {% endif %}>
-        <div class="d-flex align-items-center gap-3">
-          <div class="q-pos {% if forloop.first %}q-pos-1{% else %}q-pos-n{% endif %}">{{ forloop.counter }}</div>
-          <div style="flex:1;min-width:0;">
-            <div class="fw-bold" style="font-size:.9rem;">
-              {{ tok.display_name }}
-              <span class="text-muted fw-normal" style="font-size:.72rem;">{{ tok.token_number }}</span>
-            </div>
-            <div class="text-muted" style="font-size:.72rem;">
-              {% if tok.patient %}{{ tok.patient.patient_id }}{% endif %}
-              {% if tok.ws_visit and tok.ws_visit.chief_complaint %}&bull; {{ tok.ws_visit.chief_complaint|truncatechars:40 }}{% endif %}
-            </div>
-          </div>
-          <div class="text-end" style="flex-shrink:0;">
-            <span class="badge tier-std" style="font-size:.6rem;">{{ tok.ws_visit.get_service_tier_display|default:"STD" }}</span>
-            {% if is_head_of_triage and tok.ws_visit %}
-            <div class="text-muted mt-1" style="font-size:.62rem;">{{ tok.ws_visit.get_status_display }}</div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:36px;" class="d-none d-sm-table-cell">#</th>
+          <th>Token</th>
+          <th>Patient</th>
+          <th class="d-none d-md-table-cell">Tier</th>
+          <th class="d-none d-sm-table-cell">Waiting Since</th>
+          <th class="d-none d-md-table-cell">Chief Complaint</th>
+          {% if is_head_of_triage %}<th class="d-none d-lg-table-cell">Location</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tok in parameters_queue %}
+        <tr class="{% if forloop.first %}is-next-up{% endif %}">
+          <td class="d-none d-sm-table-cell">
+            <span class="queue-pos {% if forloop.first %}queue-pos-1{% else %}queue-pos-gt{% endif %}">
+              {{ forloop.counter }}
+            </span>
+          </td>
+          <td>
+            <span class="badge bg-primary">{{ tok.display_token_number }}</span>
+            {% if forloop.first %}
+              <div class="text-success" style="font-size:.65rem;font-weight:700;">NEXT UP</div>
             {% endif %}
-            <div class="text-muted mt-1" style="font-size:.68rem;">{{ tok.called_at|time:"H:i"|default:tok.created_at|time:"H:i" }}</div>
-          </div>
-          {% if tok.patient %}
-          <div style="width:32px;text-align:center;">
-            <i class="bi bi-chevron-right text-primary"></i>
-          </div>
-          {% else %}
-          <span class="text-muted small">Walk-in</span>
+          </td>
+          <td class="fw-semibold">
+            {{ tok.display_name }}
+            {% if tok.patient %}
+            <div class="text-muted" style="font-size:.72rem;">{{ tok.patient.patient_id }}</div>
+            {% endif %}
+          </td>
+          <td class="d-none d-md-table-cell">
+            {% if tok.service_tier == 'EXPRESS' %}
+              <span class="badge bg-info text-dark">Express</span>
+            {% else %}
+              <span class="badge bg-secondary">Standard</span>
+            {% endif %}
+          </td>
+          <td class="text-muted d-none d-sm-table-cell">{{ tok.issued_at|time:"H:i" }}</td>
+          <td class="text-muted d-none d-md-table-cell">
+            {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
+          </td>
+          {% if is_head_of_triage %}
+          <td>
+            {% if tok.ws_visit %}
+              <span class="badge bg-light text-dark border" style="font-size:.65rem;">
+                {{ tok.ws_visit.get_status_display }}
+              </span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
           {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
+          <td>
+            {% if tok.patient and tok.ws_visit %}
+            <button type="button"
+               class="btn btn-sm btn-danger triage-btn"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </button>
+            {% elif tok.patient %}
+            <button type="button"
+               class="btn btn-sm btn-danger triage-btn"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage_start' patient_id=tok.patient.patient_id %}">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </button>
+            {% else %}
+            <span class="text-muted small">Walk-in</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
   <div class="card-body text-center text-muted py-5">
     <i class="bi bi-check-circle fs-2 d-block mb-2 text-success"></i>
-    No standard patients waiting.
+    No standard patients waiting at Parameters.
   </div>
   {% endif %}
 </div>
 {% endif %}
 
-{# ── QMS: VIP / Express Parameters Queue ───────────────────────────────────── #}
+{# ══ VIP / Express Parameters Queue ══ #}
 {% if show_mode != 'STANDARD' %}
 {% if show_mode == 'EXPRESS' %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+  <div class="card-header bg-light border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold">
-      <i class="bi bi-lightning-charge-fill me-2 text-warning"></i>Express Parameters
+      <i class="bi bi-lightning me-2 text-warning"></i>Express — Parameters
     </h6>
     <span class="badge rounded-pill bg-warning text-dark">{{ vip_params_queue|length }}</span>
   </div>
 {% else %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+  <div class="card-header bg-light border-bottom d-flex justify-content-between align-items-center py-2">
     <h6 class="mb-0 fw-semibold">
-      <i class="bi bi-gem me-2" style="color:#7c3aed;"></i>{% if show_mode == 'VIP' %}VIP Parameters{% else %}VIP / Express Parameters{% endif %}
+      <i class="bi bi-gem me-2" style="color:#7c3aed;"></i>{% if show_mode == 'VIP' %}VIP — Parameters{% else %}VIP / Express — Parameters{% endif %}
     </h6>
     <span class="badge rounded-pill" style="background:#7c3aed;">{{ vip_params_queue|length }}</span>
   </div>
 {% endif %}
   {% if vip_params_queue %}
-  <div class="p-3">
-    <div class="d-flex flex-column gap-2">
-      {% for tok in vip_params_queue %}
-      <div class="triage-patient-card {% if forloop.first %}is-next{% endif %}"
-           {% if tok.patient and tok.ws_visit %}
-           data-position="{{ forloop.counter }}"
-           data-token-id="{{ tok.pk }}"
-           data-patient-name="{{ tok.display_name }}"
-           data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}"
-           onclick="handleTriageClick(this)"
-           {% elif tok.patient %}
-           data-position="{{ forloop.counter }}"
-           data-token-id="{{ tok.pk }}"
-           data-patient-name="{{ tok.display_name }}"
-           data-triage-url="{% url 'patients:triage_start' patient_id=tok.patient.patient_id %}"
-           onclick="handleTriageClick(this)"
-           {% endif %}>
-        <div class="d-flex align-items-center gap-3">
-          <div class="q-pos {% if forloop.first %}q-pos-1{% else %}q-pos-n{% endif %}">{{ forloop.counter }}</div>
-          <div style="flex:1;min-width:0;">
-            <div class="fw-bold" style="font-size:.9rem;">
-              {{ tok.display_name }}
-              <span class="text-muted fw-normal" style="font-size:.72rem;">{{ tok.token_number }}</span>
-            </div>
-            <div class="text-muted" style="font-size:.72rem;">
-              {% if tok.patient %}{{ tok.patient.patient_id }}{% endif %}
-              {% if tok.ws_visit and tok.ws_visit.chief_complaint %}&bull; {{ tok.ws_visit.chief_complaint|truncatechars:40 }}{% endif %}
-            </div>
-          </div>
-          <div class="text-end" style="flex-shrink:0;">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:36px;" class="d-none d-sm-table-cell">#</th>
+          <th>Token</th>
+          <th>Patient</th>
+          <th class="d-none d-md-table-cell">Tier</th>
+          <th class="d-none d-sm-table-cell">Since</th>
+          <th class="d-none d-md-table-cell">Chief Complaint</th>
+          {% if is_head_of_triage %}<th class="d-none d-lg-table-cell">Location</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tok in vip_params_queue %}
+        <tr class="{% if forloop.first %}is-next-up{% endif %}"
+            style="{% if tok.service_tier == 'VIP' and not forloop.first %}background:#f5f3ff;{% endif %}">
+          <td class="d-none d-sm-table-cell">
+            <span class="queue-pos {% if forloop.first %}queue-pos-1{% else %}queue-pos-gt{% endif %}">
+              {{ forloop.counter }}
+            </span>
+          </td>
+          <td>
+            <span class="badge"
+                  style="background:{% if tok.service_tier == 'VIP' %}#7c3aed{% elif tok.service_tier == 'EXPRESS' %}#d97706{% else %}#0891b2{% endif %};">
+              {{ tok.display_token_number }}
+            </span>
+            {% if forloop.first %}
+              <div class="text-success" style="font-size:.65rem;font-weight:700;">NEXT UP</div>
+            {% endif %}
+          </td>
+          <td class="fw-semibold">
+            {{ tok.display_name }}
+            {% if tok.patient %}
+            <div class="text-muted" style="font-size:.72rem;">{{ tok.patient.patient_id }}</div>
+            {% endif %}
+          </td>
+          <td class="d-none d-md-table-cell">
+            {% if tok.service_tier == 'VIP' %}
+              <span class="badge fw-bold" style="background:#7c3aed;">
+                <i class="bi bi-star-fill me-1"></i>VIP
+              </span>
+            {% else %}
+              <span class="badge bg-info text-dark fw-bold">
+                <i class="bi bi-lightning me-1"></i>Express
+              </span>
+            {% endif %}
+          </td>
+          <td class="text-muted d-none d-sm-table-cell">{{ tok.issued_at|time:"H:i" }}</td>
+          <td class="text-muted d-none d-md-table-cell">
+            {% if tok.ws_visit %}{{ tok.ws_visit.chief_complaint|truncatechars:40|default:"—" }}{% else %}—{% endif %}
+          </td>
+          {% if is_head_of_triage %}
+          <td class="d-none d-lg-table-cell">
             {% if tok.ws_visit %}
-            {% if tok.ws_visit.service_tier == 'VIP' %}<span class="badge tier-vip" style="font-size:.6rem;">VIP</span>
-            {% elif tok.ws_visit.service_tier == 'EXPRESS' %}<span class="badge tier-express" style="font-size:.6rem;">Express</span>
-            {% else %}<span class="badge tier-std" style="font-size:.6rem;">{{ tok.ws_visit.get_service_tier_display }}</span>{% endif %}
-            {% if is_head_of_triage %}
-            <div class="text-muted mt-1" style="font-size:.62rem;">{{ tok.ws_visit.get_status_display }}</div>
+              <span class="badge bg-light text-dark border" style="font-size:.65rem;">
+                {{ tok.ws_visit.get_status_display }}
+              </span>
+            {% else %}
+              <span class="text-muted small">—</span>
             {% endif %}
-            {% endif %}
-            <div class="text-muted mt-1" style="font-size:.68rem;">{{ tok.called_at|time:"H:i"|default:tok.created_at|time:"H:i" }}</div>
-          </div>
-          {% if tok.patient %}
-          <div style="width:32px;text-align:center;">
-            <i class="bi bi-chevron-right" style="color:#7c3aed;"></i>
-          </div>
-          {% else %}
-          <span class="text-muted small">Walk-in</span>
+          </td>
           {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
+          <td>
+            {% if tok.patient and tok.ws_visit %}
+            <button type="button"
+               class="btn btn-sm fw-bold triage-btn"
+               style="background:#7c3aed;color:white;border:none;"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage' visit_number=tok.ws_visit.visit_number %}">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </button>
+            {% elif tok.patient %}
+            <button type="button"
+               class="btn btn-sm fw-bold triage-btn"
+               style="background:#7c3aed;color:white;border:none;"
+               data-position="{{ forloop.counter }}"
+               data-token-id="{{ tok.pk }}"
+               data-patient-name="{{ tok.display_name }}"
+               data-triage-url="{% url 'patients:triage_start' patient_id=tok.patient.patient_id %}">
+              <i class="bi bi-heart-pulse me-1"></i>Record Vitals
+            </button>
+            {% else %}
+            <span class="text-muted small">Walk-in</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
   <div class="card-body text-center text-muted py-5">
@@ -436,48 +462,51 @@
 </div>
 {% endif %}
 
-</div>{# /col-lg-8 #}
+</div>{# /col-lg-8 left column #}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   RIGHT COLUMN — My Triage History
-   ══════════════════════════════════════════════════════════════════════════════ #}
+{# ══ Right column: Today's triage history ══ #}
 <div class="col-lg-4 col-12">
   <div class="card border-0 shadow-sm">
     <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-      <h6 class="mb-0 fw-semibold" style="font-size:.85rem;">
-        <i class="bi bi-clock-history me-2 text-muted"></i>My Triage Today
+      <h6 class="mb-0 fw-semibold">
+        <i class="bi bi-clock-history me-2 text-danger"></i>My Triage Today
       </h6>
-      <span class="badge bg-light text-dark border">{{ triaged_today }}</span>
+      <span class="badge bg-danger rounded-pill">{{ triaged_today }}</span>
     </div>
     {% if triaged_visits %}
-    <div style="max-height:560px;overflow-y:auto;">
+    <div class="list-group list-group-flush" style="max-height:520px;overflow-y:auto;">
       {% for v in triaged_visits %}
-      <a href="{% url 'patients:visit_detail' visit_number=v.visit_number %}" class="history-item">
-        <div style="flex:1;min-width:0;">
-          <div class="fw-semibold" style="font-size:.82rem;">{{ v.patient.full_name }}</div>
-          <div class="text-muted" style="font-size:.68rem;">
-            {{ v.patient.patient_id }}
-            {% if v.chief_complaint %}&bull; {{ v.chief_complaint|truncatechars:25 }}{% endif %}
+      <a href="{% url 'patients:visit_detail' visit_number=v.visit_number %}"
+         class="list-group-item list-group-item-action py-2 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-semibold" style="font-size:.85rem;">{{ v.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">
+              {{ v.patient.patient_id }}
+              {% if v.chief_complaint %}&nbsp;&bull;&nbsp;{{ v.chief_complaint|truncatechars:30 }}{% endif %}
+            </div>
           </div>
-          {% if v.vital_signs %}
-          <div class="d-flex gap-2 flex-wrap mt-1" style="font-size:.65rem;color:#94a3b8;">
-            {% if v.vital_signs.blood_pressure %}<span>BP: {{ v.vital_signs.blood_pressure }}</span>{% endif %}
-            {% if v.vital_signs.temperature %}<span>{{ v.vital_signs.temperature }}°C</span>{% endif %}
-            {% if v.vital_signs.pulse %}<span>{{ v.vital_signs.pulse }}bpm</span>{% endif %}
+          <div class="text-end ms-2" style="flex-shrink:0;">
+            <div style="font-size:.72rem;color:#64748b;">{{ v.visit_date|time:"H:i" }}</div>
+            <span class="badge bg-light text-dark border" style="font-size:.62rem;">
+              {{ v.get_status_display }}
+            </span>
           </div>
-          {% endif %}
         </div>
-        <div class="text-end" style="flex-shrink:0;">
-          <div style="font-size:.68rem;color:#94a3b8;">{{ v.visit_date|time:"H:i" }}</div>
-          <span class="badge bg-light text-dark border" style="font-size:.58rem;">{{ v.get_status_display }}</span>
+        {% if v.vital_signs %}
+        <div class="mt-1 d-flex gap-2 flex-wrap" style="font-size:.68rem;color:#64748b;">
+          {% if v.vital_signs.blood_pressure %}<span><i class="bi bi-heart-pulse me-1"></i>BP: {{ v.vital_signs.blood_pressure }}</span>{% endif %}
+          {% if v.vital_signs.temperature %}<span><i class="bi bi-thermometer me-1"></i>{{ v.vital_signs.temperature }}°C</span>{% endif %}
+          {% if v.vital_signs.pulse %}<span><i class="bi bi-activity me-1"></i>{{ v.vital_signs.pulse }}bpm</span>{% endif %}
         </div>
+        {% endif %}
       </a>
       {% endfor %}
     </div>
     {% else %}
     <div class="card-body text-center text-muted py-5">
-      <i class="bi bi-clipboard2-pulse fs-2 d-block mb-2 text-muted"></i>
-      <span style="font-size:.85rem;">No patients triaged yet.</span>
+      <i class="bi bi-clipboard2-pulse fs-2 d-block mb-2"></i>
+      No patients triaged yet today.
     </div>
     {% endif %}
   </div>
@@ -490,79 +519,11 @@
 
 {% block extra_js %}
 <script>
-// Session slot for multi-session middleware (?s=N)
-var _slot = new URLSearchParams(window.location.search).get('s') || '';
-
-function _slotUrl(url) {
-  if (!url) return url;
-  if (_slot && _slot !== '1') {
-    url += (url.indexOf('?') === -1 ? '?' : '&') + 's=' + _slot;
-  }
-  return url;
-}
-
-// ── Triage card click — unified handler with skip-queue audit ────────────────
-function handleTriageClick(card) {
-  var url = card.dataset.triageUrl;
-  if (!url) return;
-
-  var pos = parseInt(card.dataset.position || '1', 10);
-  var name = card.dataset.patientName || 'This patient';
-
-  // If not first in queue, require a skip reason
-  if (pos > 1) {
-    var skipModal = document.getElementById('skipQueueModal');
-    if (skipModal) {
-      document.getElementById('skipPatientName').textContent = name;
-      document.getElementById('skipAheadMsg').textContent =
-        'They are #' + pos + ' in the queue (' + (pos - 1) + ' patient(s) ahead).';
-
-      var confirmBtn = document.getElementById('skipConfirmBtn');
-      // Remove old listeners by cloning
-      var newBtn = confirmBtn.cloneNode(true);
-      confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-
-      newBtn.addEventListener('click', function () {
-        var reason = document.getElementById('skipReasonText').value.trim();
-        if (!reason) {
-          document.getElementById('skipReasonText').classList.add('is-invalid');
-          return;
-        }
-        // Log skip reason via AJAX then navigate
-        var tokenId = card.dataset.tokenId || '';
-        fetch('/consultations/triage-skip-log/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
-            'X-Session-Slot': _slot || '1',
-          },
-          body: JSON.stringify({ token_id: tokenId, reason: reason, position: pos }),
-        }).catch(function(){}).finally(function () {
-          window.location.href = _slotUrl(url);
-        });
-      });
-
-      var bsModal = new bootstrap.Modal(skipModal);
-      bsModal.show();
-      return;
-    }
-  }
-
-  window.location.href = _slotUrl(url);
-}
-
-// ── WebSocket live refresh ───────────────────────────────────────────────────
+// WebSocket live refresh — partial DOM swap
 (function(){
   var QID='triage-queue-live',ROOMS=['opd'],_busy=false,_pend=false,_fb;
   function isModal(){return !!document.querySelector('.modal.show');}
-  function toast(){
-    var w=document.getElementById('_ehr_n');
-    if(!w){w=document.createElement('div');w.id='_ehr_n';w.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;';document.body.appendChild(w);}
-    clearTimeout(w._t);
-    w.innerHTML='<div style="background:#16a34a;color:#fff;padding:10px 18px;border-radius:10px;font-size:.82rem;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px"><i class="bi bi-bell-fill"></i>&nbsp;New patient arrived</div>';
-    w._t=setTimeout(function(){w.innerHTML='';},3500);
-  }
+  function toast(){var w=document.getElementById('_ehr_n');if(!w){w=document.createElement('div');w.id='_ehr_n';w.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;';document.body.appendChild(w);}clearTimeout(w._t);w.innerHTML='<div style="background:#198754;color:#fff;padding:10px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px"><i class="bi bi-bell-fill"></i>&nbsp;New patient for triage</div>';w._t=setTimeout(function(){w.innerHTML='';},3500);}
   function beep(){try{var c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(.2,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.2);o.start();o.stop(c.currentTime+.2);}catch(e){}}
   function swap(){
     if(_busy){_pend=true;return;}
@@ -570,12 +531,7 @@ function handleTriageClick(card) {
     _busy=true;
     fetch(location.href,{credentials:'same-origin'})
       .then(function(r){return r.text();})
-      .then(function(h){
-        var doc=new DOMParser().parseFromString(h,'text/html');
-        var n=doc.getElementById(QID);
-        if(n){el.innerHTML=n.innerHTML;beep();toast();}
-        else{location.reload();}
-      })
+      .then(function(h){var doc=new DOMParser().parseFromString(h,'text/html');var n=doc.getElementById(QID);if(n){el.innerHTML=n.innerHTML;beep();toast();}else{location.reload();}})
       .catch(function(){location.reload();})
       .finally(function(){_busy=false;if(_pend){_pend=false;swap();}});
   }
@@ -594,7 +550,27 @@ function handleTriageClick(card) {
   startFb();
 })();
 
-// ── Patient search modal ─────────────────────────────────────────────────────
+// ── Session slot for multi-session middleware (?s=N) ─────────────────────────
+var _slot = new URLSearchParams(window.location.search).get('s') || '';
+function _slotUrl(url) {
+  if (!url) return url;
+  if (_slot && _slot !== '1') {
+    url += (url.indexOf('?') === -1 ? '?' : '&') + 's=' + _slot;
+  }
+  return url;
+}
+
+// ── Triage button — navigate directly to vitals form ──────────────────────────
+(function () {
+  document.querySelectorAll('.triage-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var url = this.dataset.triageUrl;
+      if (url) window.location.href = _slotUrl(url);
+    });
+  });
+})();
+
+// ── Triage Patient search modal ────────────────────────────────────────────────
 (function () {
   const modal  = document.getElementById('triagePatientModal');
   const input  = document.getElementById('triageSearchInput');
@@ -626,8 +602,7 @@ function handleTriageClick(card) {
           }
           results.innerHTML = data.results.map(p => {
             const initials = p.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
-            var _sParam = _slot && _slot !== '1' ? '?s=' + _slot : '';
-            return `<div class="t-item" onclick="window.location='/patients/${p.patient_id}/triage-start/${_sParam}'">
+            return `<div class="t-item" onclick="window.location=_slotUrl('/patients/${p.patient_id}/triage-start/')">
               <div class="t-avatar">${initials}</div>
               <div style="flex:1;">
                 <div class="fw-semibold" style="font-size:.88rem;">${p.name}</div>

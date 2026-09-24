@@ -362,35 +362,59 @@ def investigation_order_view(request, consultation_pk):
 
                 order.save()
 
-                # ServiceWorkOrder for billing — include price for cashier reference
-                try:
-                    from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
-                    import logging as _logging
-                    _log = _logging.getLogger('ehr.investigations')
-                    wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
-                    # Calculate quantity: ×2 for OU when billed_per_eye
-                    qty = 2 if (inv_type.billed_per_eye and order.eye == Laterality.OU) else 1
-                    total_price = inv_type.unit_price * qty
-                    price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' × 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
-                    wo_notes = f'Payment waived — {waive_reason}' if payment_waived else price_note
-                    ServiceWorkOrder.objects.create(
-                        patient=consultation.patient,
-                        consultation=consultation,
-                        category=ServiceCategory.INVESTIGATION,
-                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
-                        status=wo_status,
-                        notes=wo_notes,
-                        created_by=request.user,
-                    )
-                except Exception as exc:
-                    import logging as _logging
-                    _logging.getLogger('ehr.investigations').error(
-                        'ServiceWorkOrder creation failed for investigation %s: %s', order.pk, exc,
-                    )
+                # ── Payment check: skip work order + route directly if already paid ──
+                _already_paid = False
+                if not payment_waived:
+                    try:
+                        from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
+                        _today = timezone.localdate()
+                        _paid_inv = Invoice.objects.filter(
+                            patient=consultation.patient, issue_date=_today,
+                            status=_InvSt.PAID, is_deleted=False,
+                        ).first()
+                        if _paid_inv:
+                            _paid_descs = set(
+                                InvoiceItem.objects.filter(
+                                    invoice=_paid_inv, category='INVEST', is_deleted=False,
+                                ).values_list('description', flat=True)
+                            )
+                            if any(inv_type.name.lower() in d.lower() for d in _paid_descs):
+                                _already_paid = True
+                                order.payment_status = PaymentStatus.PAID
+                                order.save(update_fields=['payment_status'])
+                    except Exception:
+                        pass
 
-                # Route: waived → direct to examiner, not waived → cashier first
+                # ServiceWorkOrder for billing — only if NOT already paid
+                if not _already_paid:
+                    try:
+                        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                        import logging as _logging
+                        _log = _logging.getLogger('ehr.investigations')
+                        wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
+                        # Calculate quantity: ×2 for OU when billed_per_eye
+                        qty = 2 if (inv_type.billed_per_eye and order.eye == Laterality.OU) else 1
+                        total_price = inv_type.unit_price * qty
+                        price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' × 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
+                        wo_notes = f'Payment waived — {waive_reason}' if payment_waived else price_note
+                        ServiceWorkOrder.objects.create(
+                            patient=consultation.patient,
+                            consultation=consultation,
+                            category=ServiceCategory.INVESTIGATION,
+                            description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
+                            status=wo_status,
+                            notes=wo_notes,
+                            created_by=request.user,
+                        )
+                    except Exception as exc:
+                        import logging as _logging
+                        _logging.getLogger('ehr.investigations').error(
+                            'ServiceWorkOrder creation failed for investigation %s: %s', order.pk, exc,
+                        )
+
+                # Route: waived OR already paid → direct to examiner, else → cashier
                 try:
-                    if payment_waived:
+                    if payment_waived or _already_paid:
                         from apps.core.patient_flow import auto_route_to_investigation
                         auto_route_to_investigation(consultation, ordered_by=request.user, category=inv_type.category)
                     else:
@@ -412,7 +436,7 @@ def investigation_order_view(request, consultation_pk):
                         'Auto-route after investigation order failed for order %s: %s', order.pk, exc,
                     )
 
-                _route_msg = 'cashier for payment' if not payment_waived else 'examiner queue'
+                _route_msg = 'examiner queue (already paid)' if _already_paid else ('cashier for payment' if not payment_waived else 'examiner queue')
                 messages.success(
                     request,
                     f'Investigation ordered: {inv_type.name} ({order.get_eye_display()}). '
@@ -644,7 +668,7 @@ def repeat_acquisition_view(request, pk):
         # Preserve previous attempt data in order notes before deleting
         prev_summary = (
             f'[Repeat #{repeat_count}] Previous acquisition by {old_acq.performed_by} '
-            f'at {old_acq.started_at:%d %b %Y %H:%M if old_acq.started_at else "?"}'
+            f'at {old_acq.started_at.strftime("%d %b %Y %H:%M") if old_acq.started_at else "?"}'
             f' — Quality: {"PASS" if old_acq.quality_passed else "FAIL"}'
             f' (metric: {old_acq.quality_metric_value or "N/A"})'
             f' — Notes: {old_acq.quality_notes or "none"}'
@@ -1617,7 +1641,7 @@ def cancel_investigation_order(request, pk):
     u = request.user
     can_cancel = (
         u == order.ordered_by
-        or u.can_record_investigation_results
+        or u.can_record_investigation_results()
         or u.is_medical_director
         or u.is_super_admin
         or u.is_admin_director
@@ -2834,7 +2858,28 @@ def multi_exam_order_view(request, consultation_pk):
                     pass
 
             inv_types = InvestigationType.objects.filter(pk__in=selected_type_ids, is_active=True)
+
+            # ── Pre-check: what has the patient already paid for today? ──
+            _paid_descs_multi = set()
+            if not payment_waived:
+                try:
+                    from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
+                    _today_m = timezone.localdate()
+                    _paid_inv_m = Invoice.objects.filter(
+                        patient=consultation.patient, issue_date=_today_m,
+                        status=_InvSt.PAID, is_deleted=False,
+                    ).first()
+                    if _paid_inv_m:
+                        _paid_descs_multi = set(
+                            InvoiceItem.objects.filter(
+                                invoice=_paid_inv_m, category='INVEST', is_deleted=False,
+                            ).values_list('description', flat=True)
+                        )
+                except Exception:
+                    pass
+
             created_orders = []
+            _any_needs_payment = False
             for inv_type in inv_types:
                 order = InvestigationOrder(
                     consultation=consultation,
@@ -2853,12 +2898,18 @@ def multi_exam_order_view(request, consultation_pk):
                 if inv_type.category in _ASSIGNEE_CATS and assigned_user:
                     order.assigned_to = assigned_user
 
-                # Payment
+                # Payment — check if already paid today
+                _exam_already_paid = (
+                    not payment_waived
+                    and any(inv_type.name.lower() in d.lower() for d in _paid_descs_multi)
+                )
                 if payment_waived:
                     order.payment_status = PaymentStatus.WAIVED
                     order.payment_authorized_by = request.user
                     order.payment_authorized_at = timezone.now()
                     order.payment_authorization_reason = waive_reason
+                elif _exam_already_paid:
+                    order.payment_status = PaymentStatus.PAID
 
                 # Default device
                 if inv_type.default_device:
@@ -2867,29 +2918,32 @@ def multi_exam_order_view(request, consultation_pk):
                 order.save()
                 created_orders.append(order)
 
-                # Create ServiceWorkOrder for billing
-                try:
-                    from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
-                    wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
-                    qty = 2 if (inv_type.billed_per_eye and eye == 'OU') else 1
-                    total_price = inv_type.unit_price * qty
-                    price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' x 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
-                    ServiceWorkOrder.objects.create(
-                        patient=consultation.patient,
-                        consultation=consultation,
-                        category=ServiceCategory.INVESTIGATION,
-                        description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
-                        status=wo_status,
-                        notes=f'Payment waived — {waive_reason}' if payment_waived else price_note,
-                        created_by=request.user,
-                    )
-                except Exception:
-                    pass
+                # Create ServiceWorkOrder for billing — only if NOT already paid
+                if not _exam_already_paid:
+                    try:
+                        from apps.billing.models import ServiceWorkOrder, WorkOrderStatus, ServiceCategory
+                        wo_status = WorkOrderStatus.PENDING if payment_waived else WorkOrderStatus.PENDING_PAYMENT
+                        qty = 2 if (inv_type.billed_per_eye and eye == 'OU') else 1
+                        total_price = inv_type.unit_price * qty
+                        price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' x 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
+                        ServiceWorkOrder.objects.create(
+                            patient=consultation.patient,
+                            consultation=consultation,
+                            category=ServiceCategory.INVESTIGATION,
+                            description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
+                            status=wo_status,
+                            notes=f'Payment waived — {waive_reason}' if payment_waived else price_note,
+                            created_by=request.user,
+                        )
+                        if not payment_waived:
+                            _any_needs_payment = True
+                    except Exception:
+                        pass
 
-            # Route: waived → direct to examiner, not waived → cashier first
+            # Route: waived/all-paid → direct to examiner, unpaid → cashier
             try:
                 _first_cat = created_orders[0].investigation_type.category if created_orders else None
-                if payment_waived:
+                if payment_waived or not _any_needs_payment:
                     from apps.core.patient_flow import auto_route_to_investigation
                     auto_route_to_investigation(consultation, ordered_by=request.user, category=_first_cat)
                 else:
@@ -2908,7 +2962,12 @@ def multi_exam_order_view(request, consultation_pk):
                 pass
 
             names = ', '.join(o.investigation_type.name for o in created_orders)
-            _route_msg = 'cashier for payment' if not payment_waived else ('optometry' if is_optometry else 'investigation') + ' queue'
+            if _any_needs_payment:
+                _route_msg = 'cashier for payment'
+            elif payment_waived:
+                _route_msg = ('optometry' if is_optometry else 'investigation') + ' queue'
+            else:
+                _route_msg = ('optometry' if is_optometry else 'investigation') + ' queue (already paid)'
             messages.success(
                 request,
                 f'{len(created_orders)} exam(s) ordered: {names}. '
@@ -2951,6 +3010,17 @@ def structured_result_view(request, pk):
     if not FormClass:
         # No structured form — redirect to generic result form
         return redirect('investigations:add_result', pk=pk)
+
+    # If multiple pending optometry orders exist for this patient, use combined form
+    _OPTOM_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+    sibling_count = InvestigationOrder.objects.filter(
+        patient=order.patient, is_deleted=False,
+        investigation_type__category__in=_OPTOM_CATS,
+    ).exclude(
+        status__in=['COMPLETED', 'CANCELLED'],
+    ).exclude(result__isnull=False).count()
+    if sibling_count > 1:
+        return redirect('investigations:combined_result', patient_id=order.patient.patient_id)
 
     if request.method == 'POST':
         form = FormClass(request.POST)
@@ -3028,9 +3098,17 @@ def structured_result_view(request, pk):
             except Exception:
                 pass
 
+            # Auto-verify optometry/orthoptics results (optometrist IS the expert)
+            _AUTOVERIFY_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+            if order.investigation_type.category in _AUTOVERIFY_CATS:
+                result.is_verified = True
+                result.verified_by = request.user
+                result.verified_at = timezone.now()
+                result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
+
             # Check auto-return to doctor (all exams done?)
             try:
-                visit = getattr(consultation, 'visit', None) if hasattr(order, 'consultation') else None
+                visit = order.visit
                 if not visit and order.consultation:
                     visit = getattr(order.consultation, 'visit', None)
                 if visit:
@@ -3050,4 +3128,185 @@ def structured_result_view(request, pk):
         'inv_type': order.investigation_type,
         'form_title': order.investigation_type.name,
         'patient': order.patient,
+    })
+
+
+@login_required
+def combined_structured_result_view(request, patient_id):
+    """
+    Elastic combined exam form — shows ALL pending structured-form orders
+    for a patient in one page with accordion sections. Saves all at once.
+    Falls back to single-order form if only 1 order.
+    """
+    if not request.user.can_record_investigation_results():
+        return HttpResponseForbidden()
+
+    from apps.patients.models import Patient
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+
+    # ── Gather all pending orders that have a structured form ──
+    _OPTOM_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+    pending_orders = list(
+        InvestigationOrder.objects.filter(
+            patient=patient,
+            is_deleted=False,
+            investigation_type__category__in=_OPTOM_CATS,
+        ).exclude(
+            status__in=['COMPLETED', 'CANCELLED'],
+        ).exclude(
+            result__isnull=False,  # already has a result
+        ).select_related('investigation_type').order_by('created_at')
+    )
+
+    # Filter to orders that have a structured form mapping
+    orders_with_forms = []
+    for order in pending_orders:
+        code = order.investigation_type.code
+        FormClass = STRUCTURED_RESULT_FORMS.get(code)
+        if FormClass:
+            orders_with_forms.append((order, code, FormClass))
+
+    if not orders_with_forms:
+        messages.info(request, 'No pending exams with structured forms for this patient.')
+        return redirect('investigations:workstation')
+
+    # If only 1 order, redirect to the single form
+    if len(orders_with_forms) == 1:
+        return redirect('investigations:structured_result', pk=orders_with_forms[0][0].pk)
+
+    # ── POST: save all results ──
+    if request.method == 'POST':
+        submitted_order_ids = request.POST.getlist('order_ids')
+        all_valid = True
+        form_instances = []
+
+        for order, code, FormClass in orders_with_forms:
+            prefix = f'ord_{str(order.pk)[:8]}'
+            form = FormClass(request.POST, prefix=prefix)
+            if not form.is_valid():
+                all_valid = False
+            form_instances.append((order, code, form))
+
+        if all_valid:
+            interpretation = request.POST.get('interpretation', '').strip()
+            is_normal_val = request.POST.get('is_normal', '')
+            is_normal = None
+            if is_normal_val == 'True':
+                is_normal = True
+            elif is_normal_val == 'False':
+                is_normal = False
+
+            uploaded_file = request.FILES.get('result_file')
+            _AUTOVERIFY_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+            saved_count = 0
+
+            for order, code, form in form_instances:
+                # Check if any fields were actually filled
+                result_data = {}
+                for field_name, value in form.cleaned_data.items():
+                    if value is not None and value != '':
+                        if hasattr(value, 'isoformat'):
+                            result_data[field_name] = value.isoformat()
+                        else:
+                            result_data[field_name] = str(value) if not isinstance(value, (int, float, bool)) else value
+
+                result = InvestigationResult(
+                    order=order,
+                    performed_by=request.user,
+                    created_by=request.user,
+                    result_data=result_data,
+                    interpretation=interpretation,
+                    is_normal=is_normal,
+                    reported_by=request.user,
+                    reported_at=timezone.now(),
+                )
+                result.save()
+
+                # Acquisition record
+                acq, _ = AcquisitionRecord.objects.get_or_create(
+                    order=order,
+                    defaults={'performed_by': request.user, 'created_by': request.user},
+                )
+                acq.completed_at = timezone.now()
+                acq.save(update_fields=['completed_at', 'updated_at'])
+
+                # Update order status
+                order.status = InvestigationOrder.Status.COMPLETED
+                order.acquisition_status = AcquisitionStatus.ACQUIRED
+                order.report_status = ReportStatus.REPORTED
+                order.save(update_fields=['status', 'acquisition_status', 'report_status', 'updated_at'])
+
+                # File upload (attach to first order only)
+                if uploaded_file and saved_count == 0:
+                    InvestigationFile.objects.create(
+                        result=result,
+                        file=uploaded_file,
+                        file_type='IMAGE' if uploaded_file.content_type.startswith('image') else 'PDF',
+                        laterality=order.eye,
+                        uploaded_by=request.user,
+                    )
+
+                # Auto-verify
+                if order.investigation_type.category in _AUTOVERIFY_CATS:
+                    result.is_verified = True
+                    result.verified_by = request.user
+                    result.verified_at = timezone.now()
+                    result.save(update_fields=['is_verified', 'verified_by', 'verified_at', 'updated_at'])
+
+                # Notify ordering doctor
+                try:
+                    from apps.notifications.utils import notify
+                    from apps.notifications.models import NotificationType, NotificationPriority
+                    if order.ordered_by:
+                        notify(
+                            recipient=order.ordered_by,
+                            title=f'Result ready: {order.investigation_type.name} — {patient.full_name}',
+                            message=f'{order.investigation_type.name} result entered by {request.user.get_full_name() or request.user.username}.',
+                            link=f'/investigations/{order.pk}/',
+                            notification_type=NotificationType.GENERAL,
+                            priority=NotificationPriority.HIGH,
+                        )
+                except Exception:
+                    pass
+
+                saved_count += 1
+
+            # Auto-return to doctor (check once after all orders saved)
+            try:
+                visit = orders_with_forms[0][0].visit
+                if not visit:
+                    c = orders_with_forms[0][0].consultation
+                    if c:
+                        visit = getattr(c, 'visit', None)
+                if visit:
+                    from apps.core.patient_flow import check_and_autoreturn_to_doctor
+                    check_and_autoreturn_to_doctor(visit, triggered_by=request.user)
+            except Exception:
+                pass
+
+            messages.success(request, f'{saved_count} exam result(s) recorded for {patient.full_name}.')
+            return redirect('investigations:workstation')
+
+    # ── GET: build form instances with prefixes ──
+    order_forms = []
+    clinical_indication = None
+    for order, code, FormClass in orders_with_forms:
+        prefix = f'ord_{str(order.pk)[:8]}'
+        form = FormClass(prefix=prefix) if request.method == 'GET' else FormClass(request.POST, prefix=prefix)
+        if order.clinical_indication and not clinical_indication:
+            clinical_indication = order.clinical_indication
+        order_forms.append({
+            'order_pk': str(order.pk),
+            'name': order.investigation_type.name,
+            'code': code,
+            'category': order.investigation_type.get_category_display(),
+            'eye': order.get_eye_display(),
+            'prefix': prefix,
+            'form': form,
+        })
+
+    return render(request, 'investigations/combined_result_form.html', {
+        'patient': patient,
+        'order_forms': order_forms,
+        'clinical_indication': clinical_indication,
     })

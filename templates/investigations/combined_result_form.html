@@ -1,0 +1,372 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Exam Results — {{ patient.full_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="mb-0 fw-semibold">
+              <i class="bi bi-clipboard2-data me-2 text-primary"></i>Exam Results
+            </h5>
+            <div class="text-muted small">
+              Patient: <strong>{{ patient.full_name }}</strong> ({{ patient.patient_id }})
+              &bull; {{ order_forms|length }} exam{{ order_forms|length|pluralize }} to complete
+            </div>
+          </div>
+          <a href="{% url 'investigations:workstation' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Workstation
+          </a>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if clinical_indication %}
+        <div class="alert alert-info py-2 small mb-3">
+          <i class="bi bi-info-circle me-1"></i><strong>Clinical Indication:</strong> {{ clinical_indication }}
+        </div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" id="combinedResultForm">
+          {% csrf_token %}
+
+          {# ── Accordion: one section per exam ── #}
+          <div class="accordion" id="examAccordion">
+            {% for entry in order_forms %}
+            <div class="accordion-item border mb-2 rounded overflow-hidden">
+              <h2 class="accordion-header">
+                <button class="accordion-button py-2 {% if not forloop.first %}collapsed{% endif %}" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#exam_{{ forloop.counter }}">
+                  <span class="d-flex align-items-center gap-2 w-100">
+                    <i class="bi bi-check-circle text-success d-none" id="done_{{ forloop.counter }}"></i>
+                    <span class="fw-semibold small">{{ entry.name }}</span>
+                    <span class="badge bg-secondary ms-1" style="font-size:.65rem;">{{ entry.eye }}</span>
+                    <span class="badge bg-{{ entry.category|lower }} ms-1" style="font-size:.65rem;">{{ entry.category }}</span>
+                  </span>
+                </button>
+              </h2>
+              <div id="exam_{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}"
+                   data-bs-parent="#examAccordion">
+                <div class="accordion-body pt-2 pb-3">
+                  {# Hidden field to identify this order #}
+                  <input type="hidden" name="order_ids" value="{{ entry.order_pk }}">
+
+                  {% with code=entry.code prefix=entry.prefix form=entry.form %}
+
+                  {# ── AUTOREFRACTION / KERATOMETRY ── #}
+                  {% if code == 'AUTOREF' or code == 'AUTO-REF' or code == 'KERAT' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-primary">OD (Right Eye)</span></div>
+                    <div class="col-md-3"><label class="form-label small">Sph</label>{{ form.sph_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">Cyl</label>{{ form.cyl_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">Axis</label>{{ form.axis_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">K1</label>{{ form.k1_od }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-3"><label class="form-label small">K2</label>{{ form.k2_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">PD (mm)</label>{{ form.pd }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-success">OS (Left Eye)</span></div>
+                    <div class="col-md-3"><label class="form-label small">Sph</label>{{ form.sph_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">Cyl</label>{{ form.cyl_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">Axis</label>{{ form.axis_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">K1</label>{{ form.k1_os }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-3"><label class="form-label small">K2</label>{{ form.k2_os }}</div>
+                  </div>
+
+                  {# ── SUBJECTIVE / DRY REFRACTION ── #}
+                  {% elif code == 'SUBJ-REF' or code == 'DRY-REF' or code == 'REF' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-primary">OD (Right Eye)</span></div>
+                    <div class="col-md-2"><label class="form-label small">Sph</label>{{ form.sph_od }}</div>
+                    <div class="col-md-2"><label class="form-label small">Cyl</label>{{ form.cyl_od }}</div>
+                    <div class="col-md-2"><label class="form-label small">Axis</label>{{ form.axis_od }}</div>
+                    <div class="col-md-2"><label class="form-label small">Add</label>{{ form.add_od }}</div>
+                    <div class="col-md-2"><label class="form-label small">Best VA</label>{{ form.best_va_od }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-success">OS (Left Eye)</span></div>
+                    <div class="col-md-2"><label class="form-label small">Sph</label>{{ form.sph_os }}</div>
+                    <div class="col-md-2"><label class="form-label small">Cyl</label>{{ form.cyl_os }}</div>
+                    <div class="col-md-2"><label class="form-label small">Axis</label>{{ form.axis_os }}</div>
+                    <div class="col-md-2"><label class="form-label small">Add</label>{{ form.add_os }}</div>
+                    <div class="col-md-2"><label class="form-label small">Best VA</label>{{ form.best_va_os }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-3"><label class="form-label small">Distance PD</label>{{ form.pd_dist }}</div>
+                    <div class="col-md-3"><label class="form-label small">Near PD</label>{{ form.pd_near }}</div>
+                  </div>
+
+                  {# ── CYCLOPLEGIC REFRACTION ── #}
+                  {% elif code == 'CYCLO-REF' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4">{{ form.cycloplegic_agent.label_tag }} {{ form.cycloplegic_agent }}</div>
+                    <div class="col-md-4"><label class="form-label small">Instillation Time</label>{{ form.instillation_time }}</div>
+                    <div class="col-md-4"><label class="form-label small">Exam Time</label>{{ form.exam_time }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-primary">OD</span></div>
+                    <div class="col-md-3">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+                    <div class="col-md-3">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+                    <div class="col-md-3">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-success">OS</span></div>
+                    <div class="col-md-3">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+                    <div class="col-md-3">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+                    <div class="col-md-3">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+                  </div>
+
+                  {# ── CONTACT LENS ── #}
+                  {% elif code == 'CL-ASSESS' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4">{{ form.cl_type.label_tag }} {{ form.cl_type }}</div>
+                    <div class="col-md-4">{{ form.fit_assessment.label_tag }} {{ form.fit_assessment }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-primary">OD</span></div>
+                    <div class="col-md-3"><label class="form-label small">BC</label>{{ form.base_curve_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">Dia</label>{{ form.diameter_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">Power</label>{{ form.power_od }}</div>
+                    <div class="col-md-3"><label class="form-label small">Over-Rx</label>{{ form.over_refraction_od }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-success">OS</span></div>
+                    <div class="col-md-3"><label class="form-label small">BC</label>{{ form.base_curve_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">Dia</label>{{ form.diameter_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">Power</label>{{ form.power_os }}</div>
+                    <div class="col-md-3"><label class="form-label small">Over-Rx</label>{{ form.over_refraction_os }}</div>
+                  </div>
+
+                  {# ── LENSOMETRY ── #}
+                  {% elif code == 'LENSOMETRY' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-primary">OD</span></div>
+                    <div class="col-md-3">{{ form.sph_od.label_tag }} {{ form.sph_od }}</div>
+                    <div class="col-md-3">{{ form.cyl_od.label_tag }} {{ form.cyl_od }}</div>
+                    <div class="col-md-3">{{ form.axis_od.label_tag }} {{ form.axis_od }}</div>
+                    <div class="col-md-3">{{ form.add_od.label_tag }} {{ form.add_od }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><span class="badge bg-success">OS</span></div>
+                    <div class="col-md-3">{{ form.sph_os.label_tag }} {{ form.sph_os }}</div>
+                    <div class="col-md-3">{{ form.cyl_os.label_tag }} {{ form.cyl_os }}</div>
+                    <div class="col-md-3">{{ form.axis_os.label_tag }} {{ form.axis_os }}</div>
+                    <div class="col-md-3">{{ form.add_os.label_tag }} {{ form.add_os }}</div>
+                  </div>
+
+                  {# ── VISUAL ACUITY ── #}
+                  {% elif code == 'VA' %}
+                  <table class="table table-sm table-bordered small mb-2">
+                    <thead class="table-light">
+                      <tr><th></th><th>OD (Right)</th><th>OS (Left)</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td class="fw-bold">Unaided (Distance)</td><td>{{ form.unaided_od }}</td><td>{{ form.unaided_os }}</td></tr>
+                      <tr><td class="fw-bold">Aided (Distance)</td><td>{{ form.aided_od }}</td><td>{{ form.aided_os }}</td></tr>
+                      <tr><td class="fw-bold">Pinhole</td><td>{{ form.pinhole_od }}</td><td>{{ form.pinhole_os }}</td></tr>
+                      <tr><td class="fw-bold">Near VA</td><td>{{ form.near_od }}</td><td>{{ form.near_os }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4"><label class="form-label small fw-semibold">Chart Used</label>{{ form.chart_used }}</div>
+                  </div>
+
+                  {# ── LOW VISION ASSESSMENT ── #}
+                  {% elif code == 'LVA' %}
+                  <table class="table table-sm table-bordered small mb-2">
+                    <thead class="table-light">
+                      <tr><th></th><th>OD (Right)</th><th>OS (Left)</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td class="fw-bold">Distance VA</td><td>{{ form.distance_va_od }}</td><td>{{ form.distance_va_os }}</td></tr>
+                      <tr><td class="fw-bold">Near VA</td><td>{{ form.near_va_od }}</td><td>{{ form.near_va_os }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4"><label class="form-label small fw-semibold">Contrast Sensitivity</label>{{ form.contrast_sensitivity }}</div>
+                    <div class="col-md-4"><label class="form-label small fw-semibold">Magnification Required</label>{{ form.magnification_required }}</div>
+                  </div>
+                  <div class="mb-2"><label class="form-label small fw-semibold">Aids Tried</label>{{ form.aids_tried }}</div>
+                  <div class="mb-2"><label class="form-label small fw-semibold">Aids Prescribed</label>{{ form.aids_prescribed }}</div>
+                  <div class="mb-2"><label class="form-label small fw-semibold">Functional Goals</label>{{ form.functional_goals }}</div>
+
+                  {# ── COLOUR VISION ── #}
+                  {% elif code == 'COL' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4"><label class="form-label small fw-semibold">Test Used</label>{{ form.test_used }}</div>
+                  </div>
+                  <table class="table table-sm table-bordered small mb-2">
+                    <thead class="table-light">
+                      <tr><th></th><th>OD (Right)</th><th>OS (Left)</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td class="fw-bold">Plates Correct</td><td>{{ form.plates_correct_od }}</td><td>{{ form.plates_correct_os }}</td></tr>
+                      <tr><td class="fw-bold">Result</td><td>{{ form.result_od }}</td><td>{{ form.result_os }}</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-6"><label class="form-label small fw-semibold">Deficiency Type</label>{{ form.deficiency_type }}</div>
+                  </div>
+
+                  {# ── COVER TEST / PRISM COVER ── #}
+                  {% elif code == 'COVER' or code == 'PRISM-COVER' or code == 'MUSC-BAL' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><strong class="small">Distance</strong></div>
+                    <div class="col-md-4">{{ form.dist_type.label_tag }} {{ form.dist_type }}</div>
+                    <div class="col-md-4"><label class="form-label small">Amount (PD)</label>{{ form.dist_amount_pd }}</div>
+                    <div class="col-md-4"><label class="form-label small">Vertical</label>{{ form.dist_vertical }}</div>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12"><strong class="small">Near</strong></div>
+                    <div class="col-md-4">{{ form.near_type.label_tag }} {{ form.near_type }}</div>
+                    <div class="col-md-4"><label class="form-label small">Amount (PD)</label>{{ form.near_amount_pd }}</div>
+                    <div class="col-md-4"><label class="form-label small">Vertical</label>{{ form.near_vertical }}</div>
+                  </div>
+                  <div class="form-check mb-2">
+                    {{ form.with_correction }} <label class="form-check-label small">With correction</label>
+                  </div>
+
+                  {# ── NPC / NPA ── #}
+                  {% elif code == 'NPC' or code == 'NPA' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4"><label class="form-label small">Break Point (cm)</label>{{ form.break_point_cm }}</div>
+                    <div class="col-md-4"><label class="form-label small">Recovery Point (cm)</label>{{ form.recovery_point_cm }}</div>
+                    <div class="col-md-4">{{ form.method.label_tag }} {{ form.method }}</div>
+                  </div>
+
+                  {# ── STEREOPSIS ── #}
+                  {% elif code == 'STEREO' or code == 'BIN-VIS' %}
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-4">{{ form.test_used.label_tag }} {{ form.test_used }}</div>
+                    <div class="col-md-4"><label class="form-label small">Seconds of Arc</label>{{ form.result_seconds_arc }}</div>
+                    <div class="col-md-4">{{ form.grade.label_tag }} {{ form.grade }}</div>
+                  </div>
+
+                  {# ── MOTILITY / HESS ── #}
+                  {% elif code == 'MOTILITY' or code == 'HESS' %}
+                  <table class="table table-sm table-bordered small mb-2">
+                    <thead class="table-light">
+                      <tr><th></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="fw-bold">OD</td>
+                        <td>{{ form.sr_od }}</td><td>{{ form.ir_od }}</td><td>{{ form.mr_od }}</td>
+                        <td>{{ form.lr_od }}</td><td>{{ form.so_od }}</td><td>{{ form.io_od }}</td>
+                      </tr>
+                      <tr>
+                        <td class="fw-bold">OS</td>
+                        <td>{{ form.sr_os }}</td><td>{{ form.ir_os }}</td><td>{{ form.mr_os }}</td>
+                        <td>{{ form.lr_os }}</td><td>{{ form.so_os }}</td><td>{{ form.io_os }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-3">{{ form.saccades.label_tag }} {{ form.saccades }}</div>
+                    <div class="col-md-3">{{ form.pursuits.label_tag }} {{ form.pursuits }}</div>
+                    <div class="col-md-3"><label class="form-label small">Nystagmus</label>{{ form.nystagmus }}</div>
+                    <div class="col-md-3"><label class="form-label small">Head Posture</label>{{ form.head_posture }}</div>
+                  </div>
+
+                  {# ── PRISM BAR / FUSIONAL VERGENCE ── #}
+                  {% elif code == 'PRISM-BAR' %}
+                  <table class="table table-sm table-bordered small mb-2">
+                    <thead class="table-light">
+                      <tr><th></th><th colspan="2">Base Out (Convergence)</th><th colspan="2">Base In (Divergence)</th></tr>
+                      <tr><th></th><th>Break</th><th>Recovery</th><th>Break</th><th>Recovery</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="fw-bold">Distance</td>
+                        <td>{{ form.bo_break_dist }}</td><td>{{ form.bo_recovery_dist }}</td>
+                        <td>{{ form.bi_break_dist }}</td><td>{{ form.bi_recovery_dist }}</td>
+                      </tr>
+                      <tr>
+                        <td class="fw-bold">Near</td>
+                        <td>{{ form.bo_break_near }}</td><td>{{ form.bo_recovery_near }}</td>
+                        <td>{{ form.bi_break_near }}</td><td>{{ form.bi_recovery_near }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {# ── FALLBACK ── #}
+                  {% else %}
+                  {% for field in form %}
+                  <div class="mb-2">
+                    <label class="form-label small fw-semibold">{{ field.label }}</label>
+                    {{ field }}
+                  </div>
+                  {% endfor %}
+                  {% endif %}
+
+                  {# ── Per-section notes ── #}
+                  {% if form.notes %}
+                  <div class="mt-2">
+                    <label class="form-label small fw-semibold text-muted">Notes</label>
+                    {{ form.notes }}
+                  </div>
+                  {% endif %}
+
+                  {% endwith %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+
+          <hr class="my-3">
+
+          {# ── Common result fields (shared across all exams) ── #}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Overall Interpretation</label>
+            <textarea name="interpretation" class="form-control" rows="3" placeholder="Summary interpretation of all findings..."></textarea>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Normal/Abnormal</label>
+              <select name="is_normal" class="form-select">
+                <option value="">-- Select --</option>
+                <option value="True">Normal</option>
+                <option value="False">Abnormal</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Upload File (optional)</label>
+              <input type="file" name="result_file" class="form-control" accept="image/*,.pdf">
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'investigations:workstation' %}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check2-circle me-1"></i>Save All Results ({{ order_forms|length }})
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Auto-expand all sections (remove accordion single-open behavior)
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.accordion-collapse').forEach(function(el) {
+    el.classList.add('show');
+  });
+  document.querySelectorAll('.accordion-button').forEach(function(btn) {
+    btn.classList.remove('collapsed');
+    btn.removeAttribute('data-bs-parent');
+  });
+  // Remove data-bs-parent so all stay open independently
+  document.querySelectorAll('[data-bs-parent]').forEach(function(el) {
+    el.removeAttribute('data-bs-parent');
+  });
+});
+</script>
+{% endblock %}

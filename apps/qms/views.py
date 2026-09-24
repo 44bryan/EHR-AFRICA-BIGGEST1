@@ -94,6 +94,23 @@ def _clear_zone_cache():
         cache.delete(f'qms_zone_{tier_val}')
 
 
+def _refresh_stale_assignments():
+    """
+    Auto-stamp checked_in_date=today for counters that still have a
+    staff_assigned but whose checked_in_date is stale (not today).
+    This makes room assignments persistent across days — admin only
+    needs to change them when a doctor actually moves rooms.
+    """
+    today = timezone.localdate()
+    ServiceCounter.objects.filter(
+        staff_assigned__isnull=False,
+        is_active=True,
+        is_deleted=False,
+    ).exclude(
+        checked_in_date=today,
+    ).update(checked_in_date=today)
+
+
 def _check_zone_scope(request, token):
     """
     Server-side zone-scope enforcement.
@@ -1565,6 +1582,9 @@ def doctor_queue(request):
     else:
         service_type = _ROLE_TO_SERVICE.get(user.role)
 
+    # ── Persist room assignments across days ──
+    _refresh_stale_assignments()
+
     # ── Room-based queue: if doctor is checked in today, use their counter ───
     checked_in_counter = ServiceCounter.objects.filter(
         staff_assigned=user, checked_in_date=today, is_active=True
@@ -2425,6 +2445,9 @@ def roster_view(request):
 
     today = timezone.localdate()
 
+    # Persist room assignments across days — auto-refresh stale dates
+    _refresh_stale_assignments()
+
     # Build the allowlist of clinical service types from the role map —
     # only rooms where a doctor can actually be assigned appear on the roster.
     _clinical_types = set()
@@ -2542,6 +2565,9 @@ def room_checkin_view(request):
 
     user = request.user
     today = timezone.localdate()
+
+    # Persist room assignments across days
+    _refresh_stale_assignments()
 
     if user.role in _COUNTER_MANAGE_ROLES:
         return redirect('qms:roster')

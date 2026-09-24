@@ -7,14 +7,15 @@ CAMEROON_REGIONS = [
     ('', '-- Select Region --'),
     ('Adamawa', 'Adamawa'),
     ('Centre', 'Centre'),
-    ('East', 'East (Est)'),
-    ('Far North', 'Far North (Extrême-Nord)'),
+    ('East', 'East'),
+    ('Far North', 'Far North'),
     ('Littoral', 'Littoral'),
-    ('North', 'North (Nord)'),
-    ('North West', 'North West (Nord-Ouest)'),
-    ('South', 'South (Sud)'),
-    ('South West', 'South West (Sud-Ouest)'),
-    ('West', 'West (Ouest)'),
+    ('North', 'North'),
+    ('North West', 'North West'),
+    ('South', 'South'),
+    ('South West', 'South West'),
+    ('West', 'West'),
+    ('Outside Cameroon', 'Outside Cameroon'),
 ]
 
 

@@ -33,8 +33,8 @@
     font-size:  0.95rem !important;
     padding:    8px 10px !important;
   }
-  /* Accordion section headers */
-  .accordion-button { min-height: 54px !important; font-size: 1rem !important; }
+  /* Accordion section headers — compact */
+  .accordion-button { min-height: 38px !important; font-size: .88rem !important; padding-top: 6px !important; padding-bottom: 6px !important; }
   /* Any small btn (quick templates, etc.) */
   .btn-sm {
     min-height: 40px;
@@ -167,10 +167,10 @@
         <div class="accordion mb-3" id="historyAccordion">
           <div class="accordion-item border rounded">
             <h2 class="accordion-header" id="hHistory">
-              <button class="accordion-button collapsed rounded fw-semibold py-3" type="button"
+              <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-2" type="button"
                       data-bs-toggle="collapse" data-bs-target="#secHistory" aria-expanded="false" aria-controls="secHistory">
-                <i class="bi bi-person-lines-fill me-2 text-secondary fs-5"></i>
-                <span class="fs-6">Patient History &amp; Previous Vitals</span>
+                <i class="bi bi-person-lines-fill me-2 text-secondary"></i>
+                <span class="small fw-bold">Patient History &amp; Previous Vitals</span>
                 {% if med_history and med_history.known_allergies and med_history.known_allergies|lower != 'nkda' and med_history.known_allergies|lower != 'none' %}
                 <span class="ms-2 badge bg-danger">⚠ Allergies</span>
                 {% endif %}
@@ -259,6 +259,21 @@
         </div>
         {% endif %}
 
+        {# ── Allergy alert banner (JCI IPSG.5) ── #}
+        {% if med_history and med_history.known_allergies %}
+        <div class="alert alert-danger d-flex align-items-center gap-2 py-2 mb-3" style="font-size:.85rem;">
+          <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+          <div>
+            <strong>Known Allergies:</strong> {{ med_history.known_allergies }}
+          </div>
+        </div>
+        {% elif not med_history or not med_history.known_allergies %}
+        <div class="d-flex align-items-center gap-2 py-2 px-3 mb-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;font-size:.82rem;">
+          <i class="bi bi-shield-check text-success"></i>
+          <span class="text-muted">No known allergies on record (NKDA)</span>
+        </div>
+        {% endif %}
+
         {# ── Payment gate ── #}
         {% if payment_blocked %}
         <div class="alert alert-danger d-flex gap-3 align-items-start mb-3 py-3" id="paymentGate">
@@ -291,7 +306,7 @@
         <div class="alert alert-info py-2 mb-3" style="font-size:.82rem;">
           <i class="bi bi-info-circle me-1"></i>
           <strong>Pediatric patient ({{ patient.age_display }}) — first visit.</strong>
-          Route to <strong>Pediatric Ophthalmology</strong>. If cycloplegic refraction is needed, the doctor will route to Refraction after their exam.
+          Route to <strong>Pediatric Ophthalmology</strong>. If cycloplegic refraction is needed, the doctor will route to Optometry after their exam.
         </div>
         {% endif %}
 
@@ -305,26 +320,97 @@
           {% csrf_token %}
           <input type="hidden" name="emergency_override" id="emergencyField" value="">
 
-
           {# ── Accordion sections (independent — each opens/closes on its own) ── #}
           <div class="accordion" id="triageAccordion">
+
+            {# ── Section 0: Chief Complaint + Pain Score (JCI COP.1) ── #}
+            <div class="accordion-item border mb-2 rounded">
+              <h2 class="accordion-header" id="hCC">
+                <button class="accordion-button triage-acc-btn rounded fw-semibold py-2" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#secCC" aria-expanded="true" aria-controls="secCC">
+                  <i class="bi bi-chat-left-text me-2 text-secondary"></i>
+                  <span class="small fw-bold">Chief Complaint</span>
+                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Reason for Visit</span>
+                </button>
+              </h2>
+              <div id="secCC" class="accordion-collapse collapse show" aria-labelledby="hCC">
+                <div class="accordion-body pt-2">
+                  <div class="row g-3">
+                    <div class="col-12">
+                      <div class="ehr-combo d-flex gap-1 align-items-start">
+                        <textarea name="chief_complaint" rows="1" class="form-control form-control-sm flex-grow-1"
+                                  placeholder="Type here, or pick from list" style="resize:vertical;">{{ visit.chief_complaint|default:'' }}</textarea>
+                        <div class="dropdown" style="flex-shrink:0;">
+                          <button type="button" class="btn btn-sm ehr-add-btn dropdown-toggle" data-bs-toggle="dropdown">+ Add</button>
+                          <ul class="dropdown-menu dropdown-menu-end ehr-add-menu" style="max-height:320px;overflow-y:auto;">
+                            <li><span class="dropdown-header px-3 py-1 fw-semibold" style="font-size:.72rem;color:#6b7280;">Vision</span></li>
+                            <li><button type="button" class="dropdown-item">Blurred vision</button></li>
+                            <li><button type="button" class="dropdown-item">Reduced vision</button></li>
+                            <li><button type="button" class="dropdown-item">Sudden loss of vision</button></li>
+                            <li><button type="button" class="dropdown-item">Gradual loss of vision</button></li>
+                            <li><button type="button" class="dropdown-item">Double vision (diplopia)</button></li>
+                            <li><button type="button" class="dropdown-item">Difficulty reading</button></li>
+                            <li><button type="button" class="dropdown-item">Hazy / foggy vision</button></li>
+                            <li><span class="dropdown-header px-3 py-1 fw-semibold" style="font-size:.72rem;color:#6b7280;">Pain &amp; Discomfort</span></li>
+                            <li><button type="button" class="dropdown-item">Eye pain</button></li>
+                            <li><button type="button" class="dropdown-item">Foreign body sensation</button></li>
+                            <li><button type="button" class="dropdown-item">Itching / burning</button></li>
+                            <li><button type="button" class="dropdown-item">Photophobia</button></li>
+                            <li><button type="button" class="dropdown-item">Headache with eye symptoms</button></li>
+                            <li><span class="dropdown-header px-3 py-1 fw-semibold" style="font-size:.72rem;color:#6b7280;">External / Appearance</span></li>
+                            <li><button type="button" class="dropdown-item">Red eye</button></li>
+                            <li><button type="button" class="dropdown-item">Swollen eyelid</button></li>
+                            <li><button type="button" class="dropdown-item">Watery / excessive tearing</button></li>
+                            <li><button type="button" class="dropdown-item">Ocular discharge</button></li>
+                            <li><button type="button" class="dropdown-item">White spot on cornea</button></li>
+                            <li><span class="dropdown-header px-3 py-1 fw-semibold" style="font-size:.72rem;color:#6b7280;">Other</span></li>
+                            <li><button type="button" class="dropdown-item">Floaters</button></li>
+                            <li><button type="button" class="dropdown-item">Flashing lights</button></li>
+                            <li><button type="button" class="dropdown-item">Glare / halos</button></li>
+                            <li><button type="button" class="dropdown-item">Eye turn / squint</button></li>
+                            <li><span class="dropdown-header px-3 py-1 fw-semibold" style="font-size:.72rem;color:#6b7280;">Follow-up</span></li>
+                            <li><button type="button" class="dropdown-item">Routine eye check</button></li>
+                            <li><button type="button" class="dropdown-item">Post-operative review</button></li>
+                            <li><button type="button" class="dropdown-item">Diabetic eye review</button></li>
+                            <li><button type="button" class="dropdown-item">Glaucoma follow-up</button></li>
+                            <li><button type="button" class="dropdown-item">Glasses check / renewal</button></li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-lg-4">
+                      <label class="form-label fw-semibold small mb-1">Pain Score (0–10)</label>
+                      <select name="pain_score" class="form-select form-select-sm">
+                        <option value="">None</option>
+                        {% for i in "0123456789" %}<option value="{{ i }}" {% if visit.vital_signs.pain_score == i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+                        <option value="10" {% if visit.vital_signs.pain_score == "10" %}selected{% endif %}>10</option>
+                      </select>
+                    </div>
+                    <div class="col-6 col-lg-4 d-flex align-items-end">
+                      <div class="text-center rounded py-2 w-100" id="painBadge" style="font-size:.78rem;font-weight:600;background:#f1f5f9;color:#64748b;">
+                        No pain
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {# ── Section 1: Ophthalmic Parameters ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hOph">
-                <button class="accordion-button triage-acc-btn rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn rounded fw-semibold py-2" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secOph" aria-expanded="true" aria-controls="secOph">
-                  <i class="bi bi-eye me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Ophthalmic Parameters</span>
+                  <i class="bi bi-eye me-2 text-secondary"></i>
+                  <span class="small fw-bold">Ophthalmic Parameters</span>
                   <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">IOP</span>
                 </button>
               </h2>
               <div id="secOph" class="accordion-collapse collapse show" aria-labelledby="hOph">
                 <div class="accordion-body pt-2">
-                  <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>VA is recorded by the Optometrist during refraction, not at triage.</div>
                   <div class="row g-3">
                     {# IOP OD #}
-                    <div class="col-6 col-lg-3">
+                    <div class="col-6 col-lg-4">
                       <label class="form-label fw-semibold small">IOP Right Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_r" onchange="applySelect(this,'id_intraocular_pressure_right','right','iop')">
                         <option value="">— Not measured —</option>
@@ -361,7 +447,7 @@
                       <div class="vital-alert-msg small d-none" id="alert_iop_right"></div>
                     </div>
                     {# IOP OS #}
-                    <div class="col-6 col-lg-3">
+                    <div class="col-6 col-lg-4">
                       <label class="form-label fw-semibold small">IOP Left Eye (mmHg)</label>
                       <select class="form-select form-select-sm" id="sel_iop_l" onchange="applySelect(this,'id_intraocular_pressure_left','left','iop')">
                         <option value="">— Not measured —</option>
@@ -397,15 +483,12 @@
                              oninput="checkIOP(this.value,'left');autoSuggestPriority();">
                       <div class="vital-alert-msg small d-none" id="alert_iop_left"></div>
                     </div>
-                    {# IOP Time #}
-                    <div class="col-6 col-lg-3">
-                      <label class="form-label fw-semibold small">IOP Time Taken</label>
+                    {# IOP Time — auto-fills when IOP is entered, editable #}
+                    <div class="col-6 col-lg-4">
+                      <label class="form-label fw-semibold small">IOP Time</label>
                       <input type="time" name="iop_time" id="id_iop_time"
                              class="form-control form-control-sm"
                              value="{{ form.iop_time.value|default:'' }}">
-                      <div class="text-muted mt-1" style="font-size:.72rem;">
-                        <i class="bi bi-clock me-1"></i>Auto-set when IOP is entered
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -415,10 +498,10 @@
             {# ── Section 2: General Vitals ── #}
             <div class="accordion-item border mb-2 rounded">
               <h2 class="accordion-header" id="hVit">
-                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-3" type="button"
+                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-2" type="button"
                         data-bs-toggle="collapse" data-bs-target="#secVit" aria-expanded="false" aria-controls="secVit">
-                  <i class="bi bi-activity me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">General Vitals</span>
+                  <i class="bi bi-activity me-2 text-secondary"></i>
+                  <span class="small fw-bold">General Vitals</span>
                   <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">BP, Pulse, Temp, Weight</span>
                 </button>
               </h2>
@@ -500,53 +583,21 @@
                              oninput="checkTemp(this.value);">
                       <div class="vital-alert-msg small d-none" id="alert_temp"></div>
                     </div>
-                    {# Weight / Height stay as free text — highly variable #}
+                    {# Weight #}
                     <div class="col-6 col-lg-3">
                       <label class="form-label fw-semibold small">Weight (kg)</label>
                       {{ form.weight }}
-                    </div>
-                    <div class="col-6 col-lg-3">
-                      <label class="form-label fw-semibold small">Height (cm)</label>
-                      {{ form.height }}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {# ── Section 3: Nursing Notes ── #}
-            <div class="accordion-item border mb-2 rounded">
-              <h2 class="accordion-header" id="hNotes">
-                <button class="accordion-button triage-acc-btn collapsed rounded fw-semibold py-3" type="button"
-                        data-bs-toggle="collapse" data-bs-target="#secNotes" aria-expanded="false" aria-controls="secNotes">
-                  <i class="bi bi-clipboard2-pulse me-2 text-secondary fs-5"></i>
-                  <span class="fs-6">Nursing Observations</span>
-                  <span class="ms-auto badge bg-light text-secondary border ms-2" style="font-weight:400;">Notes &amp; Pre-auth</span>
-                </button>
-              </h2>
-              <div id="secNotes" class="accordion-collapse collapse" aria-labelledby="hNotes">
-                <div class="accordion-body pt-2">
-                  <div class="mb-3">
-                    <textarea name="nursing_notes" rows="3" class="form-control form-control-sm"
-                      placeholder="Clinical observations, pain score, level of consciousness, etc."
-                      >{{ visit.nursing_notes }}</textarea>
-                    <div class="form-text">Visible to the treating doctor.</div>
-                  </div>
-                  {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' %}
-                  <div class="col-md-6">
-                    <label class="form-label fw-semibold small">Insurance Pre-authorisation</label>
-                    <select name="pre_auth_status" class="form-select form-select-sm">
-                      <option value="NOT_REQUIRED" {% if visit.pre_auth_status == 'NOT_REQUIRED' %}selected{% endif %}>Not Required</option>
-                      <option value="PENDING" {% if visit.pre_auth_status == 'PENDING' %}selected{% endif %}>Pending Approval</option>
-                      <option value="OBTAINED" {% if visit.pre_auth_status == 'OBTAINED' %}selected{% endif %}>Obtained / Approved</option>
-                      <option value="DENIED" {% if visit.pre_auth_status == 'DENIED' %}selected{% endif %}>Denied / Rejected</option>
-                    </select>
-                    <div class="form-text">For {{ visit.insurance_company|default:"insured" }} patients. Ref: {{ visit.insurance_policy_ref|default:"N/A" }}</div>
-                  </div>
-                  {% endif %}
-                </div>
-              </div>
-            </div>
+            {# Nursing notes — hidden, kept for backend compatibility #}
+            <input type="hidden" name="nursing_notes" value="{{ visit.nursing_notes|default:'' }}">
+            {% if visit.billing_type == 'INSURANCE' or visit.billing_type == 'HMO' %}
+            <input type="hidden" name="pre_auth_status" value="{{ visit.pre_auth_status|default:'NOT_REQUIRED' }}">
+            {% endif %}
 
             {# ── Section 4: Routing & Priority (always visible — required) ── #}
             <div class="card border-0 shadow-sm mb-2">
@@ -565,13 +616,6 @@
                 </span>
               </div>
               <div class="card-body p-3">
-
-                {# ══ STEP 1 ══ #}
-                <div class="d-flex align-items-center gap-2 mb-2">
-                  <span class="fw-bold text-white d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                        style="background:#6366f1;width:24px;height:24px;font-size:.78rem;">1</span>
-                  <span class="fw-bold" style="font-size:.9rem;">Where is the patient going?</span>
-                </div>
 
                 {# Department — largest possible select for easy tap #}
                 <select name="dispatch_department" id="dispatch_department"
@@ -672,153 +716,53 @@
                 <input type="hidden" name="dispatch_direct" id="dispatch_direct" value="">
                 <input type="hidden" name="assigned_doctor_id" id="assigned_doctor_id" value="">
 
-                {# ── Exam Picker Panel — appears when REFRACTION or INVEST is selected ── #}
-                <div id="examPickerPanel" class="d-none mb-3 p-3 rounded" style="background:#f0f9ff;border:1px solid #bae6fd;">
-                  <div class="d-flex align-items-center justify-content-between mb-2">
-                    <span class="small fw-bold" style="color:#0369a1;">
-                      <i class="bi bi-clipboard2-check me-1"></i>Select Exam(s) &amp; Examiner
-                    </span>
-                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearExamPicker()">
-                      <i class="bi bi-x"></i> Clear
-                    </button>
-                  </div>
-
-                  {# Exam type checkboxes — optometry group #}
-                  <div id="examGroupOptom" class="d-none">
-                    {% for cat_label, types in exam_optom_grouped %}
-                    <div class="mb-2">
-                      <div class="text-muted small fw-semibold mb-1">{{ cat_label }}</div>
-                      {% for t in types %}
-                      <div class="form-check form-check-inline">
-                        <input class="form-check-input exam-type-cb" type="checkbox" name="exam_type_ids" value="{{ t.pk }}" id="ext_{{ t.pk }}">
-                        <label class="form-check-label small" for="ext_{{ t.pk }}">{{ t.name }}</label>
+                {# Exam type picker — shown when Optometry department is selected #}
+                <div id="examPickPanel" class="d-none mb-3">
+                  <div class="card border shadow-sm">
+                    <div class="card-header bg-white py-2 px-3 d-flex align-items-center gap-2">
+                      <span class="fw-bold d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                            style="background:#f1f5f9;width:26px;height:26px;font-size:.78rem;color:#475569;">
+                        <i class="bi bi-eye"></i>
+                      </span>
+                      <span class="fw-semibold" style="font-size:.88rem;">Optometry Exams</span>
+                      <span class="text-muted ms-auto" style="font-size:.7rem;">Patient will be billed before routing</span>
+                    </div>
+                    <div class="card-body p-3">
+                      {% for cat_label, types in exam_optom_grouped %}
+                      <div class="{% if not forloop.last %}mb-3 pb-2 border-bottom{% endif %}">
+                        <div class="text-muted fw-semibold mb-2" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;">{{ cat_label }}</div>
+                        {% for t in types %}
+                        <div class="form-check mb-1">
+                          <input type="checkbox" name="exam_type_ids" value="{{ t.pk }}" class="form-check-input exam-cb" id="exam_{{ t.pk }}" data-price="{{ t.unit_price }}" onchange="updateExamTotal()">
+                          <label class="form-check-label" for="exam_{{ t.pk }}" style="font-size:.84rem;">{{ t.name }}</label>
+                        </div>
+                        {% endfor %}
                       </div>
                       {% endfor %}
                     </div>
-                    {% endfor %}
-                  </div>
-
-                  {# Exam type checkboxes — investigation group #}
-                  <div id="examGroupInvest" class="d-none">
-                    {% for cat_label, types in exam_invest_grouped %}
-                    <div class="mb-2">
-                      <div class="text-muted small fw-semibold mb-1">{{ cat_label }}</div>
-                      {% for t in types %}
-                      <div class="form-check form-check-inline">
-                        <input class="form-check-input exam-type-cb" type="checkbox" name="exam_type_ids" value="{{ t.pk }}" id="ext_{{ t.pk }}">
-                        <label class="form-check-label small" for="ext_{{ t.pk }}">{{ t.name }}</label>
-                      </div>
-                      {% endfor %}
-                    </div>
-                    {% endfor %}
-                  </div>
-
-                  {# Examiner picker #}
-                  <div class="mt-2">
-                    <label class="small fw-semibold text-muted mb-1 d-block">Assign Examiner (optional)</label>
-                    <input type="hidden" name="exam_assignee_id" id="examAssigneeId" value="">
-                    <input type="text" class="form-control form-control-sm" id="examAssigneeSearch"
-                           autocomplete="off" placeholder="Type name to search...">
-                    <div id="examAssigneeDropdown" class="list-group position-absolute shadow-sm"
-                         style="z-index:10;max-height:180px;overflow-y:auto;display:none;width:calc(100% - 2rem);">
-                      {% for staff in exam_assignees %}
-                      <button type="button" class="list-group-item list-group-item-action py-1 px-2 small exam-assignee-opt"
-                              data-id="{{ staff.pk }}" data-name="{{ staff.get_full_name }}" data-role="{{ staff.get_role_display }}">
-                        <span class="fw-semibold">{{ staff.get_full_name }}</span>
-                        <span class="text-muted ms-1">({{ staff.get_role_display }})</span>
-                      </button>
-                      {% endfor %}
-                    </div>
-                    <div id="examAssigneeBadge" class="mt-1 d-none">
-                      <span class="badge bg-info text-dark"><i class="bi bi-person-check me-1"></i><span id="examAssigneeName"></span></span>
+                    <div class="card-footer bg-white py-2 px-3">
+                      <span class="text-muted" style="font-size:.78rem;" id="examCountLabel">No exam selected</span>
                     </div>
                   </div>
-
-                  <div class="mt-2 small text-muted">
-                    <i class="bi bi-info-circle me-1"></i>Patient will be routed to <strong>cashier</strong> to pay first, then auto-routed to the examiner after payment.
+                  <div id="examRequiredAlert" class="d-none text-danger small mt-1">
+                    <i class="bi bi-exclamation-circle me-1"></i>Select at least one exam to dispatch to Optometry.
                   </div>
                 </div>
 
                 {# Doctor picker — VIP/Express direct route #}
-                <div id="doctorPickPanel" class="d-none mb-3 p-2 rounded" style="background:#fff8f0;border:1px solid #fed7aa;">
-                  <div class="d-flex align-items-center justify-content-between mb-1">
-                    <span class="small fw-semibold" style="color:#92400e;">
-                      <i class="bi bi-person-badge me-1"></i>Assign Doctor
-                      <span class="fw-normal text-muted">(optional)</span>
-                    </span>
-                    <button type="button" class="btn btn-xs btn-link text-secondary p-0 small" onclick="clearDoctorPick()">
-                      <i class="bi bi-x"></i> Clear
-                    </button>
-                  </div>
-                  <select id="doctorPickSelect" class="form-select form-select-sm" onchange="pickDoctor(this.value, this.options[this.selectedIndex].text)">
-                    <option value="">— Any available doctor in this tier —</option>
-                  </select>
-                  <div id="doctorPickBadge" class="mt-1 d-none">
-                    <span class="badge bg-warning text-dark"><i class="bi bi-person-check me-1"></i><span id="doctorPickName"></span></span>
-                  </div>
-                </div>
+                {# Doctor assignment handled via room selection #}
+                <div id="doctorPickPanel" class="d-none"></div>
 
                 <div id="routeConfirm" class="d-none"></div>
 
-                {# ══ STEP 2 ══ #}
-                <div style="height:1px;background:#e5e7eb;margin:18px 0 14px;"></div>
-                <div class="d-flex align-items-center gap-2 mb-2">
-                  <span class="fw-bold text-white d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                        style="background:#6366f1;width:24px;height:24px;font-size:.78rem;">2</span>
-                  <span class="fw-bold" style="font-size:.9rem;">Clinical Priority</span>
-                  <span class="text-muted ms-auto" style="font-size:.72rem;">Tap to select</span>
-                </div>
+                {# Priority is auto-set by system based on vitals — hidden inputs #}
+                <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
+                <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
+                <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
+                <div id="prioritySuggestion" class="d-none"></div>
 
-                <div class="row g-2 mb-2" id="priorityButtons">
-                  <div class="col-4">
-                    <label id="lbl_normal"
-                           style="cursor:pointer;display:block;text-align:center;border:2px solid #9ca3af;
-                                  border-radius:10px;padding:14px 4px 12px;background:#f9fafb;
-                                  user-select:none;min-height:88px;">
-                      <input type="radio" name="priority" value="NORMAL" class="d-none" id="pri_normal" checked>
-                      <i class="bi bi-check-circle d-block mb-2" style="font-size:1.8rem;"></i>
-                      <div style="font-size:.85rem;font-weight:700;">Normal</div>
-                      <div style="font-size:.68rem;opacity:.65;margin-top:2px;">Routine</div>
-                    </label>
-                  </div>
-                  <div class="col-4">
-                    <label id="lbl_urgent"
-                           style="cursor:pointer;display:block;text-align:center;border:2px solid #d1d5db;
-                                  border-radius:10px;padding:14px 4px 12px;background:#fff;
-                                  user-select:none;min-height:88px;">
-                      <input type="radio" name="priority" value="URGENT" class="d-none" id="pri_urgent">
-                      <i class="bi bi-exclamation-circle-fill d-block mb-2" style="font-size:1.8rem;"></i>
-                      <div style="font-size:.85rem;font-weight:700;">Urgent</div>
-                      <div style="font-size:.68rem;opacity:.65;margin-top:2px;">Needs priority</div>
-                    </label>
-                  </div>
-                  <div class="col-4">
-                    <label id="lbl_emergency"
-                           style="cursor:pointer;display:block;text-align:center;border:2px solid #d1d5db;
-                                  border-radius:10px;padding:14px 4px 12px;background:#fff;
-                                  user-select:none;min-height:88px;">
-                      <input type="radio" name="priority" value="EMERGENCY" class="d-none" id="pri_emergency">
-                      <i class="bi bi-exclamation-octagon-fill d-block mb-2" style="font-size:1.8rem;"></i>
-                      <div style="font-size:.85rem;font-weight:700;">Emergency</div>
-                      <div style="font-size:.68rem;opacity:.65;margin-top:2px;">Immediate</div>
-                    </label>
-                  </div>
-                </div>
-                <div id="prioritySuggestion" class="d-none py-1 px-2 rounded mb-2"
-                     style="background:#eff6ff;border:1px solid #bfdbfe;font-size:.78rem;color:#1d4ed8;">
-                  <i class="bi bi-robot me-1"></i><span id="prioritySuggestionText"></span>
-                </div>
-
-                {# ══ STEP 3 ══ #}
-                <div style="height:1px;background:#e5e7eb;margin:14px 0 12px;"></div>
-                <div class="d-flex align-items-center gap-2 mb-2">
-                  <span class="fw-bold text-white d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                        style="background:#6366f1;width:24px;height:24px;font-size:.78rem;">3</span>
-                  <span class="fw-bold" style="font-size:.9rem;">Triage Notes</span>
-                  <span class="text-muted ms-2" style="font-size:.72rem;">(optional)</span>
-                </div>
-                <textarea name="triage_notes" class="form-control" rows="2"
-                          placeholder="e.g. Sudden loss of vision OD. Patient distressed. Pain scale 7/10.">{{ visit.vital_signs.triage_notes|default:'' }}</textarea>
+                {# Triage notes — hidden for backend compatibility #}
+                <input type="hidden" name="triage_notes" value="{{ visit.vital_signs.triage_notes|default:'' }}">
 
               </div>
             </div>
@@ -928,7 +872,7 @@ function setSelectVal(selId, inpId, val) {
 // Two dispatch modes:
 //   DEPT — any available doctor in the department sees the patient (dept queue)
 //   ROOM — routed to a specific room/doctor (room picker appears after dept chosen)
-// Quick-route buttons (Lab, Pharmacy, Cashier, Refraction etc.) bypass modes entirely.
+// Quick-route buttons (Lab, Pharmacy, Cashier, Optometry etc.) bypass modes entirely.
 
 // Patient tier context — rooms matching this tier shown first
 const _PATIENT_TIER = '{{ visit.service_tier }}';
@@ -988,6 +932,7 @@ function onDeptChange(deptId, label) {
   const confirmEl = document.getElementById('routeConfirm');
   const lbl       = document.getElementById('routeLabel');
   const roomPanel = document.getElementById('roomPickPanel');
+  const examPanel = document.getElementById('examPickPanel');
 
   // Deactivate any quick-route buttons (only reset non-qr-* buttons to outline-primary)
   document.querySelectorAll('.quick-route-btn').forEach(b => {
@@ -1002,6 +947,24 @@ function onDeptChange(deptId, label) {
   directInp.dataset.baseValue = '';
   _currentDeptId = deptId;
   clearRoomBtns();
+
+  // Detect if selected dept is Optometry (code=REFRAC) → show exam picker
+  const deptSel = document.getElementById('dispatch_department');
+  const deptCode = deptSel && deptSel.selectedIndex > 0
+    ? deptSel.options[deptSel.selectedIndex].dataset.code : '';
+  const isOptometry = (deptCode === 'REFRAC');
+
+  if (examPanel) {
+    if (isOptometry && deptId) {
+      examPanel.classList.remove('d-none');
+      // Also set direct route so backend knows it's an optometry dispatch
+      directInp.value = 'REFRACTION';
+    } else {
+      examPanel.classList.add('d-none');
+      // Uncheck all exam checkboxes when switching away
+      examPanel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    }
+  }
 
   const badge = document.getElementById('routeConfirmBadge');
   if (deptId) {
@@ -1057,30 +1020,6 @@ function selectRoute(type, deptId, serviceCode, label, btn) {
       if (chk) chk.classList.remove('d-none');
     }
     if (roomPanel) { roomPanel.classList.add('d-none'); clearRoomBtns(); }
-
-    // Show exam picker for REFRACTION or INVEST
-    var examPanel = document.getElementById('examPickerPanel');
-    if (examPanel) {
-      if (serviceCode === 'REFRACTION' || serviceCode === 'INVEST') {
-        examPanel.classList.remove('d-none');
-        // Show correct exam group
-        var optomGrp = document.getElementById('examGroupOptom');
-        var investGrp = document.getElementById('examGroupInvest');
-        if (serviceCode === 'REFRACTION') {
-          optomGrp.classList.remove('d-none');
-          investGrp.classList.add('d-none');
-          // Uncheck invest checkboxes
-          investGrp.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
-        } else {
-          investGrp.classList.remove('d-none');
-          optomGrp.classList.add('d-none');
-          optomGrp.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
-        }
-      } else {
-        examPanel.classList.add('d-none');
-        clearExamPicker();
-      }
-    }
   }
 
   const badge = document.getElementById('routeConfirmBadge');
@@ -1305,6 +1244,18 @@ document.addEventListener('DOMContentLoaded', function() {
       alertEl.scrollIntoView({behavior: 'smooth', block: 'center'});
       return;
     }
+    // Block Optometry dispatch without at least one exam selected
+    var examPanel = document.getElementById('examPickPanel');
+    if (examPanel && !examPanel.classList.contains('d-none')) {
+      var checked = document.querySelectorAll('.exam-cb:checked');
+      if (checked.length === 0) {
+        e.preventDefault();
+        var examAlert = document.getElementById('examRequiredAlert');
+        if (examAlert) examAlert.classList.remove('d-none');
+        examPanel.scrollIntoView({behavior: 'smooth', block: 'center'});
+        return;
+      }
+    }
     // Prevent double-tap (tablet) from submitting twice
     if (_triageSubmitting) { e.preventDefault(); return; }
     _triageSubmitting = true;
@@ -1375,6 +1326,38 @@ function highlightPriority(val) {
   });
 }
 highlightPriority('NORMAL');
+
+// ── Pain score badge ──────────────────────────────────────────────────────────
+(function(){
+  var sel = document.querySelector('[name="pain_score"]');
+  var badge = document.getElementById('painBadge');
+  if (!sel || !badge) return;
+  function update() {
+    var v = parseInt(sel.value, 10);
+    if (isNaN(v)) { badge.textContent = 'No pain'; badge.style.background = '#f1f5f9'; badge.style.color = '#64748b'; return; }
+    if (v === 0) { badge.textContent = 'No pain'; badge.style.background = '#f0fdf4'; badge.style.color = '#16a34a'; }
+    else if (v <= 3) { badge.textContent = 'Mild'; badge.style.background = '#fefce8'; badge.style.color = '#a16207'; }
+    else if (v <= 6) { badge.textContent = 'Moderate'; badge.style.background = '#fff7ed'; badge.style.color = '#c2410c'; }
+    else { badge.textContent = 'Severe'; badge.style.background = '#fef2f2'; badge.style.color = '#dc2626'; }
+  }
+  sel.addEventListener('change', update);
+  update();
+})();
+
+// ── Exam total calculation ─────────────────────────────────────────────────────
+function updateExamTotal() {
+  var cbs = document.querySelectorAll('.exam-cb');
+  var total = 0, count = 0;
+  cbs.forEach(function(cb) {
+    if (cb.checked) { total += parseFloat(cb.dataset.price || 0); count++; }
+  });
+  var lbl = document.getElementById('examCountLabel');
+  var tot = document.getElementById('examTotalLabel');
+  var alert = document.getElementById('examRequiredAlert');
+  if (lbl) lbl.textContent = count === 0 ? 'No exam selected' : count + ' exam' + (count > 1 ? 's' : '') + ' selected';
+  if (tot) tot.textContent = total.toLocaleString('fr-FR') + ' FCFA';
+  if (alert && count > 0) alert.classList.add('d-none');
+}
 
 // ── Abnormal vitals detection ─────────────────────────────────────────────────
 function showAlert(elId, msg, level) {
@@ -1566,57 +1549,7 @@ const _origOnDeptChange = onDeptChange;
 onDeptChange = function(deptId, label) {
   _origOnDeptChange(deptId, label);
   hideDoctorPicker();
-  // Hide exam picker when switching to dept
-  var ep = document.getElementById('examPickerPanel');
-  if (ep) { ep.classList.add('d-none'); clearExamPicker(); }
 };
-
-// ── Exam picker helpers ──
-function clearExamPicker() {
-  document.querySelectorAll('.exam-type-cb').forEach(cb => cb.checked = false);
-  document.getElementById('examAssigneeId').value = '';
-  document.getElementById('examAssigneeSearch').value = '';
-  var badge = document.getElementById('examAssigneeBadge');
-  if (badge) badge.classList.add('d-none');
-}
-
-// Examiner typeahead
-(function() {
-  var inp = document.getElementById('examAssigneeSearch');
-  var dd = document.getElementById('examAssigneeDropdown');
-  if (!inp || !dd) return;
-
-  inp.addEventListener('input', function() {
-    var q = this.value.toLowerCase().trim();
-    var opts = dd.querySelectorAll('.exam-assignee-opt');
-    var any = false;
-    opts.forEach(function(o) {
-      var txt = (o.dataset.name + ' ' + o.dataset.role).toLowerCase();
-      var show = q.length === 0 || txt.indexOf(q) >= 0;
-      o.style.display = show ? '' : 'none';
-      if (show) any = true;
-    });
-    dd.style.display = any ? 'block' : 'none';
-  });
-  inp.addEventListener('focus', function() {
-    if (this.value.length === 0) {
-      dd.querySelectorAll('.exam-assignee-opt').forEach(o => o.style.display = '');
-      dd.style.display = 'block';
-    }
-  });
-  document.addEventListener('click', function(e) {
-    if (!inp.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
-  });
-  dd.querySelectorAll('.exam-assignee-opt').forEach(function(o) {
-    o.addEventListener('click', function() {
-      document.getElementById('examAssigneeId').value = this.dataset.id;
-      inp.value = this.dataset.name;
-      dd.style.display = 'none';
-      document.getElementById('examAssigneeName').textContent = this.dataset.name + ' (' + this.dataset.role + ')';
-      document.getElementById('examAssigneeBadge').classList.remove('d-none');
-    });
-  });
-})();
 </script>
 
 {% if cross_tier %}

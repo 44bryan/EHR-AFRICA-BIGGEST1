@@ -333,7 +333,7 @@ def home_view(request):
     if user.is_gatekeeper:
         if _qms_active():
             return redirect('qms:gate_issue')
-        return redirect('dashboard:home')  # Gatekeeper has no QMS — show generic home, not patient list
+        return redirect('patients:patient_list')  # Gatekeeper without QMS — show patient list
 
     # ── Super Admin → Dedicated IT Admin Panel ───────────────────────────
     if user.is_super_admin:

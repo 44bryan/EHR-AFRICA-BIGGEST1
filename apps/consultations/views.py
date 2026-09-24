@@ -261,7 +261,7 @@ def consultation_create_view(request, patient_id):
         _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
         _exam_res = InvestigationResult.objects.filter(
             Q(order__visit=visit) |
-            Q(order__visit__isnull=True, order__patient=patient, order__created_at__date=today),
+            Q(order__visit__isnull=True, order__patient=patient, order__created_at__date=timezone.localdate()),
             order__is_deleted=False,
             order__investigation_type__category__in=_EXAM_CATS,
         ).order_by('-result_date').first()
@@ -852,9 +852,9 @@ def consultation_detail_view(request, pk):
     )
 
     try:
-        from apps.patients.models import ChronicMedication
+        from apps.patients.models import PatientMedication
         patient_medications = list(
-            ChronicMedication.objects.filter(patient=consultation.patient, is_active=True)
+            PatientMedication.objects.filter(patient=consultation.patient, is_active=True)
         )
     except Exception:
         patient_medications = []
@@ -1742,6 +1742,14 @@ def workstation_view(request):
 
     today = timezone.localdate()
     user = request.user
+
+    # Persist room assignments across days (auto-refresh stale checked_in_date)
+    if _qms_active():
+        try:
+            from apps.qms.views import _refresh_stale_assignments
+            _refresh_stale_assignments()
+        except Exception:
+            pass
 
     # Department the doctor belongs to
     dept = user.department
@@ -3820,6 +3828,13 @@ def route_rooms_view(request):
 
     from apps.qms.models import ServiceCounter as _SC, QueueToken as _QT, TokenStatus as _TS
     from django.db.models import Count as _Cnt, Q as _DQ
+
+    # Persist room assignments across days
+    try:
+        from apps.qms.views import _refresh_stale_assignments
+        _refresh_stale_assignments()
+    except Exception:
+        pass
 
     _consult_types = [
         'GENERAL', 'EXP_CONSULT', 'VIP_CONSULT', 'REFRACTION', 'GLAUCOMA',

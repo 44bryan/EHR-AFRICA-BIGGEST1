@@ -1160,7 +1160,7 @@ def triage_view(request, visit_number):
     # All routable destinations: departments + direct service queues
     # Nurse can pick ANY of these regardless of patient tier or path
     direct_routes = [
-        {'code': 'REFRACTION',  'label': 'Refraction / TSO'},
+        {'code': 'REFRACTION',  'label': 'Optometry'},
         {'code': 'INVEST',      'label': 'Eye Investigations'},
         {'code': 'LAB',         'label': 'Laboratory'},
         {'code': 'PHARMACY',    'label': 'Pharmacy'},
@@ -1357,6 +1357,16 @@ def triage_view(request, visit_number):
             if flags:
                 vitals['vital_flags'] = flags
 
+            # Pain score (0-10 VAS) — store in vitals JSON
+            _pain = request.POST.get('pain_score', '').strip()
+            if _pain:
+                vitals['pain_score'] = _pain
+
+            # Chief complaint
+            _cc = request.POST.get('chief_complaint', '').strip()
+            if _cc:
+                visit.chief_complaint = _cc
+
             visit.vital_signs = vitals
             visit.status = 'TRIAGE'
             visit.triage_nurse = request.user
@@ -1486,15 +1496,17 @@ def triage_view(request, visit_number):
             else:
                 visit.attending_doctor = None
             _save_fields = ['vital_signs', 'status', 'triage_nurse', 'department',
-                            'nursing_notes', 'pre_auth_status', 'attending_doctor', 'updated_at']
+                            'nursing_notes', 'pre_auth_status', 'attending_doctor',
+                            'chief_complaint', 'updated_at']
             if _ct_change_tier:
                 _save_fields.append('service_tier')
             visit.save(update_fields=_save_fields)
             _notif_status = visit.status  # capture before any further changes
 
             # ── Nurse-initiated exam ordering ────────────────────────────────
-            # When nurse selects exam types at triage, create InvestigationOrder(s)
-            # + ServiceWorkOrder(s) and route to CASHIER first.
+            # When nurse selects exam types at triage, create InvestigationOrder(s).
+            # If exam is already paid for today, mark PAID and route directly to
+            # examiner. Only route to CASHIER if there are unpaid exams.
             _exam_type_ids = request.POST.getlist('exam_type_ids')
             _exam_assignee_id = request.POST.get('exam_assignee_id', '').strip()
             if _exam_type_ids and direct_service in ('REFRACTION', 'INVEST'):
@@ -1504,15 +1516,38 @@ def triage_view(request, visit_number):
                     )
                     from apps.billing.models import (
                         ServiceWorkOrder, WorkOrderStatus as _WOS, ServiceCategory as _SC,
+                        Invoice, InvoiceItem, InvoiceStatus as _InvSt,
                     )
                     _exam_assignee = None
                     if _exam_assignee_id:
                         from apps.accounts.models import User as _EU
                         _exam_assignee = _EU.objects.filter(pk=_exam_assignee_id, is_active=True).first()
 
+                    # Check what the patient has already paid for today
+                    _today_date = timezone.localdate()
+                    _paid_invoice = Invoice.objects.filter(
+                        patient=visit.patient,
+                        issue_date=_today_date,
+                        status=_InvSt.PAID,
+                        is_deleted=False,
+                    ).first()
+                    _paid_descriptions = set()
+                    if _paid_invoice:
+                        _paid_descriptions = set(
+                            InvoiceItem.objects.filter(
+                                invoice=_paid_invoice,
+                                category='INVEST',
+                                is_deleted=False,
+                            ).values_list('description', flat=True)
+                        )
+
                     _exam_types = InvestigationType.objects.filter(pk__in=_exam_type_ids, is_active=True)
                     _created_names = []
+                    _needs_payment = False
+                    _already_paid_names = []
                     for _et in _exam_types:
+                        # Check if this specific exam was already paid for today
+                        _is_paid = any(_et.name.lower() in d.lower() for d in _paid_descriptions)
                         _order = InvestigationOrder.objects.create(
                             patient=visit.patient,
                             visit=visit,
@@ -1521,37 +1556,64 @@ def triage_view(request, visit_number):
                             investigation_type=_et,
                             urgency='ROUTINE',
                             eye='OU',
+                            payment_status=_InvPS.PAID if _is_paid else _InvPS.UNPAID,
                             clinical_indication=f'Nurse-ordered at triage: {nursing_notes[:100]}' if nursing_notes else 'Nurse-ordered at triage',
                             assigned_to=_exam_assignee,
                         )
-                        # ServiceWorkOrder for billing
-                        _qty = 1
-                        _total = _et.unit_price * _qty
-                        _price_note = f'{_et.unit_price:,.0f} FCFA'
-                        ServiceWorkOrder.objects.create(
-                            patient=visit.patient,
-                            category=_SC.INVESTIGATION,
-                            description=f'Exam: {_et.name} (OU) — {_price_note}',
-                            status=_WOS.PENDING_PAYMENT,
-                            notes=_price_note,
-                            created_by=request.user,
-                        )
+                        if _is_paid:
+                            _already_paid_names.append(_et.name)
+                        else:
+                            # ServiceWorkOrder for billing — only for unpaid exams
+                            _price_note = f'{_et.unit_price:,.0f} FCFA'
+                            ServiceWorkOrder.objects.create(
+                                patient=visit.patient,
+                                category=_SC.INVESTIGATION,
+                                description=f'Exam: {_et.name} (OU) — {_price_note}',
+                                status=_WOS.PENDING_PAYMENT,
+                                notes=_price_note,
+                                created_by=request.user,
+                            )
+                            _needs_payment = True
                         _created_names.append(_et.name)
 
-                    # Override routing: send to cashier FIRST, not directly to refraction
-                    direct_service = 'CASHIER'
-                    service_type = 'CASHIER'
-                    visit.status = 'AT_CASHIER'
-                    visit.save(update_fields=['status', 'updated_at'])
-                    _notif_status = 'AT_CASHIER'
+                    if _needs_payment:
+                        # Some exams need payment — route to cashier
+                        direct_service = 'CASHIER'
+                        service_type = 'CASHIER'
+                        visit.status = 'AT_CASHIER'
+                        visit.save(update_fields=['status', 'updated_at'])
+                        _notif_status = 'AT_CASHIER'
+                    else:
+                        # ALL exams already paid — route directly to examiner
+                        _cat = _exam_types.first().category if _exam_types.exists() else 'REFRACTION'
+                        from apps.core.patient_flow import auto_route_to_investigation
+                        class _VH:
+                            def __init__(self, v): self.visit = v
+                        auto_route_to_investigation(_VH(visit), ordered_by=request.user, category=_cat)
+                        direct_service = None  # prevent further routing below
+                        service_type = None
 
                     if _created_names:
                         _exam_msg = ', '.join(_created_names)
                         _assignee_msg = f' (assigned to {_exam_assignee.get_full_name()})' if _exam_assignee else ''
-                        messages.info(
-                            request,
-                            f'Exam(s) ordered: {_exam_msg}{_assignee_msg}. Patient routed to cashier for payment.'
-                        )
+                        if _already_paid_names and _needs_payment:
+                            _paid_msg = ', '.join(_already_paid_names)
+                            messages.info(
+                                request,
+                                f'Exam(s) ordered: {_exam_msg}{_assignee_msg}. '
+                                f'{_paid_msg} already paid — remaining sent to cashier.'
+                            )
+                        elif not _needs_payment:
+                            messages.success(
+                                request,
+                                f'Exam(s) ordered: {_exam_msg}{_assignee_msg}. '
+                                f'Already paid — patient routed directly to examiner.'
+                            )
+                        else:
+                            messages.info(
+                                request,
+                                f'Exam(s) ordered: {_exam_msg}{_assignee_msg}. Patient routed to cashier for payment.'
+                            )
                 except Exception as _exam_exc:
                     import logging as _log
                     _log.getLogger('ehr.triage').error('Nurse exam order failed: %s', _exam_exc, exc_info=True)
@@ -2326,7 +2388,7 @@ def triage_start_view(request, patient_id):
             patient=patient,
             visit_number=generate_visit_number(),
             visit_date=timezone.now(),
-            visit_type='NEW' if not patient.visits.filter(is_deleted=False).exists() else 'RETURN',
+            visit_type='NEW' if not patient.visits.filter(is_deleted=False).exists() else 'FOLLOW_UP',
             chief_complaint=chief,
             status='WAITING',
             service_tier='STANDARD',

@@ -1033,17 +1033,36 @@ def cashier_pos(request, token_id):
     prior_unpaid_invoices = []
 
     if patient:
-        # Find any non-cancelled invoice for today first (including PAID).
-        # Only create a new blank invoice if none exists at all — prevents
-        # a blank duplicate appearing after a patient's invoice is fully paid.
+        # Prefer an open (DRAFT/ISSUED) invoice for today.
+        # If only PAID invoices exist and there are new pending work orders,
+        # create a fresh invoice so old paid items don't accumulate.
         _today_date = timezone.localdate()
         invoice = Invoice.objects.filter(
             patient=patient,
             issue_date=_today_date,
+            status__in=[InvoiceStatus.DRAFT, InvoiceStatus.ISSUED],
             is_deleted=False,
-        ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
+        ).order_by('created_at').first()
         if not invoice:
-            invoice = get_or_create_today_invoice(patient, created_by=request.user)
+            # Check if there are new pending work orders that need billing
+            _has_pending_wos = ServiceWorkOrder.objects.filter(
+                patient=patient,
+                status__in=[WorkOrderStatus.PENDING_PAYMENT, WorkOrderStatus.PENDING],
+                is_deleted=False,
+                created_at__date=_today_date,
+            ).exists()
+            if _has_pending_wos:
+                # New services to bill — create a fresh invoice
+                invoice = get_or_create_today_invoice(patient, created_by=request.user)
+            else:
+                # No new work orders — show the most recent invoice (even if PAID)
+                invoice = Invoice.objects.filter(
+                    patient=patient,
+                    issue_date=_today_date,
+                    is_deleted=False,
+                ).exclude(status=InvoiceStatus.CANCELLED).order_by('-created_at').first()
+                if not invoice:
+                    invoice = get_or_create_today_invoice(patient, created_by=request.user)
         items = invoice.items.filter(is_deleted=False).order_by('created_at')
         payments = invoice.payments.filter(is_deleted=False).order_by('payment_date')
 
@@ -1502,12 +1521,20 @@ def pos_finalize(request, token_id):
         return JsonResponse({'success': False, 'error': 'No patient linked to this token.'}, status=400)
 
     today = timezone.localdate()
-    # Order by created_at so we always get the FIRST (real) invoice, not a blank duplicate.
+    # Prefer the most recent PAID invoice (the one the cashier just finished paying).
+    # Fall back to the latest non-cancelled invoice.
     invoice = Invoice.objects.filter(
         patient=token.patient,
         issue_date=today,
+        status=InvoiceStatus.PAID,
         is_deleted=False,
-    ).exclude(status=InvoiceStatus.CANCELLED).order_by('created_at').first()
+    ).order_by('-created_at').first()
+    if not invoice:
+        invoice = Invoice.objects.filter(
+            patient=token.patient,
+            issue_date=today,
+            is_deleted=False,
+        ).exclude(status=InvoiceStatus.CANCELLED).order_by('-created_at').first()
 
     if not invoice:
         return JsonResponse({'success': False, 'error': 'No invoice found for today.'}, status=400)
@@ -1537,6 +1564,11 @@ def pos_finalize(request, token_id):
         is_vip = (token.service_tier == ServiceTier.VIP)
         initial_status = VisitStatus.WAITING if is_vip else VisitStatus.PARAMETERS
 
+        # Check if the payment bridge already routed this patient to an examiner
+        # (e.g. REFRACTION after nurse-ordered exam payment).
+        # If so, do NOT overwrite their status or create a triage token.
+        _bridge_routed = visit and visit.status in ('REFRACTION', 'INVESTIGATION', 'LABORATORY')
+
         if not visit:
             has_prior = Visit.objects.filter(
                 patient=token.patient, is_deleted=False
@@ -1549,15 +1581,16 @@ def pos_finalize(request, token_id):
                 service_tier=token.service_tier,
                 created_by=request.user,
             )
-        else:
+        elif not _bridge_routed:
             visit.status = initial_status
             visit.save(update_fields=['status', 'updated_at'])
 
         # 3 — Create next queue token (tier-aware) — only when QMS is active
+        # Skip if bridge already routed patient to examiner queue.
         # VIP → VIP_CONSULT (doctor workstation directly, no triage step)
         # Express/FastTrack → PARAMETERS_VIP (VIP/Express triage)
         # Standard → PARAMETERS (standard triage)
-        if _qms_active():
+        if _qms_active() and not _bridge_routed:
             if token.service_tier == ServiceTier.STANDARD:
                 triage_stype = ServiceType.PARAMETERS
             elif is_vip:
