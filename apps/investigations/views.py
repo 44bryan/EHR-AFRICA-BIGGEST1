@@ -360,35 +360,78 @@ def investigation_order_view(request, consultation_pk):
                 if inv_type.default_device and not order.device:
                     order.device = inv_type.default_device
 
+                # ── Duplicate order prevention ──────────────────────────────
+                # Block if same exam type already ordered today for this patient
+                # (regardless of who ordered it — nurse or doctor)
+                _today = timezone.localdate()
+                _existing = InvestigationOrder.objects.filter(
+                    patient=consultation.patient,
+                    investigation_type=inv_type,
+                    created_at__date=_today,
+                    is_deleted=False,
+                ).exclude(status='CANCELLED')
+                if _existing.exists():
+                    _ex = _existing.first()
+                    messages.warning(
+                        request,
+                        f'{inv_type.name} was already ordered today '
+                        f'(by {_ex.ordered_by.get_full_name() if _ex.ordered_by else "Triage"}, '
+                        f'{_ex.get_status_display()}). '
+                        f'Duplicate order not created.'
+                    )
+                    return redirect('consultations:detail', pk=consultation.pk)
+
                 order.save()
 
                 # ── Payment check: skip work order + route directly if already paid ──
-                # Check ALL paid invoice items (INVEST + CONSULT) because refraction
-                # route fee is billed as CONSULT "Refraction / Optometry"
+                # Strategy: check BOTH (a) existing paid InvestigationOrder for same
+                # exam type today AND (b) invoice item description matching.
+                # This prevents double-charging even if descriptions differ slightly.
                 _already_paid = False
                 if not payment_waived:
                     try:
-                        from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
-                        _today = timezone.localdate()
-                        _paid_invs = Invoice.objects.filter(
-                            patient=consultation.patient, issue_date=_today,
-                            status=_InvSt.PAID, is_deleted=False,
-                        )
-                        _paid_descs = set()
-                        for _pi in _paid_invs:
-                            _paid_descs.update(
-                                InvoiceItem.objects.filter(
-                                    invoice=_pi, is_deleted=False,
-                                    category__in=['INVEST', 'CONSULT', 'CLINICAL'],
-                                ).values_list('description', flat=True)
+                        # Method 1: Existing PAID order for same exam type today
+                        _paid_order_exists = InvestigationOrder.objects.filter(
+                            patient=consultation.patient,
+                            investigation_type=inv_type,
+                            created_at__date=_today,
+                            payment_status=PaymentStatus.PAID,
+                            is_deleted=False,
+                        ).exclude(pk=order.pk).exists()
+                        if _paid_order_exists:
+                            _already_paid = True
+
+                        # Method 2: Invoice item description match (fallback for
+                        # exams paid at cashier before any order was created)
+                        if not _already_paid:
+                            from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
+                            _paid_invs = Invoice.objects.filter(
+                                patient=consultation.patient, issue_date=_today,
+                                status__in=[_InvSt.PAID, _InvSt.PARTIALLY_PAID],
+                                is_deleted=False,
                             )
-                        if _paid_descs:
-                            _exam_name_lc = inv_type.name.lower()
-                            # Each exam must be matched by its exact name — no blanket fee coverage
-                            if any(_exam_name_lc in d.lower() for d in _paid_descs):
-                                _already_paid = True
-                                order.payment_status = PaymentStatus.PAID
-                                order.save(update_fields=['payment_status'])
+                            _paid_descs = set()
+                            for _pi in _paid_invs:
+                                _paid_descs.update(
+                                    InvoiceItem.objects.filter(
+                                        invoice=_pi, is_deleted=False,
+                                        category__in=['INVEST', 'CONSULT', 'CLINICAL'],
+                                    ).values_list('description', flat=True)
+                                )
+                            if _paid_descs:
+                                _exam_name_lc = inv_type.name.lower()
+                                _exam_code_lc = (inv_type.code or '').lower()
+                                # Match by name OR code substring in any paid description
+                                if any(
+                                    _exam_name_lc in d.lower() or
+                                    (_exam_code_lc and _exam_code_lc in d.lower())
+                                    for d in _paid_descs
+                                ):
+                                    _already_paid = True
+
+                        if _already_paid:
+                            order.payment_status = PaymentStatus.PAID
+                            order.save(update_fields=['payment_status'])
                     except Exception:
                         pass
 

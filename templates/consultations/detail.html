@@ -424,10 +424,8 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tabInvestigations">
       <i class="bi bi-search-heart me-1"></i>Investigations
-      {% with inv_count=consultation.investigation_orders.count %}
-      {% if inv_count %}<span class="badge bg-primary ms-1" style="font-size:.6rem;">{{ inv_count }}</span>{% endif %}
-      {% endwith %}
-      {% for order in consultation.investigation_orders.all %}
+      {% if visit_investigations %}<span class="badge bg-primary ms-1" style="font-size:.6rem;">{{ visit_investigations|length }}</span>{% endif %}
+      {% for order in visit_investigations %}
         {% if order.status == 'COMPLETED' and order.result and not order.result.is_verified %}
           <span class="badge bg-warning text-dark ms-1" style="font-size:.6rem;" title="Result awaiting verification">!</span>
         {% endif %}
@@ -1039,9 +1037,9 @@
             </div>
             {% endif %}
           </div>
-          {% if consultation.investigation_orders.exists %}
+          {% if visit_investigations %}
           <div class="p-0">
-            {% for order in consultation.investigation_orders.all %}
+            {% for order in visit_investigations %}
             <div class="border-bottom p-3">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
@@ -1050,6 +1048,8 @@
                     {{ order.get_eye_display }} &bull;
                     <span class="badge {% if order.urgency == 'EMERGENCY' %}bg-danger{% elif order.urgency == 'URGENT' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.65rem;">{{ order.urgency }}</span>
                     &bull; Ordered {{ order.created_at|date:"d M Y, H:i" }}
+                    by {{ order.ordered_by.get_full_name|default:"—" }}
+                    {% if not order.consultation %}<span class="badge bg-light text-dark border" style="font-size:.6rem;">Triage</span>{% endif %}
                     {% if order.clinical_indication %} &bull; <span class="text-secondary fst-italic">{{ order.clinical_indication|truncatechars:60 }}</span>{% endif %}
                   </div>
                 </div>
@@ -1224,7 +1224,7 @@
           {% else %}
           <div class="card-body text-center text-muted py-4">
             <i class="bi bi-search-heart fs-2 d-block mb-2"></i>
-            No investigations ordered for this consultation.
+            No investigations ordered for this visit.
           </div>
           {% endif %}
         </div>

@@ -1192,11 +1192,11 @@ def triage_view(request, visit_number):
 
     # ── Payment check: patient must have paid before triage starts ──────────
     from apps.billing.models import Invoice, InvoiceStatus as _IS
-    visit_date = visit.visit_date.date()
+    visit_date = visit.visit_date.date() if hasattr(visit.visit_date, 'date') else visit.visit_date
     today_invoices = Invoice.objects.filter(
         patient=visit.patient,
         is_deleted=False,
-        created_at__date=visit_date,
+        issue_date=visit_date,
     )
     payment_paid = today_invoices.filter(
         status__in=[_IS.PAID, _IS.WAIVED, _IS.PARTIALLY_PAID]
@@ -1539,7 +1539,7 @@ def triage_view(request, visit_number):
                     _paid_invoices = Invoice.objects.filter(
                         patient=visit.patient,
                         issue_date=_today_date,
-                        status=_InvSt.PAID,
+                        status__in=[_InvSt.PAID, _InvSt.PARTIALLY_PAID],
                         is_deleted=False,
                     )
                     _paid_descriptions = set()
@@ -1555,10 +1555,37 @@ def triage_view(request, visit_number):
                     _created_names = []
                     _needs_payment = False
                     _already_paid_names = []
+                    _skipped_dupes = []
                     for _et in _exam_types:
+                        # ── Duplicate order prevention ──
+                        _dup = InvestigationOrder.objects.filter(
+                            patient=visit.patient,
+                            investigation_type=_et,
+                            created_at__date=_today_date,
+                            is_deleted=False,
+                        ).exclude(status='CANCELLED').first()
+                        if _dup:
+                            _skipped_dupes.append(_et.name)
+                            continue
+
                         # Check if this specific exam was already paid for today
-                        # Each exam must be matched by its exact name — no blanket fee coverage
-                        _is_paid = any(_et.name.lower() in d.lower() for d in _paid_descriptions)
+                        # Method 1: existing PAID order for same type
+                        _is_paid = InvestigationOrder.objects.filter(
+                            patient=visit.patient,
+                            investigation_type=_et,
+                            created_at__date=_today_date,
+                            payment_status=_InvPS.PAID,
+                            is_deleted=False,
+                        ).exists()
+                        # Method 2: invoice description match (fallback)
+                        if not _is_paid:
+                            _et_name_lc = _et.name.lower()
+                            _et_code_lc = (_et.code or '').lower()
+                            _is_paid = any(
+                                _et_name_lc in d.lower() or
+                                (_et_code_lc and _et_code_lc in d.lower())
+                                for d in _paid_descriptions
+                            )
                         _order = InvestigationOrder.objects.create(
                             patient=visit.patient,
                             visit=visit,
@@ -1607,6 +1634,11 @@ def triage_view(request, visit_number):
                         direct_service = None  # prevent further routing below
                         service_type = None
 
+                    if _skipped_dupes:
+                        messages.warning(
+                            request,
+                            f'Skipped (already ordered today): {", ".join(_skipped_dupes)}'
+                        )
                     if _created_names:
                         _exam_msg = ', '.join(_created_names)
                         _assignee_msg = f' (assigned to {_exam_assignee.get_full_name()})' if _exam_assignee else ''

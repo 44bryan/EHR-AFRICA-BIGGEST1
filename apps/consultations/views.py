@@ -932,6 +932,18 @@ def consultation_detail_view(request, pk):
             if _exam_result and _exam_result.result_data:
                 _refraction_data = _exam_result.result_data
 
+    # ── ALL investigation orders for this visit (nurse-ordered + doctor-ordered) ──
+    _visit_investigations = []
+    if consultation.visit:
+        from apps.investigations.models import InvestigationOrder
+        _visit_investigations = list(
+            InvestigationOrder.objects.filter(
+                visit=consultation.visit, is_deleted=False,
+            ).select_related(
+                'investigation_type', 'ordered_by', 'assigned_to',
+            ).prefetch_related('result', 'result__files').order_by('-created_at')
+        )
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -950,6 +962,7 @@ def consultation_detail_view(request, pk):
         'surgical_requests': list(consultation.surgical_requests.filter(is_deleted=False).select_related('requested_by').order_by('-created_at')),
         'surgery_types': SurgicalRequest.SurgeryType.choices,
         'visit_stops': visit_stops,
+        'visit_investigations': _visit_investigations,
         'education_given': list(consultation.education_given.select_related('material', 'given_by').order_by('-created_at')),
     })
 
