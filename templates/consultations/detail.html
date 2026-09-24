@@ -926,88 +926,102 @@
   <div class="tab-pane fade" id="tabInvestigations">
     <div class="row g-3">
 
-      {# ── Refraction / Optometry Results Summary ── #}
+      {# ── Optometry / Refraction Results Summary ── #}
       {% if refraction_data %}
+      {% with rd=refraction_data %}
       <div class="col-12">
-        <div class="card border-0 shadow-sm border-start border-info border-3">
-          <div class="card-header bg-info bg-opacity-10 border-bottom py-2">
-            <h6 class="fw-bold mb-0 small"><i class="bi bi-eye me-1 text-info"></i>Optometry Exam Results</h6>
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-eye me-1 text-primary"></i>Optometry Exam Results</h6>
           </div>
           <div class="card-body py-2 px-3">
-            {# ── Visual Acuity ── #}
-            {% if refraction_data.va_unaided_od or refraction_data.va_unaided_os %}
-            <div class="mb-2">
+
+            {# ── Visual Acuity (new fields) ── #}
+            {% if rd.unaided_od or rd.unaided_os or rd.aided_od or rd.aided_os %}
+            <div class="mb-3">
               <div class="fw-semibold small text-muted mb-1">Visual Acuity</div>
-              <table class="table table-sm table-bordered mb-0" style="font-size:.78rem;">
-                <thead class="table-light"><tr><th></th><th>Unaided</th><th>Corrected (BCVA)</th></tr></thead>
+              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
+                <thead class="table-light"><tr><th width="120"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
                 <tbody>
-                  <tr><td class="fw-semibold">OD (Right)</td><td>{{ refraction_data.va_unaided_od|default:"—" }}</td><td>{{ refraction_data.va_corrected_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-semibold">OS (Left)</td><td>{{ refraction_data.va_unaided_os|default:"—" }}</td><td>{{ refraction_data.va_corrected_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Unaided</td><td>{{ rd.unaided_od|default:"—" }}</td><td>{{ rd.unaided_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Aided</td><td>{{ rd.aided_od|default:"—" }}</td><td>{{ rd.aided_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Pinhole</td><td>{{ rd.pinhole_od|default:"—" }}</td><td>{{ rd.pinhole_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Near</td><td>{{ rd.near_od|default:"—" }}</td><td>{{ rd.near_os|default:"—" }}</td></tr>
+                </tbody>
+              </table>
+              {% if rd.chart_used %}<div class="small text-muted mt-1">Chart: {{ rd.chart_used }}</div>{% endif %}
+            </div>
+            {% endif %}
+
+            {# ── Subjective Refraction (new fields) ── #}
+            {% if rd.sph_od or rd.sph_os %}
+            <div class="mb-3">
+              <div class="fw-semibold small text-muted mb-1">Refraction</div>
+              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
+                <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
+                <tbody>
+                  <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_od|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_os|default:"—" }}</td></tr>
+                </tbody>
+              </table>
+              {% if rd.pd_dist or rd.pd_near %}<div class="small text-muted mt-1">PD: {{ rd.pd_dist|default:"—" }} (dist) / {{ rd.pd_near|default:"—" }} (near)</div>{% endif %}
+              {% if rd.pd %}<div class="small text-muted mt-1">PD: {{ rd.pd }} mm</div>{% endif %}
+            </div>
+            {% endif %}
+
+            {# ── Keratometry (autorefraction) ── #}
+            {% if rd.k1_od or rd.k2_od %}
+            <div class="mb-3">
+              <div class="fw-semibold small text-muted mb-1">Autorefraction / Keratometry</div>
+              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
+                <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
+                <tbody>
+                  <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td></tr>
                 </tbody>
               </table>
             </div>
             {% endif %}
-            {# ── Subjective Refraction ── #}
-            {% if refraction_data.sub_sph_dist_od or refraction_data.sub_sph_dist_os %}
-            <div class="mb-2">
-              <div class="fw-semibold small text-muted mb-1">Subjective Refraction (Distance)</div>
-              <table class="table table-sm table-bordered mb-0" style="font-size:.78rem;">
-                <thead class="table-light"><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>VA</th></tr></thead>
+
+            {# ── Low Vision ── #}
+            {% if rd.distance_va_od or rd.distance_va_os or rd.magnification_required %}
+            <div class="mb-3">
+              <div class="fw-semibold small text-muted mb-1">Low Vision Assessment</div>
+              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
+                <thead class="table-light"><tr><th width="120"></th><th>OD</th><th>OS</th></tr></thead>
                 <tbody>
-                  <tr><td class="fw-semibold">OD</td><td>{{ refraction_data.sub_sph_dist_od|default:"—" }}</td><td>{{ refraction_data.sub_cyl_dist_od|default:"—" }}</td><td>{{ refraction_data.sub_axis_dist_od|default:"—" }}</td><td>{{ refraction_data.sub_va_dist_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-semibold">OS</td><td>{{ refraction_data.sub_sph_dist_os|default:"—" }}</td><td>{{ refraction_data.sub_cyl_dist_os|default:"—" }}</td><td>{{ refraction_data.sub_axis_dist_os|default:"—" }}</td><td>{{ refraction_data.sub_va_dist_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Distance VA</td><td>{{ rd.distance_va_od|default:"—" }}</td><td>{{ rd.distance_va_os|default:"—" }}</td></tr>
+                  <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
                 </tbody>
               </table>
+              {% if rd.contrast_sensitivity %}<div class="small mt-1"><strong>Contrast:</strong> {{ rd.contrast_sensitivity }}</div>{% endif %}
+              {% if rd.magnification_required %}<div class="small mt-1"><strong>Magnification:</strong> {{ rd.magnification_required }}</div>{% endif %}
+              {% if rd.aids_tried %}<div class="small mt-1"><strong>Aids Tried:</strong> {{ rd.aids_tried }}</div>{% endif %}
+              {% if rd.functional_goals %}<div class="small mt-1"><strong>Goals:</strong> {{ rd.functional_goals }}</div>{% endif %}
             </div>
             {% endif %}
-            {# ── Near Add ── #}
-            {% if refraction_data.sub_add_od or refraction_data.sub_add_os %}
-            <div class="mb-2">
-              <div class="fw-semibold small text-muted mb-1">Near Add</div>
-              <table class="table table-sm table-bordered mb-0" style="font-size:.78rem;">
-                <tbody>
-                  <tr><td class="fw-semibold" style="width:80px;">OD</td><td>{{ refraction_data.sub_add_od|default:"—" }}</td><td class="fw-semibold" style="width:80px;">OS</td><td>{{ refraction_data.sub_add_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
+
+            {# ── Interpretation + Management Plan ── #}
+            {% if rd.management_plan %}
+            <div class="p-2 rounded mb-2" style="background:#eff6ff;border-left:3px solid #3b82f6;">
+              <div class="fw-semibold small text-primary mb-1">Management Plan</div>
+              <div style="white-space:pre-wrap;font-size:.82rem;">{{ rd.management_plan }}</div>
             </div>
             {% endif %}
-            {# ── Auto-Refraction ── #}
-            {% if refraction_data.auto_sph_od or refraction_data.auto_sph_os %}
-            <div class="mb-2">
-              <div class="fw-semibold small text-muted mb-1">Auto-Refraction</div>
-              <table class="table table-sm table-bordered mb-0" style="font-size:.78rem;">
-                <thead class="table-light"><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-semibold">OD</td><td>{{ refraction_data.auto_sph_od|default:"—" }}</td><td>{{ refraction_data.auto_cyl_od|default:"—" }}</td><td>{{ refraction_data.auto_axis_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-semibold">OS</td><td>{{ refraction_data.auto_sph_os|default:"—" }}</td><td>{{ refraction_data.auto_cyl_os|default:"—" }}</td><td>{{ refraction_data.auto_axis_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-            {# ── Patient's Glasses ── #}
-            {% if refraction_data.pg_sph_od or refraction_data.pg_sph_os %}
-            <div class="mb-2">
-              <div class="fw-semibold small text-muted mb-1">Patient's Current Glasses</div>
-              <table class="table table-sm table-bordered mb-0" style="font-size:.78rem;">
-                <thead class="table-light"><tr><th></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>VA</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-semibold">OD</td><td>{{ refraction_data.pg_sph_od|default:"—" }}</td><td>{{ refraction_data.pg_cyl_od|default:"—" }}</td><td>{{ refraction_data.pg_axis_od|default:"—" }}</td><td>{{ refraction_data.pg_va_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-semibold">OS</td><td>{{ refraction_data.pg_sph_os|default:"—" }}</td><td>{{ refraction_data.pg_cyl_os|default:"—" }}</td><td>{{ refraction_data.pg_axis_os|default:"—" }}</td><td>{{ refraction_data.pg_va_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-            {# ── IOP ── #}
-            {% if refraction_data.iop_right or refraction_data.iop_left %}
+
+            {# ── IOP (legacy support) ── #}
+            {% if rd.iop_right or rd.iop_left %}
             <div class="mb-0">
               <div class="fw-semibold small text-muted mb-1">IOP</div>
-              <span class="badge bg-light text-dark border me-2">OD: {{ refraction_data.iop_right|default:"—" }} mmHg</span>
-              <span class="badge bg-light text-dark border">OS: {{ refraction_data.iop_left|default:"—" }} mmHg</span>
+              <span class="badge bg-light text-dark border me-2">OD: {{ rd.iop_right|default:"—" }} mmHg</span>
+              <span class="badge bg-light text-dark border">OS: {{ rd.iop_left|default:"—" }} mmHg</span>
             </div>
             {% endif %}
+
           </div>
         </div>
       </div>
+      {% endwith %}
       {% endif %}
 
       <div class="col-12">
