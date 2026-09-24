@@ -82,256 +82,317 @@
 {% if is_optometry %}
 
   {% if result %}
-  <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header py-2 d-flex justify-content-between align-items-center flex-wrap gap-2 bg-white">
-      <div class="d-flex align-items-center gap-2">
-        <span class="fw-bold {% if result.is_normal %}text-success{% elif result.is_normal == False %}text-danger{% else %}text-secondary{% endif %}" style="font-size:.85rem;">
-          {% if result.is_normal %}<i class="bi bi-check-circle me-1"></i>Normal{% elif result.is_normal == False %}<i class="bi bi-exclamation-circle me-1"></i>Abnormal{% else %}Recorded{% endif %}
-        </span>
-        <h6 class="mb-0 fw-semibold">{{ order.investigation_type.name }} — Result</h6>
-        {% if result.version_number > 1 %}<span class="badge bg-dark">v{{ result.version_number }}</span>{% endif %}
+  {# ── Optometry Clinical Report Card ────────────────────────────────────── #}
+  {% if result.result_data %}
+  {% with rd=result.result_data %}
+
+  {# ── Two-column OD / OS report card ──────────────────────────────── #}
+  <div class="row g-3 mb-3">
+
+    {# ── OD (Right Eye) ── #}
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header py-2 text-white" style="background:#2563eb;">
+          <h6 class="mb-0 fw-bold"><i class="bi bi-eye me-1"></i>OD — Right Eye</h6>
+        </div>
+        <div class="card-body py-2">
+
+          {# Refraction #}
+          {% if rd.sph_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Refraction</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">SPH</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.sph_od }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">CYL</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.cyl_od|default:"—" }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">AXIS</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.axis_od|default:"—" }}&deg;</div></div>
+              {% if rd.add_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">ADD</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.add_od }}</div></div>{% endif %}
+              {% if rd.best_va_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">BEST VA</div><div class="fw-bold text-success" style="font-size:1.1rem;">{{ rd.best_va_od }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Autorefraction / Keratometry #}
+          {% if rd.k1_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Keratometry</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">K1</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.k1_od }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">K2</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.k2_od|default:"—" }}</div></div>
+            </div>
+          </div>
+          {% endif %}
+
+          {# Visual Acuity #}
+          {% if rd.unaided_od or rd.aided_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Visual Acuity</div>
+            <div class="d-flex gap-3 flex-wrap">
+              {% if rd.unaided_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">UNAIDED</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.unaided_od }}</div></div>{% endif %}
+              {% if rd.aided_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">AIDED</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.aided_od }}</div></div>{% endif %}
+              {% if rd.pinhole_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">PINHOLE</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.pinhole_od }}</div></div>{% endif %}
+              {% if rd.near_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">NEAR</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.near_od }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Low Vision #}
+          {% if rd.distance_va_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Low Vision</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">DISTANCE</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.distance_va_od }}</div></div>
+              {% if rd.near_va_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">NEAR</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.near_va_od }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Cover Test #}
+          {% if rd.dist_type %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Cover Test — Distance</div>
+            <div class="small"><strong>{{ rd.dist_type }}</strong> {% if rd.dist_amount_pd %}{{ rd.dist_amount_pd }} PD{% endif %} {% if rd.dist_vertical %}(V: {{ rd.dist_vertical }}){% endif %}</div>
+          </div>
+          {% endif %}
+
+          {# Colour Vision #}
+          {% if rd.plates_correct_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Colour Vision</div>
+            <div class="d-flex gap-3">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">PLATES</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.plates_correct_od }}</div></div>
+              {% if rd.result_od %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">RESULT</div><div class="fw-bold {% if rd.result_od == 'NORMAL' %}text-success{% else %}text-danger{% endif %}" style="font-size:1.1rem;">{{ rd.result_od }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Motility #}
+          {% if rd.sr_od or rd.lr_od %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Motility</div>
+            <div class="d-flex gap-2 flex-wrap small">
+              <span>SR: <strong>{{ rd.sr_od|default:"—" }}</strong></span>
+              <span>IR: <strong>{{ rd.ir_od|default:"—" }}</strong></span>
+              <span>MR: <strong>{{ rd.mr_od|default:"—" }}</strong></span>
+              <span>LR: <strong>{{ rd.lr_od|default:"—" }}</strong></span>
+              <span>SO: <strong>{{ rd.so_od|default:"—" }}</strong></span>
+              <span>IO: <strong>{{ rd.io_od|default:"—" }}</strong></span>
+            </div>
+          </div>
+          {% endif %}
+
+        </div>
       </div>
     </div>
-    <div class="card-body">
 
-      {% if result.interpretation %}
-      <div class="p-3 rounded mb-3" style="background:#f8fafc;border-left:3px solid #0d6efd;">
-        <div class="fw-semibold small text-muted mb-1">Interpretation / Findings</div>
-        <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6;">{{ result.interpretation }}</div>
-      </div>
-      {% endif %}
-
-      {# ── Structured result data — proper clinical display ── #}
-      {% if result.result_data %}
-      {% with rd=result.result_data %}
-
-        {# ── SUBJECTIVE REFRACTION ── #}
-        {% if rd.sph_od or rd.sph_os %}
-        <div class="fw-semibold small text-muted mb-2">Refraction</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_od|default:"—" }}</td></tr>
-            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.best_va_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
+    {# ── OS (Left Eye) ── #}
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header py-2 text-white" style="background:#16a34a;">
+          <h6 class="mb-0 fw-bold"><i class="bi bi-eye me-1"></i>OS — Left Eye</h6>
         </div>
-        {% if rd.pd_dist or rd.pd_near %}<div class="small text-muted mb-2">PD: {{ rd.pd_dist|default:"—" }} (distance) / {{ rd.pd_near|default:"—" }} (near)</div>{% endif %}
-        {% if rd.pd %}<div class="small text-muted mb-2">PD: {{ rd.pd }} mm</div>{% endif %}
+        <div class="card-body py-2">
 
-        {# ── AUTOREFRACTION / KERATOMETRY ── #}
-        {% elif rd.k1_od or rd.k2_od %}
-        <div class="fw-semibold small text-muted mb-2">Autorefraction / Keratometry</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>K1</th><th>K2</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td></tr>
-            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-
-        {# ── VISUAL ACUITY ── #}
-        {% elif rd.unaided_od or rd.unaided_os or rd.aided_od or rd.aided_os %}
-        <div class="fw-semibold small text-muted mb-2">Visual Acuity</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">Unaided (Distance)</td><td>{{ rd.unaided_od|default:"—" }}</td><td>{{ rd.unaided_os|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Aided (Distance)</td><td>{{ rd.aided_od|default:"—" }}</td><td>{{ rd.aided_os|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Pinhole</td><td>{{ rd.pinhole_od|default:"—" }}</td><td>{{ rd.pinhole_os|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_od|default:"—" }}</td><td>{{ rd.near_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-        {% if rd.chart_used %}<div class="small text-muted mb-2">Chart used: {{ rd.chart_used }}</div>{% endif %}
-
-        {# ── LOW VISION ASSESSMENT ── #}
-        {% elif rd.distance_va_od or rd.distance_va_os or rd.magnification_required %}
-        <div class="fw-semibold small text-muted mb-2">Low Vision Assessment</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="130"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">Distance VA</td><td>{{ rd.distance_va_od|default:"—" }}</td><td>{{ rd.distance_va_os|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-        {% if rd.contrast_sensitivity %}<div class="small mb-1"><strong>Contrast Sensitivity:</strong> {{ rd.contrast_sensitivity }}</div>{% endif %}
-        {% if rd.magnification_required %}<div class="small mb-1"><strong>Magnification Required:</strong> {{ rd.magnification_required }}</div>{% endif %}
-        {% if rd.aids_tried %}<div class="small mb-1"><strong>Aids Tried:</strong> {{ rd.aids_tried }}</div>{% endif %}
-        {% if rd.functional_goals %}<div class="small mb-1"><strong>Functional Goals:</strong> {{ rd.functional_goals }}</div>{% endif %}
-
-        {# ── COVER TEST ── #}
-        {% elif rd.dist_type or rd.near_type %}
-        <div class="fw-semibold small text-muted mb-2">Cover Test</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="90"></th><th>Type</th><th>Amount (PD)</th><th>Vertical</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">Distance</td><td>{{ rd.dist_type|default:"—" }}</td><td>{{ rd.dist_amount_pd|default:"—" }}</td><td>{{ rd.dist_vertical|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Near</td><td>{{ rd.near_type|default:"—" }}</td><td>{{ rd.near_amount_pd|default:"—" }}</td><td>{{ rd.near_vertical|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-
-        {# ── COLOUR VISION ── #}
-        {% elif rd.plates_correct_od or rd.result_od %}
-        <div class="fw-semibold small text-muted mb-2">Colour Vision</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="130"></th><th>OD</th><th>OS</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">Plates Correct</td><td>{{ rd.plates_correct_od|default:"—" }}</td><td>{{ rd.plates_correct_os|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Result</td><td>{{ rd.result_od|default:"—" }}</td><td>{{ rd.result_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-        {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
-        {% if rd.deficiency_type %}<div class="small text-muted mb-1">Deficiency: {{ rd.deficiency_type }}</div>{% endif %}
-
-        {# ── MOTILITY ── #}
-        {% elif rd.sr_od or rd.lr_od %}
-        <div class="fw-semibold small text-muted mb-2">Ocular Motility</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="50"></th><th>SR</th><th>IR</th><th>MR</th><th>LR</th><th>SO</th><th>IO</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">OD</td><td>{{ rd.sr_od|default:"—" }}</td><td>{{ rd.ir_od|default:"—" }}</td><td>{{ rd.mr_od|default:"—" }}</td><td>{{ rd.lr_od|default:"—" }}</td><td>{{ rd.so_od|default:"—" }}</td><td>{{ rd.io_od|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">OS</td><td>{{ rd.sr_os|default:"—" }}</td><td>{{ rd.ir_os|default:"—" }}</td><td>{{ rd.mr_os|default:"—" }}</td><td>{{ rd.lr_os|default:"—" }}</td><td>{{ rd.so_os|default:"—" }}</td><td>{{ rd.io_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-        {% if rd.saccades %}<div class="small mb-1"><strong>Saccades:</strong> {{ rd.saccades }} &nbsp;|&nbsp; <strong>Pursuits:</strong> {{ rd.pursuits|default:"—" }}</div>{% endif %}
-        {% if rd.nystagmus %}<div class="small mb-1"><strong>Nystagmus:</strong> {{ rd.nystagmus }}</div>{% endif %}
-        {% if rd.head_posture %}<div class="small mb-1"><strong>Head Posture:</strong> {{ rd.head_posture }}</div>{% endif %}
-
-        {# ── NPC/NPA ── #}
-        {% elif rd.break_point_cm %}
-        <div class="fw-semibold small text-muted mb-2">NPC / NPA</div>
-        <div class="small mb-1"><strong>Break Point:</strong> {{ rd.break_point_cm }} cm &nbsp;|&nbsp; <strong>Recovery:</strong> {{ rd.recovery_point_cm|default:"—" }} cm</div>
-        {% if rd.method %}<div class="small text-muted mb-1">Method: {{ rd.method }}</div>{% endif %}
-
-        {# ── STEREOPSIS ── #}
-        {% elif rd.result_seconds_arc %}
-        <div class="fw-semibold small text-muted mb-2">Stereopsis</div>
-        <div class="small mb-1"><strong>Stereoacuity:</strong> {{ rd.result_seconds_arc }} seconds of arc &nbsp;|&nbsp; <strong>Grade:</strong> {{ rd.grade|default:"—" }}</div>
-        {% if rd.test_used %}<div class="small text-muted mb-1">Test: {{ rd.test_used }}</div>{% endif %}
-
-        {# ── FUSIONAL VERGENCE ── #}
-        {% elif rd.bo_break_dist or rd.bi_break_dist %}
-        <div class="fw-semibold small text-muted mb-2">Fusional Vergence</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th></th><th colspan="2">Base Out (Convergence)</th><th colspan="2">Base In (Divergence)</th></tr><tr class="table-light"><th></th><th>Break</th><th>Recovery</th><th>Break</th><th>Recovery</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold">Distance</td><td>{{ rd.bo_break_dist|default:"—" }}</td><td>{{ rd.bo_recovery_dist|default:"—" }}</td><td>{{ rd.bi_break_dist|default:"—" }}</td><td>{{ rd.bi_recovery_dist|default:"—" }}</td></tr>
-            <tr><td class="fw-bold">Near</td><td>{{ rd.bo_break_near|default:"—" }}</td><td>{{ rd.bo_recovery_near|default:"—" }}</td><td>{{ rd.bi_break_near|default:"—" }}</td><td>{{ rd.bi_recovery_near|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-
-        {# ── CYCLOPLEGIC REFRACTION ── #}
-        {% elif rd.cycloplegic_agent %}
-        <div class="fw-semibold small text-muted mb-2">Cycloplegic Refraction</div>
-        <div class="small mb-1"><strong>Agent:</strong> {{ rd.cycloplegic_agent }} &nbsp;|&nbsp; <strong>Instilled:</strong> {{ rd.instillation_time|default:"—" }} &nbsp;|&nbsp; <strong>Exam:</strong> {{ rd.exam_time|default:"—" }}</div>
-        <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-2" style="font-size:.85rem;">
-          <thead class="table-light"><tr><th width="70"></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
-          <tbody>
-            <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sph_od|default:"—" }}</td><td>{{ rd.cyl_od|default:"—" }}</td><td>{{ rd.axis_od|default:"—" }}</td></tr>
-            <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sph_os|default:"—" }}</td><td>{{ rd.cyl_os|default:"—" }}</td><td>{{ rd.axis_os|default:"—" }}</td></tr>
-          </tbody>
-        </table>
-        </div>
-
-        {# ── FALLBACK: generic key-value ── #}
-        {% else %}
-        <div class="fw-semibold small text-muted mb-2">Measurements</div>
-        <table class="table table-sm table-bordered mb-0 small">
-          <tbody>
-            {% for key, val in rd.items %}
-            {% if key != 'management_plan' and key != 'notes' %}
-            <tr><td class="fw-semibold text-nowrap" style="width:35%;">{{ key|cut:"_"|title }}</td><td>{{ val }}</td></tr>
-            {% endif %}
-            {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
-
-        {# ── Management Plan ── #}
-        {% if rd.management_plan %}
-        <div class="p-2 rounded mt-2" style="background:#eff6ff;border-left:3px solid #3b82f6;">
-          <div class="fw-semibold small text-primary mb-1">Management Plan</div>
-          <div style="white-space:pre-wrap;font-size:.85rem;">{{ rd.management_plan }}</div>
-        </div>
-        {% endif %}
-
-        {% if rd.notes %}
-        <div class="small text-muted mt-2"><strong>Tech Notes:</strong> {{ rd.notes }}</div>
-        {% endif %}
-
-      {% endwith %}
-      {% endif %}
-
-      {# ── Result footer ── #}
-      <div class="row small text-muted mt-3 pt-2 border-top">
-        <div class="col-auto">Performed by: <strong>{{ result.performed_by.full_name|default:"—" }}</strong></div>
-        <div class="col-auto">{{ result.result_date|date:"d M Y, H:i" }}</div>
-        {% if result.verified_by %}
-        <div class="col-auto">Verified by: <strong class="text-success">{{ result.verified_by.full_name }}</strong> {{ result.verified_at|date:"d M Y, H:i" }}</div>
-        {% endif %}
-        {% if result.acknowledged_by %}
-        <div class="col-auto">Acknowledged by: <strong>{{ result.acknowledged_by.full_name }}</strong> {{ result.acknowledged_at|date:"d M Y, H:i" }}</div>
-        {% endif %}
-      </div>
-
-      {% if result.files.exists %}
-      <div class="mt-3">
-        <div class="fw-semibold small mb-2">Attached Files</div>
-        <div class="d-flex flex-wrap gap-2">
-          {% for f in result.files.all %}
-          {% if f.file_type == 'IMAGE' %}
-          <a href="{{ f.file.url }}" target="_blank"><img src="{{ f.file.url }}" class="border rounded shadow-sm" style="max-height:200px;max-width:280px;object-fit:contain;"></a>
-          {% elif f.file_type == 'PDF' or f.file_type == 'DICOM_PDF' %}
-          <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"PDF" }}</a>
-          {% else %}
-          <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"File" }}</a>
+          {# Refraction #}
+          {% if rd.sph_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Refraction</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">SPH</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.sph_os }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">CYL</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.cyl_os|default:"—" }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">AXIS</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.axis_os|default:"—" }}&deg;</div></div>
+              {% if rd.add_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">ADD</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.add_os }}</div></div>{% endif %}
+              {% if rd.best_va_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">BEST VA</div><div class="fw-bold text-success" style="font-size:1.1rem;">{{ rd.best_va_os }}</div></div>{% endif %}
+            </div>
+          </div>
           {% endif %}
-          {% endfor %}
+
+          {# Autorefraction / Keratometry #}
+          {% if rd.k1_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Keratometry</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">K1</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.k1_os }}</div></div>
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">K2</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.k2_os|default:"—" }}</div></div>
+            </div>
+          </div>
+          {% endif %}
+
+          {# Visual Acuity #}
+          {% if rd.unaided_os or rd.aided_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Visual Acuity</div>
+            <div class="d-flex gap-3 flex-wrap">
+              {% if rd.unaided_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">UNAIDED</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.unaided_os }}</div></div>{% endif %}
+              {% if rd.aided_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">AIDED</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.aided_os }}</div></div>{% endif %}
+              {% if rd.pinhole_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">PINHOLE</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.pinhole_os }}</div></div>{% endif %}
+              {% if rd.near_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">NEAR</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.near_os }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Low Vision #}
+          {% if rd.distance_va_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Low Vision</div>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">DISTANCE</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.distance_va_os }}</div></div>
+              {% if rd.near_va_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">NEAR</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.near_va_os }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Cover Test #}
+          {% if rd.near_type %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Cover Test — Near</div>
+            <div class="small"><strong>{{ rd.near_type }}</strong> {% if rd.near_amount_pd %}{{ rd.near_amount_pd }} PD{% endif %} {% if rd.near_vertical %}(V: {{ rd.near_vertical }}){% endif %}</div>
+          </div>
+          {% endif %}
+
+          {# Colour Vision #}
+          {% if rd.plates_correct_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Colour Vision</div>
+            <div class="d-flex gap-3">
+              <div class="text-center"><div class="text-muted" style="font-size:.65rem;">PLATES</div><div class="fw-bold" style="font-size:1.1rem;">{{ rd.plates_correct_os }}</div></div>
+              {% if rd.result_os %}<div class="text-center"><div class="text-muted" style="font-size:.65rem;">RESULT</div><div class="fw-bold {% if rd.result_os == 'NORMAL' %}text-success{% else %}text-danger{% endif %}" style="font-size:1.1rem;">{{ rd.result_os }}</div></div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# Motility #}
+          {% if rd.sr_os or rd.lr_os %}
+          <div class="mb-2">
+            <div class="text-muted small fw-semibold mb-1">Motility</div>
+            <div class="d-flex gap-2 flex-wrap small">
+              <span>SR: <strong>{{ rd.sr_os|default:"—" }}</strong></span>
+              <span>IR: <strong>{{ rd.ir_os|default:"—" }}</strong></span>
+              <span>MR: <strong>{{ rd.mr_os|default:"—" }}</strong></span>
+              <span>LR: <strong>{{ rd.lr_os|default:"—" }}</strong></span>
+              <span>SO: <strong>{{ rd.so_os|default:"—" }}</strong></span>
+              <span>IO: <strong>{{ rd.io_os|default:"—" }}</strong></span>
+            </div>
+          </div>
+          {% endif %}
+
         </div>
       </div>
-      {% endif %}
-
-      {# Doctor Acknowledge #}
-      {% if not result.acknowledged_by and request.user.is_doctor %}
-      <div class="mt-3 pt-2 border-top">
-        <form method="post" action="{% url 'investigations:acknowledge' order.pk %}" class="d-inline">{% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check-lg me-1"></i>Acknowledge Result</button>
-        </form>
-      </div>
-      {% endif %}
-
-      {# Amend Result #}
-      {% if result.is_verified and request.user.can_record_investigation_results %}
-      <div class="mt-3 pt-2 border-top">
-        <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#amendForm"><i class="bi bi-pencil me-1"></i>Amend Result</button>
-        <div class="collapse mt-2" id="amendForm">
-          <form method="post" action="{% url 'investigations:amend' order.pk %}" class="border rounded p-2">{% csrf_token %}
-            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Amendment Reason</label><input type="text" name="amendment_reason" class="form-control form-control-sm" required></div>
-            <div class="mb-2"><label class="form-label small fw-semibold mb-0">Updated Interpretation</label><textarea name="interpretation" class="form-control form-control-sm" rows="3">{{ result.interpretation }}</textarea></div>
-            <div class="mb-2"><select name="is_normal" class="form-select form-select-sm"><option value="">-- Normal/Abnormal --</option><option value="True" {% if result.is_normal %}selected{% endif %}>Normal</option><option value="False" {% if result.is_normal == False %}selected{% endif %}>Abnormal</option></select></div>
-            <button type="submit" class="btn btn-sm btn-warning">Save Amendment</button>
-          </form>
-        </div>
-      </div>
-      {% endif %}
     </div>
   </div>
+
+  {# ── Shared / Binocular findings (below OD/OS cards) ── #}
+  {% if rd.pd_dist or rd.pd_near or rd.pd or rd.chart_used or rd.contrast_sensitivity or rd.magnification_required or rd.aids_tried or rd.functional_goals or rd.test_used or rd.deficiency_type or rd.saccades or rd.nystagmus or rd.head_posture or rd.break_point_cm or rd.result_seconds_arc or rd.bo_break_dist or rd.cycloplegic_agent %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><h6 class="mb-0 fw-semibold small"><i class="bi bi-arrows-angle-expand me-1"></i>Additional Findings</h6></div>
+    <div class="card-body py-2">
+      <div class="row g-3 small">
+        {% if rd.pd_dist or rd.pd_near %}<div class="col-auto"><span class="text-muted">PD:</span> <strong>{{ rd.pd_dist|default:"—" }}</strong> (dist) / <strong>{{ rd.pd_near|default:"—" }}</strong> (near)</div>{% endif %}
+        {% if rd.pd %}<div class="col-auto"><span class="text-muted">PD:</span> <strong>{{ rd.pd }} mm</strong></div>{% endif %}
+        {% if rd.chart_used %}<div class="col-auto"><span class="text-muted">Chart:</span> <strong>{{ rd.chart_used }}</strong></div>{% endif %}
+        {% if rd.contrast_sensitivity %}<div class="col-auto"><span class="text-muted">Contrast Sensitivity:</span> <strong>{{ rd.contrast_sensitivity }}</strong></div>{% endif %}
+        {% if rd.magnification_required %}<div class="col-auto"><span class="text-muted">Magnification:</span> <strong>{{ rd.magnification_required }}</strong></div>{% endif %}
+        {% if rd.aids_tried %}<div class="col-12"><span class="text-muted">Aids Tried:</span> {{ rd.aids_tried }}</div>{% endif %}
+        {% if rd.functional_goals %}<div class="col-12"><span class="text-muted">Functional Goals:</span> {{ rd.functional_goals }}</div>{% endif %}
+        {% if rd.test_used %}<div class="col-auto"><span class="text-muted">Test:</span> <strong>{{ rd.test_used }}</strong></div>{% endif %}
+        {% if rd.deficiency_type %}<div class="col-auto"><span class="text-muted">Deficiency:</span> <strong>{{ rd.deficiency_type }}</strong></div>{% endif %}
+        {% if rd.saccades %}<div class="col-auto"><span class="text-muted">Saccades:</span> <strong>{{ rd.saccades }}</strong></div>{% endif %}
+        {% if rd.pursuits %}<div class="col-auto"><span class="text-muted">Pursuits:</span> <strong>{{ rd.pursuits }}</strong></div>{% endif %}
+        {% if rd.nystagmus %}<div class="col-auto"><span class="text-muted">Nystagmus:</span> <strong>{{ rd.nystagmus }}</strong></div>{% endif %}
+        {% if rd.head_posture %}<div class="col-auto"><span class="text-muted">Head Posture:</span> <strong>{{ rd.head_posture }}</strong></div>{% endif %}
+        {% if rd.break_point_cm %}<div class="col-auto"><span class="text-muted">NPC Break:</span> <strong>{{ rd.break_point_cm }} cm</strong> &nbsp; <span class="text-muted">Recovery:</span> <strong>{{ rd.recovery_point_cm|default:"—" }} cm</strong></div>{% endif %}
+        {% if rd.method %}<div class="col-auto"><span class="text-muted">Method:</span> <strong>{{ rd.method }}</strong></div>{% endif %}
+        {% if rd.result_seconds_arc %}<div class="col-auto"><span class="text-muted">Stereoacuity:</span> <strong>{{ rd.result_seconds_arc }}"</strong> &nbsp; <span class="text-muted">Grade:</span> <strong>{{ rd.grade|default:"—" }}</strong></div>{% endif %}
+        {% if rd.bo_break_dist or rd.bi_break_dist %}
+        <div class="col-12">
+          <span class="text-muted">Fusional Vergence:</span>
+          BO <strong>{{ rd.bo_break_dist|default:"—" }}/{{ rd.bo_recovery_dist|default:"—" }}</strong> (dist)
+          <strong>{{ rd.bo_break_near|default:"—" }}/{{ rd.bo_recovery_near|default:"—" }}</strong> (near)
+          &nbsp;|&nbsp; BI <strong>{{ rd.bi_break_dist|default:"—" }}/{{ rd.bi_recovery_dist|default:"—" }}</strong> (dist)
+          <strong>{{ rd.bi_break_near|default:"—" }}/{{ rd.bi_recovery_near|default:"—" }}</strong> (near)
+        </div>
+        {% endif %}
+        {% if rd.cycloplegic_agent %}<div class="col-12"><span class="text-muted">Cycloplegic:</span> <strong>{{ rd.cycloplegic_agent }}</strong> instilled {{ rd.instillation_time|default:"—" }}, exam {{ rd.exam_time|default:"—" }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% endwith %}
+  {% endif %}
+
+  {# ── Interpretation ── #}
+  {% if result.interpretation %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="fw-semibold small text-muted mb-1">Interpretation / Findings</div>
+      <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6;">{{ result.interpretation }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Management Plan ── #}
+  {% if result.result_data.management_plan %}
+  <div class="card border-0 shadow-sm mb-3" style="border-left:3px solid #16a34a !important;">
+    <div class="card-body py-2">
+      <div class="fw-semibold small text-success mb-1"><i class="bi bi-clipboard2-pulse me-1"></i>Management Plan</div>
+      <div style="white-space:pre-wrap;font-size:.9rem;">{{ result.result_data.management_plan }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Tech Notes ── #}
+  {% if result.result_data.notes %}
+  <div class="small text-muted mb-3"><i class="bi bi-chat-text me-1"></i><strong>Tech Notes:</strong> {{ result.result_data.notes }}</div>
+  {% endif %}
+
+  {# ── Result footer ── #}
+  <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
+    <span>Performed by: <strong>{{ result.performed_by.full_name|default:"—" }}</strong></span>
+    <span>{{ result.result_date|date:"d M Y, H:i" }}</span>
+    {% if result.verified_by %}<span>Verified by: <strong class="text-success">{{ result.verified_by.full_name }}</strong> {{ result.verified_at|date:"d M Y, H:i" }}</span>{% endif %}
+    {% if result.acknowledged_by %}<span>Acknowledged by: <strong>{{ result.acknowledged_by.full_name }}</strong></span>{% endif %}
+  </div>
+
+  {# Attached Files #}
+  {% if result.files.exists %}
+  <div class="mb-3">
+    <div class="fw-semibold small mb-2">Attached Files</div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for f in result.files.all %}
+      {% if f.file_type == 'IMAGE' %}
+      <a href="{{ f.file.url }}" target="_blank"><img src="{{ f.file.url }}" class="border rounded shadow-sm" style="max-height:200px;max-width:280px;object-fit:contain;"></a>
+      {% elif f.file_type == 'PDF' or f.file_type == 'DICOM_PDF' %}
+      <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-danger btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ f.description|default:"PDF" }}</a>
+      {% else %}
+      <a href="{{ f.file.url }}" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark me-1"></i>{{ f.description|default:"File" }}</a>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Doctor actions #}
+  <div class="d-flex gap-2 flex-wrap mb-3">
+    {% if not result.acknowledged_by and request.user.is_doctor %}
+    <form method="post" action="{% url 'investigations:acknowledge' order.pk %}" class="d-inline">{% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check-lg me-1"></i>Acknowledge Result</button>
+    </form>
+    {% endif %}
+    {% if result.is_verified and request.user.can_record_investigation_results %}
+    <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#amendForm"><i class="bi bi-pencil me-1"></i>Amend Result</button>
+    {% endif %}
+  </div>
+
+  {% if result.is_verified and request.user.can_record_investigation_results %}
+  <div class="collapse mb-3" id="amendForm">
+    <form method="post" action="{% url 'investigations:amend' order.pk %}" class="card card-body border-0 shadow-sm">{% csrf_token %}
+      <div class="mb-2"><label class="form-label small fw-semibold mb-0">Amendment Reason</label><input type="text" name="amendment_reason" class="form-control form-control-sm" required></div>
+      <div class="mb-2"><label class="form-label small fw-semibold mb-0">Updated Interpretation</label><textarea name="interpretation" class="form-control form-control-sm" rows="3">{{ result.interpretation }}</textarea></div>
+      <div class="mb-2"><select name="is_normal" class="form-select form-select-sm"><option value="">-- Normal/Abnormal --</option><option value="True" {% if result.is_normal %}selected{% endif %}>Normal</option><option value="False" {% if result.is_normal == False %}selected{% endif %}>Abnormal</option></select></div>
+      <button type="submit" class="btn btn-sm btn-warning">Save Amendment</button>
+    </form>
+  </div>
+  {% endif %}
 
   {# Amendment History #}
   {% if amendments %}
