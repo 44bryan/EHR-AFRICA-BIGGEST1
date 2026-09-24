@@ -1551,22 +1551,14 @@ def triage_view(request, visit_number):
                                 is_deleted=False,
                             ).values_list('description', flat=True)
                         )
-                    _has_refrac_fee = any(
-                        'refraction' in d.lower() or 'optometry' in d.lower()
-                        for d in _paid_descriptions
-                    )
-
                     _exam_types = InvestigationType.objects.filter(pk__in=_exam_type_ids, is_active=True)
                     _created_names = []
                     _needs_payment = False
                     _already_paid_names = []
                     for _et in _exam_types:
                         # Check if this specific exam was already paid for today
-                        _is_refrac = _et.category in ('REFRACTION', 'LOW_VISION')
-                        _is_paid = (
-                            any(_et.name.lower() in d.lower() for d in _paid_descriptions)
-                            or (_is_refrac and _has_refrac_fee)
-                        )
+                        # Each exam must be matched by its exact name — no blanket fee coverage
+                        _is_paid = any(_et.name.lower() in d.lower() for d in _paid_descriptions)
                         _order = InvestigationOrder.objects.create(
                             patient=visit.patient,
                             visit=visit,

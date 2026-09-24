@@ -384,10 +384,8 @@ def investigation_order_view(request, consultation_pk):
                             )
                         if _paid_descs:
                             _exam_name_lc = inv_type.name.lower()
-                            # Match: exact name in description OR refraction category match
-                            _is_refraction_cat = inv_type.category in ('REFRACTION', 'LOW_VISION')
-                            _has_refraction_fee = any('refraction' in d.lower() or 'optometry' in d.lower() for d in _paid_descs)
-                            if any(_exam_name_lc in d.lower() for d in _paid_descs) or (_is_refraction_cat and _has_refraction_fee):
+                            # Each exam must be matched by its exact name — no blanket fee coverage
+                            if any(_exam_name_lc in d.lower() for d in _paid_descs):
                                 _already_paid = True
                                 order.payment_status = PaymentStatus.PAID
                                 order.save(update_fields=['payment_status'])
@@ -2885,7 +2883,6 @@ def multi_exam_order_view(request, consultation_pk):
             # Check ALL categories (INVEST + CONSULT) because refraction route
             # fee is billed as CONSULT "Refraction / Optometry"
             _paid_descs_multi = set()
-            _has_refraction_fee_multi = False
             if not payment_waived:
                 try:
                     from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
@@ -2901,10 +2898,6 @@ def multi_exam_order_view(request, consultation_pk):
                                 category__in=['INVEST', 'CONSULT', 'CLINICAL'],
                             ).values_list('description', flat=True)
                         )
-                    _has_refraction_fee_multi = any(
-                        'refraction' in d.lower() or 'optometry' in d.lower()
-                        for d in _paid_descs_multi
-                    )
                 except Exception:
                     pass
 
@@ -2928,14 +2921,10 @@ def multi_exam_order_view(request, consultation_pk):
                 if inv_type.category in _ASSIGNEE_CATS and assigned_user:
                     order.assigned_to = assigned_user
 
-                # Payment — check if already paid today
-                _is_refrac_cat = inv_type.category in ('REFRACTION', 'LOW_VISION')
+                # Payment — check if already paid today (exact name match only)
                 _exam_already_paid = (
                     not payment_waived
-                    and (
-                        any(inv_type.name.lower() in d.lower() for d in _paid_descs_multi)
-                        or (_is_refrac_cat and _has_refraction_fee_multi)
-                    )
+                    and any(inv_type.name.lower() in d.lower() for d in _paid_descs_multi)
                 )
                 if payment_waived:
                     order.payment_status = PaymentStatus.WAIVED
