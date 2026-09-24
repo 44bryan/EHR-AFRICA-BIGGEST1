@@ -1524,22 +1524,28 @@ def triage_view(request, visit_number):
                         _exam_assignee = _EU.objects.filter(pk=_exam_assignee_id, is_active=True).first()
 
                     # Check what the patient has already paid for today
+                    # Check ALL categories (INVEST + CONSULT) because refraction
+                    # route fee is billed as CONSULT "Refraction / Optometry"
                     _today_date = timezone.localdate()
-                    _paid_invoice = Invoice.objects.filter(
+                    _paid_invoices = Invoice.objects.filter(
                         patient=visit.patient,
                         issue_date=_today_date,
                         status=_InvSt.PAID,
                         is_deleted=False,
-                    ).first()
+                    )
                     _paid_descriptions = set()
-                    if _paid_invoice:
-                        _paid_descriptions = set(
+                    for _pinv in _paid_invoices:
+                        _paid_descriptions.update(
                             InvoiceItem.objects.filter(
-                                invoice=_paid_invoice,
-                                category='INVEST',
+                                invoice=_pinv,
+                                category__in=['INVEST', 'CONSULT', 'CLINICAL'],
                                 is_deleted=False,
                             ).values_list('description', flat=True)
                         )
+                    _has_refrac_fee = any(
+                        'refraction' in d.lower() or 'optometry' in d.lower()
+                        for d in _paid_descriptions
+                    )
 
                     _exam_types = InvestigationType.objects.filter(pk__in=_exam_type_ids, is_active=True)
                     _created_names = []
@@ -1547,7 +1553,11 @@ def triage_view(request, visit_number):
                     _already_paid_names = []
                     for _et in _exam_types:
                         # Check if this specific exam was already paid for today
-                        _is_paid = any(_et.name.lower() in d.lower() for d in _paid_descriptions)
+                        _is_refrac = _et.category in ('REFRACTION', 'LOW_VISION')
+                        _is_paid = (
+                            any(_et.name.lower() in d.lower() for d in _paid_descriptions)
+                            or (_is_refrac and _has_refrac_fee)
+                        )
                         _order = InvestigationOrder.objects.create(
                             patient=visit.patient,
                             visit=visit,
@@ -1564,11 +1574,14 @@ def triage_view(request, visit_number):
                             _already_paid_names.append(_et.name)
                         else:
                             # ServiceWorkOrder for billing — only for unpaid exams
+                            _CLIN_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+                            _wo_cat = _SC.CLINICAL_EXAM if _et.category in _CLIN_CATS else _SC.INVESTIGATION
+                            _wo_lbl = 'Clinical Exam' if _et.category in _CLIN_CATS else 'Exam'
                             _price_note = f'{_et.unit_price:,.0f} FCFA'
                             ServiceWorkOrder.objects.create(
                                 patient=visit.patient,
-                                category=_SC.INVESTIGATION,
-                                description=f'Exam: {_et.name} (OU) — {_price_note}',
+                                category=_wo_cat,
+                                description=f'{_wo_lbl}: {_et.name} (OU) — {_price_note}',
                                 status=_WOS.PENDING_PAYMENT,
                                 notes=_price_note,
                                 created_by=request.user,

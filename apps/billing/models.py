@@ -28,6 +28,7 @@ class PaymentMethod(models.TextChoices):
 
 class ServiceCategory(models.TextChoices):
     CONSULTATION = 'CONSULT', 'Consultation'
+    CLINICAL_EXAM = 'CLINICAL', 'Clinical Exam'
     INVESTIGATION = 'INVEST', 'Investigation / Diagnostics'
     LABORATORY = 'LAB', 'Laboratory'
     PHARMACY = 'PHARMACY', 'Pharmacy'

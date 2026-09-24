@@ -363,22 +363,31 @@ def investigation_order_view(request, consultation_pk):
                 order.save()
 
                 # ── Payment check: skip work order + route directly if already paid ──
+                # Check ALL paid invoice items (INVEST + CONSULT) because refraction
+                # route fee is billed as CONSULT "Refraction / Optometry"
                 _already_paid = False
                 if not payment_waived:
                     try:
                         from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
                         _today = timezone.localdate()
-                        _paid_inv = Invoice.objects.filter(
+                        _paid_invs = Invoice.objects.filter(
                             patient=consultation.patient, issue_date=_today,
                             status=_InvSt.PAID, is_deleted=False,
-                        ).first()
-                        if _paid_inv:
-                            _paid_descs = set(
+                        )
+                        _paid_descs = set()
+                        for _pi in _paid_invs:
+                            _paid_descs.update(
                                 InvoiceItem.objects.filter(
-                                    invoice=_paid_inv, category='INVEST', is_deleted=False,
+                                    invoice=_pi, is_deleted=False,
+                                    category__in=['INVEST', 'CONSULT', 'CLINICAL'],
                                 ).values_list('description', flat=True)
                             )
-                            if any(inv_type.name.lower() in d.lower() for d in _paid_descs):
+                        if _paid_descs:
+                            _exam_name_lc = inv_type.name.lower()
+                            # Match: exact name in description OR refraction category match
+                            _is_refraction_cat = inv_type.category in ('REFRACTION', 'LOW_VISION')
+                            _has_refraction_fee = any('refraction' in d.lower() or 'optometry' in d.lower() for d in _paid_descs)
+                            if any(_exam_name_lc in d.lower() for d in _paid_descs) or (_is_refraction_cat and _has_refraction_fee):
                                 _already_paid = True
                                 order.payment_status = PaymentStatus.PAID
                                 order.save(update_fields=['payment_status'])
@@ -397,11 +406,14 @@ def investigation_order_view(request, consultation_pk):
                         total_price = inv_type.unit_price * qty
                         price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' × 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
                         wo_notes = f'Payment waived — {waive_reason}' if payment_waived else price_note
+                        _CLINICAL_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+                        _wo_cat = ServiceCategory.CLINICAL_EXAM if inv_type.category in _CLINICAL_CATS else ServiceCategory.INVESTIGATION
+                        _wo_label = 'Clinical Exam' if inv_type.category in _CLINICAL_CATS else 'Investigation'
                         ServiceWorkOrder.objects.create(
                             patient=consultation.patient,
                             consultation=consultation,
-                            category=ServiceCategory.INVESTIGATION,
-                            description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
+                            category=_wo_cat,
+                            description=f'{_wo_label}: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
                             status=wo_status,
                             notes=wo_notes,
                             created_by=request.user,
@@ -2870,21 +2882,29 @@ def multi_exam_order_view(request, consultation_pk):
             inv_types = InvestigationType.objects.filter(pk__in=selected_type_ids, is_active=True)
 
             # ── Pre-check: what has the patient already paid for today? ──
+            # Check ALL categories (INVEST + CONSULT) because refraction route
+            # fee is billed as CONSULT "Refraction / Optometry"
             _paid_descs_multi = set()
+            _has_refraction_fee_multi = False
             if not payment_waived:
                 try:
                     from apps.billing.models import Invoice, InvoiceItem, InvoiceStatus as _InvSt
                     _today_m = timezone.localdate()
-                    _paid_inv_m = Invoice.objects.filter(
+                    _paid_invs_m = Invoice.objects.filter(
                         patient=consultation.patient, issue_date=_today_m,
                         status=_InvSt.PAID, is_deleted=False,
-                    ).first()
-                    if _paid_inv_m:
-                        _paid_descs_multi = set(
+                    )
+                    for _pi_m in _paid_invs_m:
+                        _paid_descs_multi.update(
                             InvoiceItem.objects.filter(
-                                invoice=_paid_inv_m, category='INVEST', is_deleted=False,
+                                invoice=_pi_m, is_deleted=False,
+                                category__in=['INVEST', 'CONSULT', 'CLINICAL'],
                             ).values_list('description', flat=True)
                         )
+                    _has_refraction_fee_multi = any(
+                        'refraction' in d.lower() or 'optometry' in d.lower()
+                        for d in _paid_descs_multi
+                    )
                 except Exception:
                     pass
 
@@ -2909,9 +2929,13 @@ def multi_exam_order_view(request, consultation_pk):
                     order.assigned_to = assigned_user
 
                 # Payment — check if already paid today
+                _is_refrac_cat = inv_type.category in ('REFRACTION', 'LOW_VISION')
                 _exam_already_paid = (
                     not payment_waived
-                    and any(inv_type.name.lower() in d.lower() for d in _paid_descs_multi)
+                    and (
+                        any(inv_type.name.lower() in d.lower() for d in _paid_descs_multi)
+                        or (_is_refrac_cat and _has_refraction_fee_multi)
+                    )
                 )
                 if payment_waived:
                     order.payment_status = PaymentStatus.WAIVED
@@ -2936,11 +2960,14 @@ def multi_exam_order_view(request, consultation_pk):
                         qty = 2 if (inv_type.billed_per_eye and eye == 'OU') else 1
                         total_price = inv_type.unit_price * qty
                         price_note = f'{inv_type.unit_price:,.0f} FCFA' + (f' x 2 eyes = {total_price:,.0f} FCFA' if qty == 2 else '')
+                        _CLINICAL_CATS_M = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+                        _wo_cat_m = ServiceCategory.CLINICAL_EXAM if inv_type.category in _CLINICAL_CATS_M else ServiceCategory.INVESTIGATION
+                        _wo_label_m = 'Clinical Exam' if inv_type.category in _CLINICAL_CATS_M else 'Investigation'
                         ServiceWorkOrder.objects.create(
                             patient=consultation.patient,
                             consultation=consultation,
-                            category=ServiceCategory.INVESTIGATION,
-                            description=f'Investigation: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
+                            category=_wo_cat_m,
+                            description=f'{_wo_label_m}: {inv_type.name} ({order.get_eye_display()}) — {price_note}',
                             status=wo_status,
                             notes=f'Payment waived — {waive_reason}' if payment_waived else price_note,
                             created_by=request.user,

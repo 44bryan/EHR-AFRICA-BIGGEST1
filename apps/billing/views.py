@@ -2020,7 +2020,7 @@ def _bridge_work_order_to_clinical(wo, user):
     # After cashier pays for investigation/exam, route patient to the examiner queue.
     # Works for both doctor-ordered and nurse-ordered exams.
     # Routes when ALL today's investigation orders for this patient are paid.
-    if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
+    if wo.category in (ServiceCategory.INVESTIGATION, ServiceCategory.CLINICAL_EXAM) and wo.patient_id:
         try:
             from apps.patients.models import Visit
             from apps.investigations.models import InvestigationOrder, PaymentStatus as _BridgePS
@@ -2062,7 +2062,7 @@ def _bridge_work_order_to_clinical(wo, user):
     # ── Notify investigation/lab workstation via WebSocket ─────────────────
     try:
         from apps.core.ws_notify import notify_queue
-        if wo.category == ServiceCategory.INVESTIGATION:
+        if wo.category in (ServiceCategory.INVESTIGATION, ServiceCategory.CLINICAL_EXAM):
             notify_queue('invest')
             notify_queue('workstation')
         elif wo.category == ServiceCategory.LABORATORY:
