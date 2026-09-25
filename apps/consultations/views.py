@@ -944,6 +944,9 @@ def consultation_detail_view(request, pk):
             ).prefetch_related('result', 'result__files').order_by('-created_at')
         )
 
+    # ── Optometry-specific orders (always visible to doctor even before results) ──
+    _optometry_orders = [o for o in _visit_investigations if o.investigation_type.category in ('REFRACTION', 'LOW_VISION', 'ORTHOPTICS')]
+
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
         'note_form': note_form,
@@ -956,6 +959,7 @@ def consultation_detail_view(request, pk):
         'patient': consultation.patient,
         'active_rooms': active_rooms,
         'refraction_data': _refraction_data,
+        'optometry_orders': _optometry_orders,
         'procedures': procedures,
         'prev_consultations': prev_consultations,
         'procedure_types': ProcedureRecord.ProcedureType.choices,

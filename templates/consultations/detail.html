@@ -924,158 +924,67 @@
   <div class="tab-pane fade" id="tabInvestigations">
     <div class="row g-3">
 
-      {# ── Optometry / Refraction Results Summary ── #}
-      {% if refraction_data %}
-      {% with rd=refraction_data %}
+      {# ── Optometry Exams Card — compact: orders + status + view link ── #}
+      {% if consultation.department.code != 'REFRAC' and consultation.department.code != 'PEDS_REFRAC' and consultation.department.code != 'LOW_VIS' and consultation.department.code != 'ORTHO' %}
+      {% if optometry_orders %}
       <div class="col-12">
         <div class="card border-0 shadow-sm">
-          <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center"
-               style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#optomResultsBody" aria-expanded="true">
-            <h6 class="fw-bold mb-0 small"><i class="bi bi-eye me-1 text-primary"></i>Optometry Exam Results</h6>
-            <i class="bi bi-chevron-up text-muted" style="transition:transform .2s;" id="optomChev"></i>
+          <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-eye me-1 text-info"></i>Optometry Exams</h6>
+            {% if request.user.can_order_investigations %}
+            <a href="{% url 'investigations:multi_order' consultation_pk=consultation.pk %}?cat=optometry" class="btn btn-sm btn-outline-info" style="font-size:0.72rem;">
+              <i class="bi bi-plus me-1"></i>Order Optometry
+            </a>
+            {% endif %}
           </div>
-          <div class="collapse show" id="optomResultsBody">
-          <div class="card-body py-2 px-3">
-
-            {# ── Visual Acuity ── #}
-            {% if rd.va_unaided_od or rd.va_unaided_os or rd.va_corrected_od or rd.va_corrected_os %}
-            <div class="mb-3">
-              <div class="fw-semibold small text-muted mb-1">Visual Acuity</div>
-              <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
-                <thead class="table-light"><tr><th width="120"></th><th>OD (Right)</th><th>OS (Left)</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-bold">Unaided</td><td>{{ rd.va_unaided_od|default:"—" }}</td><td>{{ rd.va_unaided_os|default:"—" }}</td></tr>
-                  <tr><td class="fw-bold">Corrected</td><td>{{ rd.va_corrected_od|default:"—" }}</td><td>{{ rd.va_corrected_os|default:"—" }}</td></tr>
-                  {% if rd.va_pinhole_od or rd.va_pinhole_os %}
-                  <tr><td class="fw-bold">Pinhole</td><td>{{ rd.va_pinhole_od|default:"—" }}</td><td>{{ rd.va_pinhole_os|default:"—" }}</td></tr>
+          <div class="list-group list-group-flush">
+            {% for order in optometry_orders %}
+            <div class="list-group-item py-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="fw-semibold small">{{ order.investigation_type.name }}</div>
+                  <div class="text-muted" style="font-size:.72rem;">
+                    {{ order.get_eye_display }} &bull;
+                    Ordered {{ order.created_at|date:"d M Y, H:i" }} by {{ order.ordered_by.get_full_name|default:"—" }}
+                  </div>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                  <span class="badge {% if order.status == 'COMPLETED' %}bg-success{% elif order.status == 'IN_PROGRESS' %}bg-primary{% elif order.status == 'CANCELLED' %}bg-secondary{% else %}bg-warning text-dark{% endif %}" style="font-size:.72rem;">
+                    {% if order.status == 'COMPLETED' %}Results Ready{% elif order.status == 'IN_PROGRESS' %}In Progress{% elif order.status == 'CANCELLED' %}Cancelled{% else %}Waiting for Results{% endif %}
+                  </span>
+                  {% if order.status == 'COMPLETED' %}
+                  <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.72rem;">
+                    <i class="bi bi-eye me-1"></i>View Result
+                  </a>
+                  {% else %}
+                  <a href="{% url 'investigations:detail' pk=order.pk %}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+                    Track
+                  </a>
                   {% endif %}
-                </tbody>
-              </table>
-              </div>
-              {% if rd.va_chart %}<div class="small text-muted mt-1">Chart: {{ rd.va_chart }}</div>{% endif %}
-            </div>
-            {% endif %}
-
-            {# ── Autorefraction ── #}
-            {% if rd.ar_sph_od or rd.ar_sph_os %}
-            <div class="mb-3">
-              <div class="fw-semibold small text-muted mb-1">Autorefraction</div>
-              <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
-                <thead class="table-light"><tr><th width="50"></th><th>Sph</th><th>Cyl</th><th>Axis</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.ar_sph_od|default:"—" }}</td><td>{{ rd.ar_cyl_od|default:"—" }}</td><td>{{ rd.ar_axis_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-bold text-success">OS</td><td>{{ rd.ar_sph_os|default:"—" }}</td><td>{{ rd.ar_cyl_os|default:"—" }}</td><td>{{ rd.ar_axis_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
+                </div>
               </div>
             </div>
-            {% endif %}
-
-            {# ── Keratometry ── #}
-            {% if rd.k1_od or rd.k1_os %}
-            <div class="mb-3">
-              <div class="fw-semibold small text-muted mb-1">Keratometry</div>
-              <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
-                <thead class="table-light"><tr><th width="50"></th><th>K1</th><th>K2</th><th>Axis</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.k1_od|default:"—" }}</td><td>{{ rd.k2_od|default:"—" }}</td><td>{{ rd.k_axis_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-bold text-success">OS</td><td>{{ rd.k1_os|default:"—" }}</td><td>{{ rd.k2_os|default:"—" }}</td><td>{{ rd.k_axis_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
-              </div>
-            </div>
-            {% endif %}
-
-            {# ── Subjective Refraction ── #}
-            {% if rd.sub_sph_dist_od or rd.sub_sph_dist_os %}
-            <div class="mb-3">
-              <div class="fw-semibold small text-muted mb-1">Subjective Refraction</div>
-              <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
-                <thead class="table-light"><tr><th width="50"></th><th>Sph</th><th>Cyl</th><th>Axis</th><th>Add</th><th>Best VA</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-bold text-primary">OD</td><td>{{ rd.sub_sph_dist_od|default:"—" }}</td><td>{{ rd.sub_cyl_dist_od|default:"—" }}</td><td>{{ rd.sub_axis_dist_od|default:"—" }}</td><td>{{ rd.sub_add_od|default:"—" }}</td><td class="fw-semibold">{{ rd.sub_va_dist_od|default:"—" }}</td></tr>
-                  <tr><td class="fw-bold text-success">OS</td><td>{{ rd.sub_sph_dist_os|default:"—" }}</td><td>{{ rd.sub_cyl_dist_os|default:"—" }}</td><td>{{ rd.sub_axis_dist_os|default:"—" }}</td><td>{{ rd.sub_add_os|default:"—" }}</td><td class="fw-semibold">{{ rd.sub_va_dist_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
-              </div>
-              {% if rd.pd_od or rd.pd_os %}<div class="small text-muted mt-1">PD: {{ rd.pd_od|default:"—" }} / {{ rd.pd_os|default:"—" }} mm</div>{% endif %}
-            </div>
-            {% endif %}
-
-            {# ── Cross-checks ── #}
-            {% if rd.cb_mh or rd.cb_icc or rd.cb_duochrome %}
-            <div class="d-flex gap-2 mb-3">
-              {% if rd.cb_mh %}<span class="badge bg-success" style="font-size:.7rem;"><i class="bi bi-check me-1"></i>MH</span>{% endif %}
-              {% if rd.cb_icc %}<span class="badge bg-success" style="font-size:.7rem;"><i class="bi bi-check me-1"></i>ICC</span>{% endif %}
-              {% if rd.cb_duochrome %}<span class="badge bg-success" style="font-size:.7rem;"><i class="bi bi-check me-1"></i>Duochrome</span>{% endif %}
-            </div>
-            {% endif %}
-
-            {# ── Low Vision ── #}
-            {% if rd.dist_va_od or rd.dist_va_os or rd.aid_type %}
-            <div class="mb-3">
-              <div class="fw-semibold small text-muted mb-1">Low Vision Assessment</div>
-              <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" style="font-size:.8rem;">
-                <thead class="table-light"><tr><th width="120"></th><th>OD</th><th>OS</th></tr></thead>
-                <tbody>
-                  <tr><td class="fw-bold">Distance VA</td><td>{{ rd.dist_va_od|default:"—" }}</td><td>{{ rd.dist_va_os|default:"—" }}</td></tr>
-                  <tr><td class="fw-bold">Near VA</td><td>{{ rd.near_va_od|default:"—" }}</td><td>{{ rd.near_va_os|default:"—" }}</td></tr>
-                </tbody>
-              </table>
-              </div>
-              {% if rd.aid_type %}<div class="small mt-1"><strong>Aid:</strong> {{ rd.aid_type }}</div>{% endif %}
-              {% if rd.lva_trial %}<div class="small mt-1"><strong>Trial:</strong> {{ rd.lva_trial }}</div>{% endif %}
-              {% if rd.lva_goal_met %}<div class="small mt-1"><strong>Goals:</strong> {{ rd.lva_goal_met }}</div>{% endif %}
-            </div>
-            {% endif %}
-
-            {# ── Interpretation + Management Plan ── #}
-            {% if rd.management_plan %}
-            <div class="p-2 rounded mb-2" style="background:#f8f9fa;">
-              <div class="fw-semibold small text-primary mb-1">Management Plan</div>
-              <div style="white-space:pre-wrap;font-size:.82rem;">{{ rd.management_plan }}</div>
-            </div>
-            {% endif %}
-
-            {# ── IOP (legacy support) ── #}
-            {% if rd.iop_right or rd.iop_left %}
-            <div class="mb-0">
-              <div class="fw-semibold small text-muted mb-1">IOP</div>
-              <span class="badge bg-light text-dark border me-2">OD: {{ rd.iop_right|default:"—" }} mmHg</span>
-              <span class="badge bg-light text-dark border">OS: {{ rd.iop_left|default:"—" }} mmHg</span>
-            </div>
-            {% endif %}
-
+            {% endfor %}
           </div>
-          </div>{# /collapse #}
         </div>
       </div>
-      {% endwith %}
       {% endif %}
+      {% endif %}{# /not optometry dept #}
 
       <div class="col-12">
         <div class="card border-0 shadow-sm">
           <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
-            <h6 class="fw-bold mb-0 small"><i class="bi bi-search-heart me-1 text-primary"></i>Eye Investigations</h6>
+            <h6 class="fw-bold mb-0 small"><i class="bi bi-search-heart me-1 text-primary"></i>Eye Investigations &amp; Lab</h6>
             {% if request.user.can_order_investigations %}
-            <div class="btn-group btn-group-sm">
-              <a href="{% url 'investigations:multi_order' consultation_pk=consultation.pk %}" class="btn btn-outline-primary" style="font-size:0.72rem;">
-                <i class="bi bi-plus me-1"></i>Investigation
-              </a>
-              <a href="{% url 'investigations:multi_order' consultation_pk=consultation.pk %}?cat=optometry" class="btn btn-outline-info" style="font-size:0.72rem;">
-                <i class="bi bi-eye me-1"></i>Optometry
-              </a>
-            </div>
+            <a href="{% url 'investigations:multi_order' consultation_pk=consultation.pk %}" class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;">
+              <i class="bi bi-plus me-1"></i>Order Investigation
+            </a>
             {% endif %}
           </div>
           {% if visit_investigations %}
           <div class="p-0">
             {% for order in visit_investigations %}
+            {% if order.investigation_type.category != 'REFRACTION' and order.investigation_type.category != 'LOW_VISION' and order.investigation_type.category != 'ORTHOPTICS' %}
             <div class="border-bottom p-3">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
@@ -1263,6 +1172,7 @@
               <div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Waiting for results...</div>
               {% endif %}
             </div>
+            {% endif %}{# /skip optometry #}
             {% endfor %}
           </div>
           {% else %}
