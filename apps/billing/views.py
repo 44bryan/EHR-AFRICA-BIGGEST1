@@ -1284,6 +1284,22 @@ def pos_add_item(request, invoice_id):
         created_by=request.user,
     )
 
+    # ── Mark matching work order as PENDING (added to bill) so it leaves the Orders tab ──
+    if invoice.patient:
+        _desc_lower = description.lower()
+        _matching_wos = ServiceWorkOrder.objects.filter(
+            patient=invoice.patient,
+            status=WorkOrderStatus.PENDING_PAYMENT,
+            is_deleted=False,
+            created_at__date=timezone.localdate(),
+        )
+        for _wo in _matching_wos:
+            if _wo.description.lower() == _desc_lower or _desc_lower in _wo.description.lower():
+                _wo.status = WorkOrderStatus.PENDING
+                _wo.invoice = invoice
+                _wo.save(update_fields=['status', 'invoice', 'updated_at'])
+                break
+
     # Promote DRAFT → ISSUED when first item added;
     # revert PAID → ISSUED if a new item is added after payment (balance now positive again).
     if invoice.status in (InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID):
@@ -1929,6 +1945,12 @@ def doctor_order_create(request):
         status=WorkOrderStatus.PENDING_PAYMENT,
         created_by=request.user,
     )
+    # Notify cashier dashboard so they see the new order without refreshing
+    try:
+        from apps.core.ws_notify import notify_queue
+        notify_queue('cashier')
+    except Exception:
+        pass
     return JsonResponse({
         'success': True,
         'wo_id': str(wo.id),

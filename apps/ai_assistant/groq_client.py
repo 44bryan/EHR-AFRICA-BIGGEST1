@@ -684,10 +684,26 @@ CRITICAL — HOSPITAL DATA RULES:
     return SYSTEM_KNOWLEDGE_PROMPT + extra
 
 
+def _strip_binary_fields(data: dict) -> dict:
+    """Remove base64 images, drawings, and other large binary fields from exam data before AI."""
+    if not isinstance(data, dict):
+        return data
+    skip_suffixes = ('_drawing', '_image', '_signature', '_photo', '_data_uri')
+    clean = {}
+    for k, v in data.items():
+        if any(k.endswith(s) for s in skip_suffixes):
+            continue
+        if isinstance(v, str) and (v.startswith('data:image/') or len(v) > 500):
+            continue
+        if isinstance(v, dict):
+            v = _strip_binary_fields(v)
+        clean[k] = v
+    return clean
+
+
 def suggest_diagnosis_groq(chief_complaint: str, exam_data: dict, history: str = '') -> dict:
     """
-    Deep-reasoning diagnosis suggestion via DeepSeek-R1 on Groq.
-    R1 thinks through differentials step-by-step before producing structured JSON.
+    AI diagnosis suggestion — given CC + exam findings, returns differential diagnoses as JSON.
     """
     system = """You are a specialist ophthalmology AI at GLUDD Eye Hospital.
 
@@ -712,16 +728,19 @@ Given clinical findings, provide differential diagnoses as JSON:
 
 Provide 3-5 differentials ranked by likelihood. Be clinically precise."""
 
+    # Strip base64 drawings/images to stay within token limits
+    clean_exam = _strip_binary_fields(exam_data) if isinstance(exam_data, dict) else exam_data
+
     content = f"""Chief Complaint: {chief_complaint}
 History: {history}
-Examination findings: {exam_data}
+Examination findings: {clean_exam}
 
 Provide differential diagnoses."""
 
     result = groq_json(
         messages=[{'role': 'user', 'content': content}],
         system=system,
-        max_tokens=4096,  # R1 needs room for reasoning + JSON output
+        max_tokens=4096,
     )
     return result
 
