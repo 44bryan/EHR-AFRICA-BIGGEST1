@@ -1606,6 +1606,33 @@ def confirm_dispensing(request, dispensing_id):
         messages.error(request, 'Add at least one item before confirming.')
         return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
 
+    # ── Drug interaction safety gate: block CONTRAINDICATED unless pharmacist overrides ──
+    override_interactions = request.POST.get('override_interactions') == '1'
+    if not override_interactions:
+        try:
+            from apps.prescriptions.models import DrugInteraction
+            drug_names = [item.display_name for item in dispensing.items.all()]
+            interactions = DrugInteraction.find_interactions(drug_names)
+            contraindicated = [ix for ix in interactions if ix.severity == 'CONTRA']
+            major = [ix for ix in interactions if ix.severity == 'MAJOR']
+            if contraindicated:
+                pairs = ', '.join(f'{ix.drug_a} + {ix.drug_b}' for ix in contraindicated)
+                messages.error(
+                    request,
+                    f'BLOCKED: Contraindicated drug interaction detected ({pairs}). '
+                    f'Cannot dispense without pharmacist override and documented justification.'
+                )
+                return redirect('pharmacy:dispensing_detail', dispensing_id=dispensing.id)
+            if major:
+                pairs = ', '.join(f'{ix.drug_a} + {ix.drug_b}' for ix in major)
+                messages.warning(
+                    request,
+                    f'Major drug interaction: {pairs}. '
+                    f'Please verify with prescribing doctor before dispensing.'
+                )
+        except Exception:
+            pass
+
     # Walk-in OTC sales cannot use the 2-step confirm→cashier flow — redirect
     # to the single-step complete_dispensing flow instead.
     if not dispensing.patient:

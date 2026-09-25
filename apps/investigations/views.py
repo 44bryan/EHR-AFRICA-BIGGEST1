@@ -295,13 +295,65 @@ def investigation_list_view(request):
 
 
 @login_required
+def _check_insurance_preauth(patient, visit):
+    """Check if patient's insurance requires pre-auth and if it's approved.
+    Returns (needs_preauth, has_valid_preauth, warning_message)."""
+    if not visit or visit.billing_type not in ('HMO', 'INSURANCE'):
+        return False, True, ''
+    try:
+        from apps.hmo.models import InsuredMember, PreAuthorization, PreAuthStatus
+        member = InsuredMember.objects.filter(
+            patient=patient, is_active=True
+        ).select_related('scheme').first()
+        if not member or not member.scheme.pre_auth_required:
+            return False, True, ''
+        # Scheme requires pre-auth — check for valid approval
+        valid_auth = PreAuthorization.objects.filter(
+            member=member,
+            status=PreAuthStatus.APPROVED,
+        ).filter(
+            Q(valid_until__gte=timezone.localdate()) | Q(valid_until__isnull=True)
+        ).filter(
+            Q(visit=visit) | Q(visit__isnull=True)
+        ).exists()
+        if valid_auth:
+            return True, True, ''
+        # Check if pending
+        pending = PreAuthorization.objects.filter(
+            member=member, status=PreAuthStatus.PENDING
+        ).exists()
+        if pending:
+            return True, False, (
+                f'Insurance pre-authorisation is PENDING for {member.scheme.name}. '
+                f'Investigation orders are blocked until pre-auth is approved.'
+            )
+        return True, False, (
+            f'No approved pre-authorisation found for {member.scheme.name} ({member.member_number}). '
+            f'Please request pre-auth before ordering investigations for insured patients.'
+        )
+    except ImportError:
+        return False, True, ''
+
+
 def investigation_order_view(request, consultation_pk):
     if not request.user.can_order_investigations():
         return HttpResponseForbidden()
 
     consultation = get_object_or_404(Consultation, pk=consultation_pk, is_deleted=False)
 
+    # ── Insurance pre-auth gate ──
+    _needs_preauth, _has_preauth, _preauth_msg = _check_insurance_preauth(
+        consultation.patient, consultation.visit
+    )
+    if _needs_preauth and not _has_preauth:
+        messages.warning(request, _preauth_msg)
+
     if request.method == 'POST':
+        # Block order submission if pre-auth required but missing
+        if _needs_preauth and not _has_preauth:
+            messages.error(request, 'Cannot order investigations — insurance pre-authorisation required.')
+            return redirect('investigations:order', consultation_pk=consultation_pk)
+
         form = InvestigationOrderForm(request.POST)
         payment_waived = request.POST.get('payment_waived') == '1'
         waive_reason = request.POST.get('waive_reason', '').strip()
@@ -2901,7 +2953,19 @@ def multi_exam_order_view(request, consultation_pk):
             ).order_by('role', 'first_name')
         )
 
+    # ── Insurance pre-auth gate ──
+    _needs_preauth, _has_preauth, _preauth_msg = _check_insurance_preauth(
+        consultation.patient, consultation.visit
+    )
+    if _needs_preauth and not _has_preauth:
+        messages.warning(request, _preauth_msg)
+
     if request.method == 'POST':
+        # Block if pre-auth required but missing
+        if _needs_preauth and not _has_preauth:
+            messages.error(request, 'Cannot order investigations — insurance pre-authorisation required.')
+            return redirect('investigations:multi_order', consultation_pk=consultation_pk)
+
         selected_type_ids = request.POST.getlist('investigation_types')
         urgency = request.POST.get('urgency', 'ROUTINE')
         eye = request.POST.get('eye', 'OU')

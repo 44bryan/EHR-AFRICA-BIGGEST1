@@ -257,3 +257,61 @@ def auto_bill_bed_charges(self):
 
     logger.info('auto_bill_bed_charges: billed %d admissions for %s', billed, today)
     return {'status': 'ok', 'billed': billed, 'date': str(today), 'errors': errors}
+
+
+@shared_task(name='consultations.check_cosign_deadlines', bind=True, max_retries=1, default_retry_delay=120)
+def check_cosign_deadlines_task(self):
+    """
+    Hourly check: find intern consultations older than 24h that haven't been
+    co-signed by a supervisor. Creates a notification for medical directors
+    and the intern's supervisor so they can review and co-sign.
+    """
+    from datetime import timedelta
+    from apps.consultations.models import Consultation
+    from apps.accounts.models import User, UserRole
+
+    deadline = timezone.now() - timedelta(hours=24)
+
+    # Intern consultations past 24h without co-sign
+    overdue = list(
+        Consultation.objects.filter(
+            is_deleted=False,
+            co_signed_by__isnull=True,
+            created_at__lt=deadline,
+        ).filter(
+            consulting_doctor__role=UserRole.INTERN,
+        ).select_related('consulting_doctor', 'patient').order_by('created_at')
+    )
+
+    if not overdue:
+        logger.info('cosign_deadlines: no overdue intern consultations.')
+        return {'status': 'ok', 'overdue': 0}
+
+    # Notify medical directors + admin director
+    try:
+        from apps.notifications.models import Notification
+        directors = User.objects.filter(
+            role__in=[UserRole.MEDICAL_DIRECTOR, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR],
+            is_active=True,
+        )
+        summary = ', '.join(
+            f'{c.patient.full_name} (Dr. {c.consulting_doctor.get_full_name()}, {c.created_at.strftime("%d %b %H:%M")})'
+            for c in overdue[:10]
+        )
+        extra = f' and {len(overdue) - 10} more' if len(overdue) > 10 else ''
+        for director in directors:
+            Notification.objects.create(
+                recipient=director,
+                title=f'Cosign Alert: {len(overdue)} intern consultation(s) past 24h deadline',
+                message=(
+                    f'The following intern consultations have not been co-signed within 24 hours '
+                    f'and require supervisor review:\n{summary}{extra}'
+                ),
+                notification_type='ALERT',
+                priority='HIGH',
+            )
+    except Exception as exc:
+        logger.warning('cosign_deadlines: notification error — %s', exc)
+
+    logger.info('cosign_deadlines: %d overdue intern consultation(s) flagged.', len(overdue))
+    return {'status': 'ok', 'overdue': len(overdue)}

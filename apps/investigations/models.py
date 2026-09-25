@@ -582,7 +582,33 @@ class BiometryRecord(AuditModel):
     def __str__(self):
         return f"Biometry: {self.order.patient.full_name}"
 
+    # Fields that become immutable once locked
+    _LOCKED_FIELDS = frozenset([
+        'axial_length_od', 'axial_length_os', 'al_method',
+        'k1_od', 'k2_od', 'k1_os', 'k2_os',
+        'acd_od', 'acd_os', 'wtw', 'lens_thickness_od', 'lens_thickness_os',
+        'formula_primary', 'formula_secondary',
+        'iol_model_od', 'iol_model_os', 'iol_power_od', 'iol_power_os',
+        'target_refraction_od', 'target_refraction_os',
+    ])
+
     def save(self, *args, **kwargs):
+        # ── Biometry immutability: block measurement edits once locked ──
+        if self.pk and self.is_locked:
+            from django.core.exceptions import ValidationError
+            try:
+                old = BiometryRecord.objects.get(pk=self.pk)
+            except BiometryRecord.DoesNotExist:
+                old = None
+            if old and old.is_locked:
+                changed = [f for f in self._LOCKED_FIELDS
+                           if getattr(self, f) != getattr(old, f)]
+                if changed:
+                    raise ValidationError(
+                        f'Biometry is locked for surgery — cannot edit: {", ".join(changed)}. '
+                        f'Unlock must be approved by surgeon before changes.'
+                    )
+
         # Auto inter-eye AL check
         if self.axial_length_od and self.axial_length_os:
             diff = abs(self.axial_length_od - self.axial_length_os)

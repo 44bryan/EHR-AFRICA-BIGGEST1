@@ -521,9 +521,81 @@ class Visit(AuditModel):
             instance.vital_signs = _SafeVitalSigns()
         return instance
 
+    # ── Visit status state machine: valid transitions ──
+    # Any status can reach COMPLETED/DISCHARGED (end states).
+    # Sub-specialties can be reached from IN_CONSULTATION or WAITING.
+    # This prevents accidental backwards jumps (e.g. COMPLETED → REGISTERED).
+    _VALID_TRANSITIONS = {
+        'REGISTERED':       {'AT_RECEPTIONIST', 'AT_CASHIER', 'PARAMETERS', 'COMPLETED'},
+        'AT_RECEPTIONIST':  {'AT_CASHIER', 'PARAMETERS', 'COMPLETED'},
+        'AT_CASHIER':       {'PARAMETERS', 'WAITING', 'COMPLETED'},
+        'PARAMETERS':       {'WAITING', 'TRIAGE', 'IN_CONSULTATION', 'COMPLETED'},
+        'TRIAGE':           {'WAITING', 'PARAMETERS', 'IN_CONSULTATION', 'COMPLETED'},
+        'WAITING':          {'IN_CONSULTATION', 'INSURANCE_CONSULT', 'INVESTIGATION', 'REFRACTION',
+                             'UVEITIS', 'AT_RETINA', 'AT_GLAUCOMA', 'AT_CATARACT', 'AT_PEDIATRIC',
+                             'AT_NEURO', 'AT_OCULOPLASTY', 'AT_CORNEA', 'LABORATORY', 'COMPLETED'},
+        'INSURANCE_CONSULT': {'WAITING', 'IN_CONSULTATION', 'COMPLETED'},
+        'IN_CONSULTATION':  {'INVESTIGATION', 'REFRACTION', 'LABORATORY', 'PHARMACY', 'OPTICAL',
+                             'COUNSELING', 'BILLING', 'WAITING', 'COMPLETED', 'DISCHARGED',
+                             'UVEITIS', 'AT_RETINA', 'AT_GLAUCOMA', 'AT_CATARACT', 'AT_PEDIATRIC',
+                             'AT_NEURO', 'AT_OCULOPLASTY', 'AT_CORNEA'},
+        'INVESTIGATION':    {'WAITING', 'IN_CONSULTATION', 'PHARMACY', 'BILLING', 'COMPLETED'},
+        'REFRACTION':       {'WAITING', 'IN_CONSULTATION', 'OPTICAL', 'BILLING', 'COMPLETED'},
+        'LABORATORY':       {'WAITING', 'IN_CONSULTATION', 'BILLING', 'COMPLETED'},
+        # Sub-specialties → back to waiting, billing, or surgical pathway
+        'UVEITIS':          {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COMPLETED'},
+        'AT_RETINA':        {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COUNSELING', 'COMPLETED'},
+        'AT_GLAUCOMA':      {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COUNSELING', 'COMPLETED'},
+        'AT_CATARACT':      {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COUNSELING', 'COMPLETED'},
+        'AT_PEDIATRIC':     {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COMPLETED'},
+        'AT_NEURO':         {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COMPLETED'},
+        'AT_OCULOPLASTY':   {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COUNSELING', 'COMPLETED'},
+        'AT_CORNEA':        {'WAITING', 'PHARMACY', 'BILLING', 'INVESTIGATION', 'LABORATORY', 'COMPLETED'},
+        # Dispensing
+        'PHARMACY':         {'WAITING', 'BILLING', 'OPTICAL', 'COMPLETED', 'DISCHARGED'},
+        'OPTICAL':          {'WAITING', 'BILLING', 'COMPLETED', 'DISCHARGED'},
+        # Surgical pathway
+        'COUNSELING':       {'WAITING_ADMISSION', 'BILLING', 'COMPLETED', 'DISCHARGED'},
+        'WAITING_ADMISSION': {'ADMITTED', 'COMPLETED'},
+        'ADMITTED':         {'PRE_OP', 'DISCHARGED'},
+        'PRE_OP':           {'IN_THEATRE', 'ADMITTED'},
+        'IN_THEATRE':       {'POST_OP'},
+        'POST_OP':          {'ADMITTED', 'DISCHARGED'},
+        # End states
+        'BILLING':          {'PHARMACY', 'OPTICAL', 'COMPLETED', 'DISCHARGED'},
+        'COMPLETED':        {'DISCHARGED'},
+        'DISCHARGED':       set(),  # terminal
+    }
+
     def save(self, *args, **kwargs):
         if not self.visit_number:
             self.visit_number = generate_visit_number()
+
+        # ── Enforce visit status state machine ──
+        if self.pk:
+            try:
+                old = Visit.objects.only('status').get(pk=self.pk)
+                old_status = old.status
+                new_status = self.status
+                if old_status != new_status:
+                    allowed = self._VALID_TRANSITIONS.get(old_status)
+                    if allowed is not None and new_status not in allowed:
+                        import logging
+                        logger = logging.getLogger('apps.patients')
+                        logger.warning(
+                            f'Invalid visit transition blocked: {old_status} → {new_status} '
+                            f'(visit {self.visit_number}). Allowed: {allowed}'
+                        )
+                        # Allow super_admin to bypass via _force_status flag
+                        if not getattr(self, '_force_status', False):
+                            from django.core.exceptions import ValidationError
+                            raise ValidationError(
+                                f'Cannot move visit from "{old_status}" to "{new_status}". '
+                                f'Allowed next states: {", ".join(sorted(allowed)) if allowed else "none (terminal state)"}'
+                            )
+            except Visit.DoesNotExist:
+                pass
+
         super().save(*args, **kwargs)
 
     def mark_consultation_paid(self):

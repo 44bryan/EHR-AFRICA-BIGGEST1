@@ -384,6 +384,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'ipd.auto_bill_bed_charges',
         'schedule': crontab(hour=23, minute=55),
     },
+    # Every hour — flag intern consultations not co-signed within 24h
+    'hourly-cosign-check': {
+        'task': 'consultations.check_cosign_deadlines',
+        'schedule': crontab(minute=15),  # :15 past every hour
+    },
 }
 
 # DICOM Imaging Viewer
