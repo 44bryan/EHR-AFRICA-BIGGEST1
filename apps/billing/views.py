@@ -1986,7 +1986,8 @@ def _bridge_work_order_to_clinical(wo, user):
     now = timezone.now()
 
     # ── Investigation orders ──────────────────────────────────────────────
-    if wo.category == ServiceCategory.INVESTIGATION and wo.patient_id:
+    # CLINICAL_EXAM (refraction, orthoptics, low vision) also creates InvestigationOrders
+    if wo.category in (ServiceCategory.INVESTIGATION, ServiceCategory.CLINICAL_EXAM) and wo.patient_id:
         try:
             from apps.investigations.models import InvestigationOrder, PaymentStatus as InvPS
             _inv_filter = {'patient_id': wo.patient_id, 'payment_status': InvPS.UNPAID, 'is_deleted': False}
