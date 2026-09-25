@@ -625,7 +625,7 @@
         </button>
         {% endif %}
         {% for wo in doctor_orders %}
-        <button class="svc-btn orders-btn" onclick="addItem('{{ wo.description|escapejs }}','{{ wo.category }}',0)">
+        <button class="svc-btn orders-btn" data-wo-notes="{{ wo.notes|escapejs }}" onclick="addOrderItem(this,'{{ wo.description|escapejs }}','{{ wo.category }}')">
           <span>{{ wo.description }}</span>
           <span class="svc-price" style="color:#4ade80;">{{ wo.get_category_display }}</span>
         </button>
@@ -1158,11 +1158,20 @@ function addItem(name, cat, price, requiresEntry) {
   if (resolvedPrice === 0 && CATALOG_PRICE_MAP[name] !== undefined) {
     resolvedPrice = CATALOG_PRICE_MAP[name];
   }
-  // Doctor work orders have prefix like "Investigation: OCT Scan" — strip it and retry
+  // Doctor work orders have prefix like "Investigation: OCT Scan" or "Clinical Exam: Subjective Refraction (OU) — 10,000 FCFA"
   if (resolvedPrice === 0) {
-    var stripped = name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical):\s*/i, '');
+    var stripped = name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical|Clinical Exam|Exam):\s*/i, '');
+    // Also strip trailing eye/price info like " (OU) — 10,000 FCFA"
+    stripped = stripped.replace(/\s*\([A-Z]{1,3}\)\s*[—–-]\s*[\d,]+\s*FCFA$/i, '').trim();
     if (stripped !== name && CATALOG_PRICE_MAP[stripped] !== undefined) {
       resolvedPrice = CATALOG_PRICE_MAP[stripped];
+    }
+  }
+  // Last resort: parse price from description text (e.g. "— 10,000 FCFA")
+  if (resolvedPrice === 0) {
+    var priceMatch = name.match(/[\d,]+(?:\.\d+)?\s*FCFA/i);
+    if (priceMatch) {
+      resolvedPrice = parseFloat(priceMatch[0].replace(/[,\s]/g, '').replace(/FCFA/i, '')) || 0;
     }
   }
   // Show price-entry modal when:
@@ -1171,7 +1180,7 @@ function addItem(name, cat, price, requiresEntry) {
   //  NOTE: DB category values are 'INVEST' (not 'INVESTIGATION') and 'LAB'
   var needsModal = requiresEntry ||
     ((resolvedPrice === 0) &&
-     (cat === 'OPTICAL' || cat === 'PHARMACY' || cat === 'INVEST' || cat === 'LAB'));
+     (cat === 'OPTICAL' || cat === 'PHARMACY' || cat === 'INVEST' || cat === 'LAB' || cat === 'CLINICAL'));
   if (needsModal) {
     document.getElementById('pendName').value = name;
     document.getElementById('pendCat').value  = cat;
@@ -1549,10 +1558,20 @@ function renderAi(suggestions) {
   });
 }
 
+// ── Add single doctor/nurse work order with price extraction ──────────────────
+function addOrderItem(btn, name, cat) {
+  // Extract price from notes attribute (e.g. "10,000 FCFA") or from description
+  var notes = btn.getAttribute('data-wo-notes') || '';
+  var price = 0;
+  var m = notes.match(/([\d,]+(?:\.\d+)?)\s*FCFA/i) || name.match(/([\d,]+(?:\.\d+)?)\s*FCFA/i);
+  if (m) price = parseFloat(m[1].replace(/,/g, '')) || 0;
+  addItem(name, cat, price);
+}
+
 // ── Add All Doctor Orders ─────────────────────────────────────────────────────
 var ALL_ORDERS = [
 {% if doctor_orders %}{% for wo in doctor_orders %}
-  { name: '{{ wo.description|escapejs }}', cat: '{{ wo.category }}' }{% if not forloop.last %},{% endif %}
+  { name: '{{ wo.description|escapejs }}', cat: '{{ wo.category }}', notes: '{{ wo.notes|escapejs }}' }{% if not forloop.last %},{% endif %}
 {% endfor %}{% endif %}
 ];
 
@@ -1564,8 +1583,14 @@ function addAllOrders(btn) {
   ALL_ORDERS.forEach(function(o) {
     var price = CATALOG_PRICE_MAP[o.name] || 0;
     if (price === 0) {
-      var stripped = o.name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical):\s*/i, '');
+      var stripped = o.name.replace(/^(Investigation|Lab|Laboratory|Pharmacy|Optical|Clinical Exam|Exam):\s*/i, '');
+      stripped = stripped.replace(/\s*\([A-Z]{1,3}\)\s*[—–-]\s*[\d,]+\s*FCFA$/i, '').trim();
       if (stripped !== o.name) price = CATALOG_PRICE_MAP[stripped] || 0;
+    }
+    // Extract price from notes or description
+    if (price === 0) {
+      var m = (o.notes || '').match(/([\d,]+(?:\.\d+)?)\s*FCFA/i) || o.name.match(/([\d,]+(?:\.\d+)?)\s*FCFA/i);
+      if (m) price = parseFloat(m[1].replace(/,/g, '')) || 0;
     }
     chain = chain.then(function() { return _doAdd(o.name, o.cat, 1, price); });
   });
