@@ -883,37 +883,28 @@
     _overlayX[eye] = oc.getContext('2d');
   });
 
-  // ── Anatomy base — clean B&W clinical sketch ──────────────────────
+  // ── Anatomy base — front view anterior segment (eyebrow + lashes + lids) ──
   function drawAsdBase(ctx, eye) {
     var SZ   = ASD_SZ;          // 280
-    var ICX  = ASD_CX;          // 140 — iris centre x
-    var CY   = ASD_CY + 8;      // 148 — canthus y / iris centre y
-    var IR   = 55;               // iris radius
-    var PR   = 21;               // pupil radius
-    var LK   = '#333';           // line colour (dark grey)
+    var ICX  = ASD_CX;          // 140 — centre x
+    var CY   = ASD_CY + 18;     // 158 — canthus y (shifted down for eyebrow room)
+    var LK   = '#333';           // line colour
 
-    // Canthus x: OD → temporal left, nasal right; OS → reversed
-    var tempCX  = (eye === 'od') ? 18      : SZ - 18;
-    var nasalCX = (eye === 'od') ? SZ - 18 : 18;
+    // Canthus x positions (mirror for OD vs OS)
+    var tempCX  = (eye === 'od') ? 22      : SZ - 22;
+    var nasalCX = (eye === 'od') ? SZ - 22 : 22;
 
-    // Upper lid CPs
-    var ulCP1x = tempCX  + (nasalCX - tempCX) * 0.25;
-    var ulCP1y = CY - 78;
-    var ulCP2x = tempCX  + (nasalCX - tempCX) * 0.65;
-    var ulCP2y = CY - 70;
+    // Upper lid control points — generous almond curve
+    var ulCP1x = tempCX  + (nasalCX - tempCX) * 0.28;
+    var ulCP1y = CY - 72;
+    var ulCP2x = tempCX  + (nasalCX - tempCX) * 0.68;
+    var ulCP2y = CY - 66;
 
-    // Lower lid CPs
+    // Lower lid control points
     var llCP1x = tempCX  + (nasalCX - tempCX) * 0.30;
-    var llCP1y = CY + 74;
-    var llCP2x = tempCX  + (nasalCX - tempCX) * 0.70;
-    var llCP2y = CY + 70;
-
-    function eyeOpenPath() {
-      ctx.moveTo(tempCX, CY);
-      ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY);
-      ctx.bezierCurveTo(llCP2x,llCP2y, llCP1x,llCP1y, tempCX,CY);
-      ctx.closePath();
-    }
+    var llCP1y = CY + 58;
+    var llCP2x = tempCX  + (nasalCX - tempCX) * 0.72;
+    var llCP2y = CY + 54;
 
     ctx.clearRect(0, 0, SZ, SZ);
 
@@ -921,31 +912,54 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, SZ, SZ);
 
-    // ── 2. Eye opening outline (upper + lower lid) ────────────────────
-    ctx.strokeStyle = LK; ctx.lineWidth = 1.8;
+    // ── 2. Eyebrow arc ────────────────────────────────────────────────
+    var browLeft  = (eye === 'od') ? 38  : SZ - 220;
+    var browRight = (eye === 'od') ? 220 : SZ - 38;
+    var browY     = CY - 100;
+    ctx.strokeStyle = LK; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(browLeft, browY + 18);
+    ctx.quadraticCurveTo(ICX - 10, browY - 12, browRight, browY + 8);
+    ctx.stroke();
+
+    // ── 3. Upper eyelid curve ─────────────────────────────────────────
+    ctx.strokeStyle = LK; ctx.lineWidth = 2.0;
     ctx.beginPath(); ctx.moveTo(tempCX, CY);
-    ctx.bezierCurveTo(ulCP1x,ulCP1y, ulCP2x,ulCP2y, nasalCX,CY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(tempCX, CY);
-    ctx.bezierCurveTo(llCP1x,llCP1y, llCP2x,llCP2y, nasalCX,CY); ctx.stroke();
+    ctx.bezierCurveTo(ulCP1x, ulCP1y, ulCP2x, ulCP2y, nasalCX, CY);
+    ctx.stroke();
 
-    // ── 3. Limbus circle (outer cornea boundary) ──────────────────────
-    ctx.beginPath(); ctx.arc(ICX, CY, IR, 0, 2*Math.PI);
-    ctx.strokeStyle = LK; ctx.lineWidth = 1.5; ctx.stroke();
-
-    // ── 4. Pupil circle ───────────────────────────────────────────────
-    ctx.beginPath(); ctx.arc(ICX, CY, PR, 0, 2*Math.PI);
-    ctx.strokeStyle = LK; ctx.lineWidth = 1.2; ctx.stroke();
-    // Fill pupil black
-    ctx.fillStyle = '#000'; ctx.fill();
-
-    // ── 5. Clock hour markers (12 dots around limbus) ─────────────────
-    ctx.fillStyle = '#555';
-    for (var hi = 0; hi < 12; hi++) {
-      var ha = (hi/12)*2*Math.PI - Math.PI/2;
+    // ── 4. Upper eyelashes (5 curved lashes from upper lid) ───────────
+    ctx.strokeStyle = LK; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    var lashCount = 5;
+    for (var li = 0; li < lashCount; li++) {
+      var t = 0.22 + (li / (lashCount - 1)) * 0.50;  // spread along upper lid
+      // Point on upper lid bezier at parameter t
+      var mt = 1 - t;
+      var bx = mt*mt*mt*tempCX + 3*mt*mt*t*ulCP1x + 3*mt*t*t*ulCP2x + t*t*t*nasalCX;
+      var by = mt*mt*mt*CY     + 3*mt*mt*t*ulCP1y + 3*mt*t*t*ulCP2y + t*t*t*CY;
+      // Lash curves upward and slightly outward
+      var lashLen = 18 + Math.sin(t * Math.PI) * 8;
+      var angle = -Math.PI/2 - 0.3 + li * 0.15;
+      var lashEndX = bx + lashLen * Math.cos(angle);
+      var lashEndY = by + lashLen * Math.sin(angle);
+      var cpLashX = bx + (lashLen * 0.5) * Math.cos(angle - 0.3);
+      var cpLashY = by + (lashLen * 0.5) * Math.sin(angle - 0.3);
       ctx.beginPath();
-      ctx.arc(ICX+(IR+10)*Math.cos(ha), CY+(IR+10)*Math.sin(ha), 2, 0, 2*Math.PI);
-      ctx.fill();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(cpLashX, cpLashY, lashEndX, lashEndY);
+      ctx.stroke();
     }
+
+    // ── 5. Lower eyelid curve ─────────────────────────────────────────
+    ctx.strokeStyle = LK; ctx.lineWidth = 2.0;
+    ctx.beginPath(); ctx.moveTo(tempCX, CY);
+    ctx.bezierCurveTo(llCP1x, llCP1y, llCP2x, llCP2y, nasalCX, CY);
+    ctx.stroke();
+
+    // ── 6. Label: eye side ────────────────────────────────────────────
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#999'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(eye.toUpperCase(), ICX, SZ - 4);
   }
 
   // ── Composite: base + overlay strokes + labels ────────────────────
