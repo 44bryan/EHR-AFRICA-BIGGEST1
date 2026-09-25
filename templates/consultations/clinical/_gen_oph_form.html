@@ -81,7 +81,7 @@
   {# Zone header — auto-expand if refraction data exists #}
   <div class="d-flex align-items-center gap-2 px-3 py-2 rounded-top cfm-hdr bg-light border-bottom"
        style="cursor:pointer;"
-       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="{% if refraction_consult %}true{% else %}false{% endif %}">
+       data-bs-toggle="collapse" data-bs-target="#cfm_gen_refract" aria-expanded="{% if refraction_consult or rd.va_unaided_od or rd.va_unaided_os or rd.sub_sph_dist_od or rd.ar_sph_od %}true{% else %}false{% endif %}">
     <i class="bi bi-eyeglasses text-secondary"></i>
     <span class="fw-bold text-secondary text-uppercase" style="letter-spacing:.06em;font-size:.82rem;">
       Refractionist Data
@@ -91,6 +91,9 @@
         <i class="bi bi-check-circle-fill text-success me-1"></i>
         From {{ refraction_consult.consulting_doctor.full_name|default:"Refractionist" }}
         · {{ refraction_consult.consultation_date|date:"d M Y" }}
+      {% elif rd.va_unaided_od or rd.va_unaided_os or rd.sub_sph_dist_od or rd.ar_sph_od %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>
+        From Optometrist Exam
       {% else %}
         <i class="bi bi-hourglass-split me-1"></i>Awaiting refractionist
       {% endif %}
@@ -98,10 +101,56 @@
     <i class="bi bi-chevron-up cfm-chev ms-auto"></i>
   </div>
 
-  <div class="collapse {% if refraction_consult %}show{% endif %}" id="cfm_gen_refract">
+  <div class="collapse {% if refraction_consult or rd.va_unaided_od or rd.va_unaided_os or rd.sub_sph_dist_od or rd.ar_sph_od %}show{% endif %}" id="cfm_gen_refract">
   <div class="p-3">
     {% if refraction_consult %}
       {% include 'consultations/clinical/_refraction.html' with consultation=refraction_consult %}
+    {% elif rd.va_unaided_od or rd.va_unaided_os or rd.sub_sph_dist_od or rd.ar_sph_od %}
+      {# Optometrist investigation result #}
+      <div class="row g-3">
+        {% if rd.va_unaided_od or rd.va_unaided_os or rd.va_corrected_od or rd.va_corrected_os %}
+        <div class="col-12">
+          <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Visual Acuity</h6>
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm mb-0 small">
+              <thead class="table-light"><tr><th>Eye</th><th class="text-center">Unaided</th><th class="text-center">Corrected</th><th class="text-center">NVA</th></tr></thead>
+              <tbody>
+                <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.va_unaided_od|default:"—" }}</td><td class="text-center">{{ rd.va_corrected_od|default:"—" }}</td><td class="text-center">{% firstof rd.nva_od rd.near_va_od "—" %}</td></tr>
+                <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.va_unaided_os|default:"—" }}</td><td class="text-center">{{ rd.va_corrected_os|default:"—" }}</td><td class="text-center">{% firstof rd.nva_os rd.near_va_os "—" %}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+        {% if rd.sub_sph_dist_od or rd.sub_sph_dist_os %}
+        <div class="col-12">
+          <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Subjective Refraction</h6>
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm mb-0 small">
+              <thead class="table-light"><tr><th>Eye</th><th class="text-center">Sph</th><th class="text-center">Cyl</th><th class="text-center">Axis</th><th class="text-center">Add</th></tr></thead>
+              <tbody>
+                <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.sub_sph_dist_od|default:"—" }}</td><td class="text-center">{{ rd.sub_cyl_dist_od|default:"—" }}</td><td class="text-center">{{ rd.sub_ax_dist_od|default:"—" }}</td><td class="text-center">{{ rd.sub_add_od|default:"—" }}</td></tr>
+                <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.sub_sph_dist_os|default:"—" }}</td><td class="text-center">{{ rd.sub_cyl_dist_os|default:"—" }}</td><td class="text-center">{{ rd.sub_ax_dist_os|default:"—" }}</td><td class="text-center">{{ rd.sub_add_os|default:"—" }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+        {% if rd.ar_sph_od or rd.ar_sph_os %}
+        <div class="col-12">
+          <h6 class="fw-bold text-uppercase text-muted small border-bottom pb-1">Autorefraction</h6>
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm mb-0 small">
+              <thead class="table-light"><tr><th>Eye</th><th class="text-center">Sph</th><th class="text-center">Cyl</th><th class="text-center">Axis</th></tr></thead>
+              <tbody>
+                <tr><td class="fw-medium text-primary">OD</td><td class="text-center">{{ rd.ar_sph_od|default:"—" }}</td><td class="text-center">{{ rd.ar_cyl_od|default:"—" }}</td><td class="text-center">{{ rd.ar_ax_od|default:"—" }}</td></tr>
+                <tr><td class="fw-medium text-success">OS</td><td class="text-center">{{ rd.ar_sph_os|default:"—" }}</td><td class="text-center">{{ rd.ar_cyl_os|default:"—" }}</td><td class="text-center">{{ rd.ar_ax_os|default:"—" }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
     {% else %}
       <div class="text-muted small fst-italic py-2">No refraction data recorded yet — awaiting refractionist.</div>
     {% endif %}
