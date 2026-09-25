@@ -603,6 +603,7 @@
       {% endif %}
       <button class="cat-tab {% if not doctor_orders %}active{% endif %}" onclick="switchCat('REG',this)">Reg</button>
       <button class="cat-tab" onclick="switchCat('CONSULT',this)">Consult</button>
+      <button class="cat-tab" onclick="switchCat('CLINICAL',this)">Clinical</button>
       <button class="cat-tab" onclick="switchCat('INVEST',this)">Invest</button>
       <button class="cat-tab" onclick="switchCat('LAB',this)">Lab</button>
       <button class="cat-tab" onclick="switchCat('PHARM',this)">Pharm</button>
@@ -656,7 +657,23 @@
         {% endif %}{% endfor %}
       </div>
 
-      {# Investigations — tier-sorted (universal first, then tier-specific) #}
+      {# Clinical Exams (optometry) — tier-sorted #}
+      <div class="cat-pane" data-cat="CLINICAL">
+        {% for svc in service_catalog %}{% if svc.category == 'CLINICAL' and svc.tier == '' %}
+        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }}</span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
+        {% for svc in service_catalog %}{% if svc.category == 'CLINICAL' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
+        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
+          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
+          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
+        {% endif %}{% endfor %}
+      </div>
+
+      {# Investigations — tier-sorted (imaging/diagnostics only) #}
       <div class="cat-pane" data-cat="INVEST">
         {% for svc in service_catalog %}{% if svc.category == 'INVEST' and svc.tier == '' %}
         <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }})">
