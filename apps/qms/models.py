@@ -449,9 +449,16 @@ class DailyTokenSequence(models.Model):
         """Issue the next entry ticket number for a tier (S-001, FT-001, V-001)."""
         prefix = TIER_PREFIX.get(tier, tier[:2].upper())
         today  = timezone.localdate()
-        seq, _ = cls.objects.select_for_update().get_or_create(
+        seq, created = cls.objects.select_for_update().get_or_create(
             date=today, unique_key=prefix
         )
+        if created:
+            existing_max = QueueToken.objects.filter(
+                token_date=today,
+                token_number__startswith=f"{prefix}-",
+            ).count()
+            if existing_max > seq.last_number:
+                seq.last_number = existing_max
         seq.last_number += 1
         seq.save()
         return f"{prefix}-{seq.last_number:03d}"
@@ -487,9 +494,17 @@ class DailyTokenSequence(models.Model):
         prefix = prefix_map.get(service_type, service_type[:5].upper())
         key    = f"DEPT_{service_type}"
         today  = timezone.localdate()
-        seq, _ = cls.objects.select_for_update().get_or_create(
+        seq, created = cls.objects.select_for_update().get_or_create(
             date=today, unique_key=key
         )
+        if created:
+            # Sync with existing tokens that may have been created via other paths
+            existing_max = QueueToken.objects.filter(
+                token_date=today,
+                token_number__startswith=f"{prefix}-",
+            ).count()
+            if existing_max > seq.last_number:
+                seq.last_number = existing_max
         seq.last_number += 1
         seq.save()
         return f"{prefix}-{seq.last_number:03d}"
