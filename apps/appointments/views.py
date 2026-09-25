@@ -288,9 +288,11 @@ def appointment_check_in_view(request, pk):
                 patient=patient,
                 patient_name=patient.full_name,
                 service_type=service_type,
+                service_tier=tier,
                 priority=TIER_PRIORITY.get(tier, 0),
                 issued_by=request.user,
                 assigned_doctor=_assigned_doc,
+                visit=visit,
             )
             messages.success(request, f'Patient checked in. Token: {token.token_number} | Visit: {visit.visit_number}')
             return redirect('reception:confirmation', token_pk=token.pk)

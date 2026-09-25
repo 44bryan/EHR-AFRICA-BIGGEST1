@@ -243,6 +243,7 @@ def walk_in(request):
                 patient=patient,
                 patient_name=patient.full_name,
                 service_type=service_type,
+                service_tier=tier or 'STANDARD',
                 priority=priority,
                 issued_by=request.user,
             )
@@ -267,10 +268,14 @@ def walk_in(request):
             visit_type=appt_type if appt_type in ['NEW', 'FOLLOW_UP', 'EMERGENCY', 'REVIEW', 'PROCEDURE'] else 'NEW',
             chief_complaint=chief_complaint,
             status=initial_visit_status,
+            service_tier=tier or 'STANDARD',
             created_by=request.user,
         )
 
+        # Link token to visit
         if token:
+            token.visit = visit
+            token.save(update_fields=['visit'])
             return redirect('reception:confirmation', token_pk=token.pk)
         # QMS off — redirect to patient detail
         if consultation_valid:
@@ -340,7 +345,7 @@ def quick_checkin(request, pk):
         )
     else:
         visit_type   = 'FOLLOW_UP' if appt.appointment_type == 'FOLLOW_UP' else 'NEW'
-        visit_status = 'WAITING'
+        visit_status = 'AT_CASHIER'
         messages.warning(
             request,
             "Consultation period has expired. Patient directed to cashier for payment."
@@ -357,6 +362,7 @@ def quick_checkin(request, pk):
             patient=patient,
             patient_name=patient.full_name,
             service_type=service_type,
+            service_tier=tier or 'STANDARD',
             priority=priority,
             issued_by=request.user,
         )
@@ -365,7 +371,7 @@ def quick_checkin(request, pk):
     appt.save(update_fields=['status'])
 
     # Auto-create visit
-    Visit.objects.get_or_create(
+    visit, _created = Visit.objects.get_or_create(
         appointment=appt,
         defaults={
             'patient': patient,
@@ -373,9 +379,15 @@ def quick_checkin(request, pk):
             'visit_type': visit_type,
             'chief_complaint': appt.reason,
             'status': visit_status,
+            'service_tier': tier or 'STANDARD',
             'created_by': request.user,
         }
     )
+
+    # Link token to visit
+    if token and visit:
+        token.visit = visit
+        token.save(update_fields=['visit'])
 
     if token:
         return redirect('reception:confirmation', token_pk=token.pk)
