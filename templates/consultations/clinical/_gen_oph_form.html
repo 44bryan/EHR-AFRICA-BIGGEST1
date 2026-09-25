@@ -1051,15 +1051,30 @@
 
       pushHistory(eye);
       drawing = true;
+      _hasMoved = false;
       _overlayX[eye].beginPath();
       _overlayX[eye].moveTo(p.x, p.y);
+      _lastPt = p;
+      // Draw an immediate dot so taps register instantly
+      if (asdTool === 'pen') {
+        _overlayX[eye].fillStyle = asdColor;
+        _overlayX[eye].beginPath();
+        _overlayX[eye].arc(p.x, p.y, asdSize / 2, 0, Math.PI * 2);
+        _overlayX[eye].fill();
+        _overlayX[eye].beginPath();
+        _overlayX[eye].moveTo(p.x, p.y);
+        composite(ctx, eye);
+      }
     }
+
+    var _hasMoved = false, _lastPt = null;
 
     function onMove(e) {
       if (!asdDrawMode) return;
       if (!drawing && dragLabel === null) return;
       e.preventDefault();
       var p = getPos(e);
+      _hasMoved = true;
 
       if (dragLabel !== null) {
         _labels[eye][dragLabel].x = p.x - dragOX;
@@ -1358,6 +1373,16 @@
       }
       pushCrossHistory(eye); drawing = true;
       _crossOverlayX[eye].beginPath(); _crossOverlayX[eye].moveTo(p.x, p.y);
+      // Immediate dot on tap
+      if (asdTool === 'pen') {
+        _crossOverlayX[eye].fillStyle = asdColor;
+        _crossOverlayX[eye].beginPath();
+        _crossOverlayX[eye].arc(p.x, p.y, asdSize / 2, 0, Math.PI * 2);
+        _crossOverlayX[eye].fill();
+        _crossOverlayX[eye].beginPath();
+        _crossOverlayX[eye].moveTo(p.x, p.y);
+        crossComposite(ctx, eye);
+      }
     }
 
     function onMove(e) {
@@ -2221,8 +2246,21 @@ function addDxOther(eye) {
       // ── Pen / eraser ─────────────────────────────────────────────────────
       saveHistory(id);
       painting = true;
+      _fundusMoved = false;
       olCtx.beginPath(); olCtx.moveTo(p.x, p.y);
+      // Draw an immediate dot so taps register instantly
+      if (currentTool === 'pen') {
+        olCtx.fillStyle = drawColor;
+        olCtx.beginPath();
+        olCtx.arc(p.x, p.y, drawSize / 2, 0, Math.PI * 2);
+        olCtx.fill();
+        olCtx.beginPath();
+        olCtx.moveTo(p.x, p.y);
+        composite(id);
+      }
     }
+
+    var _fundusMoved = false;
 
     function move(e) {
       if (!fundusDrawMode) return;
@@ -2240,6 +2278,7 @@ function addDxOther(eye) {
         return;
       }
       if (!painting) return;
+      _fundusMoved = true;
       if (currentTool === 'eraser') {
         olCtx.clearRect(p.x - drawSize * 2, p.y - drawSize * 2, drawSize * 4, drawSize * 4);
       } else {
