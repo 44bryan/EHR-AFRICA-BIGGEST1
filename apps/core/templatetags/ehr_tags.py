@@ -41,6 +41,20 @@ def get_item(dictionary, key):
 
 
 @register.filter
+def dict_first(dictionary, keys):
+    """Return first truthy value for comma-separated keys.
+    Usage: {{ rd|dict_first:"sub_sph_dist_od,sph_od"|default:"—" }}
+    Safe alternative to {% firstof %} which crashes on missing dict keys."""
+    if not isinstance(dictionary, dict):
+        return None
+    for key in keys.split(','):
+        val = dictionary.get(key.strip())
+        if val:
+            return val
+    return None
+
+
+@register.filter
 def merge_dict(d1, d2):
     """
     Merge two dicts safely, d1 values have priority over d2.
