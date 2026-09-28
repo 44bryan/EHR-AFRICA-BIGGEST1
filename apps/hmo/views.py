@@ -344,10 +344,12 @@ def batch_create(request):
     if request.method == 'POST':
         p = request.POST
         scheme = get_object_or_404(InsuranceScheme, pk=p.get('scheme'), is_deleted=False)
-        # Auto-generate batch number: SCH-YYYYMM-NNN
+        # Auto-generate batch number: SCH-YYYYMM-NNN (max-based to avoid duplicates)
         month_str = date.today().strftime('%Y%m')
-        count = ClaimBatch.objects.filter(scheme=scheme).count() + 1
-        batch_number = f'{scheme.code}-{month_str}-{count:03d}'
+        prefix = f'{scheme.code}-{month_str}-'
+        last = ClaimBatch.objects.filter(batch_number__startswith=prefix).order_by('-batch_number').first()
+        seq = int(last.batch_number.split('-')[-1]) + 1 if last else 1
+        batch_number = f'{prefix}{seq:03d}'
         batch = ClaimBatch.objects.create(
             batch_number=batch_number,
             scheme=scheme,
@@ -435,17 +437,18 @@ def batch_record_payment(request, batch_id):
         messages.error(request, 'Access denied.')
         return redirect('hmo:batch_list')
 
+    from decimal import Decimal
     batch = get_object_or_404(ClaimBatch, pk=batch_id, is_deleted=False)
     p = request.POST
-    batch.total_approved = p.get('total_approved', batch.total_approved)
-    batch.total_paid = p.get('total_paid', 0)
+    batch.total_approved = Decimal(p.get('total_approved', '0') or '0')
+    batch.total_paid = Decimal(p.get('total_paid', '0') or '0')
     batch.payment_date = p.get('payment_date') or None
     batch.payment_ref = p.get('payment_ref', '').strip()
     batch.notes = p.get('notes', '').strip()
     # Determine paid vs partial
-    if float(batch.total_paid) >= float(batch.total_claimed):
+    if batch.total_paid >= batch.total_claimed:
         batch.status = ClaimBatchStatus.PAID
-    elif float(batch.total_paid) > 0:
+    elif batch.total_paid > 0:
         batch.status = ClaimBatchStatus.PARTIAL
     batch.updated_by = request.user
     batch.save()
@@ -503,10 +506,12 @@ def claim_create(request, member_id=None):
         mid = p.get('member')
         m = get_object_or_404(InsuredMember, pk=mid, is_deleted=False)
 
-        # Auto claim number: SCH-YYYYMMDD-NNN
+        # Auto claim number: SCH-YYYYMMDD-NNNN (max-based to avoid duplicates)
         day_str = date.today().strftime('%Y%m%d')
-        count = Claim.objects.filter(member__scheme=m.scheme).count() + 1
-        claim_number = f'{m.scheme.code}-{day_str}-{count:04d}'
+        prefix = f'{m.scheme.code}-{day_str}-'
+        last_claim = Claim.objects.filter(claim_number__startswith=prefix).order_by('-claim_number').first()
+        seq = int(last_claim.claim_number.split('-')[-1]) + 1 if last_claim else 1
+        claim_number = f'{prefix}{seq:04d}'
 
         claim = Claim.objects.create(
             claim_number=claim_number,
