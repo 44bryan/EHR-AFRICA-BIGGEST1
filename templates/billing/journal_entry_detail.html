@@ -2,21 +2,27 @@
 {% load humanize %}
 {% block title %}{{ entry.entry_number }}{% endblock %}
 {% block page_header %}
-<div class="mb-3">
-  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
-    Back to Journal
-  </a>
-  <h4 class="fw-bold mb-0">{{ entry.entry_number }}
-    {% if entry.is_reversal %}<span class="badge bg-warning ms-2">Reversal</span>{% endif %}
-    {% if not entry.is_posted %}<span class="badge bg-secondary ms-2">Draft</span>{% endif %}
-  </h4>
-  <p class="text-muted small mb-0">{{ entry.description }}</p>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+      Back to Journal
+    </a>
+    <h4 class="fw-bold mb-0">{{ entry.entry_number }}
+      {% if entry.is_reversal %}<span class="badge bg-warning ms-2">Reversal</span>{% endif %}
+      {% if entry.status == 'DRAFT' %}<span class="badge bg-warning text-dark ms-2">Draft — Awaiting Review</span>
+      {% elif entry.status == 'REVIEWED' %}<span class="badge bg-info ms-2">Reviewed — Awaiting Posting</span>
+      {% elif entry.status == 'POSTED' %}<span class="badge bg-success ms-2">Posted</span>
+      {% elif entry.status == 'REJECTED' %}<span class="badge bg-danger ms-2">Rejected</span>
+      {% endif %}
+    </h4>
+    <p class="text-muted small mb-0">{{ entry.description }}</p>
+  </div>
 </div>
 {% endblock %}
 {% block content %}
 <div class="row g-3">
   <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
+    <div class="card shadow-sm mb-3">
       <div class="card-header fw-semibold py-2">Entry Details</div>
       <div class="card-body">
         <dl class="row mb-0 small">
@@ -24,12 +30,105 @@
           <dt class="col-5 text-muted">Date</dt><dd class="col-7">{{ entry.entry_date|date:"d M Y" }}</dd>
           <dt class="col-5 text-muted">Reference</dt><dd class="col-7">{{ entry.reference|default:"—" }}</dd>
           <dt class="col-5 text-muted">Source</dt><dd class="col-7">{{ entry.source_type|default:"manual"|capfirst }}</dd>
-          <dt class="col-5 text-muted">Posted by</dt><dd class="col-7">{{ entry.created_by.get_full_name|default:"System" }}</dd>
-          <dt class="col-5 text-muted">Posted at</dt><dd class="col-7">{{ entry.created_at|date:"d/m/Y H:i" }}</dd>
+          <dt class="col-5 text-muted">Cost Center</dt><dd class="col-7">{{ entry.cost_center.code|default:"—" }} {{ entry.cost_center.name|default:"" }}</dd>
         </dl>
       </div>
     </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-header fw-semibold py-2">Approval Trail</div>
+      <div class="card-body small">
+        <div class="d-flex align-items-start mb-2">
+          <i class="bi bi-1-circle-fill text-primary me-2 mt-1"></i>
+          <div>
+            <strong>Recorded</strong><br>
+            {{ entry.recorded_by.get_full_name|default:entry.created_by.get_full_name|default:"System" }}<br>
+            <span class="text-muted">{{ entry.created_at|date:"d/m/Y H:i" }}</span>
+          </div>
+        </div>
+        {% if entry.reviewed_by %}
+        <div class="d-flex align-items-start mb-2">
+          <i class="bi bi-2-circle-fill text-info me-2 mt-1"></i>
+          <div>
+            <strong>Reviewed</strong><br>
+            {{ entry.reviewed_by.get_full_name }}<br>
+            <span class="text-muted">{{ entry.reviewed_at|date:"d/m/Y H:i" }}</span>
+            {% if entry.review_notes %}<br><em>{{ entry.review_notes }}</em>{% endif %}
+          </div>
+        </div>
+        {% elif entry.status == 'DRAFT' %}
+        <div class="d-flex align-items-start mb-2 text-muted">
+          <i class="bi bi-2-circle me-2 mt-1"></i>
+          <div><strong>Review</strong><br>Awaiting Senior Accountant...</div>
+        </div>
+        {% endif %}
+        {% if entry.posted_by %}
+        <div class="d-flex align-items-start mb-2">
+          <i class="bi bi-3-circle-fill text-success me-2 mt-1"></i>
+          <div>
+            <strong>Posted</strong><br>
+            {{ entry.posted_by.get_full_name }}<br>
+            <span class="text-muted">{{ entry.posted_at|date:"d/m/Y H:i" }}</span>
+          </div>
+        </div>
+        {% elif entry.status == 'REVIEWED' %}
+        <div class="d-flex align-items-start mb-2 text-muted">
+          <i class="bi bi-3-circle me-2 mt-1"></i>
+          <div><strong>Post</strong><br>Awaiting Finance Director...</div>
+        </div>
+        {% elif entry.status == 'POSTED' and not entry.posted_by %}
+        <div class="d-flex align-items-start mb-2">
+          <i class="bi bi-3-circle-fill text-success me-2 mt-1"></i>
+          <div><strong>Auto-Posted</strong><br><span class="text-muted">System-generated entry</span></div>
+        </div>
+        {% endif %}
+        {% if entry.status == 'REJECTED' %}
+        <div class="d-flex align-items-start mb-2">
+          <i class="bi bi-x-circle-fill text-danger me-2 mt-1"></i>
+          <div>
+            <strong>Rejected</strong><br>
+            {% if entry.rejection_reason %}<em>{{ entry.rejection_reason }}</em>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if can_review or can_post or can_reject %}
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold py-2">Actions</div>
+      <div class="card-body">
+        {% if can_review %}
+        <form method="post" action="{% url 'billing:journal_entry_review' entry.pk %}" class="mb-3">
+          {% csrf_token %}
+          <textarea name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Review notes (optional)"></textarea>
+          <button type="submit" class="btn btn-info btn-sm w-100">
+            <i class="bi bi-check2 me-1"></i>Approve Review (Senior Accountant)
+          </button>
+        </form>
+        {% endif %}
+        {% if can_post %}
+        <form method="post" action="{% url 'billing:journal_entry_post' entry.pk %}" class="mb-3">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check-lg me-1"></i>Post to GL (Finance Director)
+          </button>
+        </form>
+        {% endif %}
+        {% if can_reject %}
+        <form method="post" action="{% url 'billing:journal_entry_reject' entry.pk %}">
+          {% csrf_token %}
+          <textarea name="reason" class="form-control form-control-sm mb-2" rows="2" placeholder="Rejection reason..." required></textarea>
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+            <i class="bi bi-x-lg me-1"></i>Reject
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
   </div>
+
   <div class="col-lg-8">
     <div class="card shadow-sm">
       <div class="card-header d-flex justify-content-between align-items-center py-2">

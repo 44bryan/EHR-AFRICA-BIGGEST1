@@ -143,6 +143,13 @@ urlpatterns = [
     path('gl/journal/', views.journal_entry_list, name='journal_entry_list'),
     path('gl/journal/create/', views.journal_entry_create, name='journal_entry_create'),
     path('gl/journal/<uuid:entry_id>/', views.journal_entry_detail, name='journal_entry_detail'),
+    path('gl/journal/<uuid:entry_id>/review/', views.journal_entry_review, name='journal_entry_review'),
+    path('gl/journal/<uuid:entry_id>/post/', views.journal_entry_post, name='journal_entry_post'),
+    path('gl/journal/<uuid:entry_id>/reject/', views.journal_entry_reject, name='journal_entry_reject'),
+    # Cost Centers
+    path('gl/cost-centers/', views.cost_center_list, name='cost_center_list'),
+    path('gl/cost-centers/create/', views.cost_center_create, name='cost_center_create'),
+    path('gl/cost-centers/<uuid:center_id>/edit/', views.cost_center_edit, name='cost_center_edit'),
     path('gl/ledger/', views.general_ledger, name='general_ledger'),
     path('gl/trial-balance/', views.trial_balance, name='trial_balance'),
     path('gl/balance-sheet/', views.balance_sheet, name='balance_sheet'),

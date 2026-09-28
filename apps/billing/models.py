@@ -1169,10 +1169,46 @@ class GLAccount(AuditModel):
             return credits - debits
 
 
+class CostCenter(AuditModel):
+    """
+    Cost Center — department or project for cost allocation.
+    Every journal entry can be tagged with a cost center for
+    departmental P&L, budget tracking, and management reporting.
+    """
+    code   = models.CharField(max_length=20, unique=True, help_text='e.g. CC-OPD, CC-SURG, CC-ADMIN')
+    name   = models.CharField(max_length=200)
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='children')
+    manager = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='managed_cost_centers')
+    is_active = models.BooleanField(default=True)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['code']
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+
+class JournalEntryStatus(models.TextChoices):
+    DRAFT     = 'DRAFT',     'Draft — Recorded by Accountant'
+    REVIEWED  = 'REVIEWED',  'Reviewed by Senior Accountant'
+    POSTED    = 'POSTED',    'Posted by Finance Director'
+    REJECTED  = 'REJECTED',  'Rejected'
+
+
 class JournalEntry(AuditModel):
     """
     A double-entry journal entry header.
     Each entry has 2+ lines; total debits must equal total credits.
+
+    3-Tier Approval Workflow (manual entries):
+      1. Accountant RECORDS (status=DRAFT, is_posted=False)
+      2. Senior Accountant REVIEWS (status=REVIEWED)
+      3. Finance Director POSTS (status=POSTED, is_posted=True)
+
+    Auto-generated entries (from payments, stock, etc.) are posted immediately.
     """
     entry_number = models.CharField(max_length=20, unique=True, editable=False)
     entry_date   = models.DateField(default=timezone.localdate)
@@ -1191,6 +1227,27 @@ class JournalEntry(AuditModel):
                     help_text='payment | expense | payroll | petty_cash | manual')
     source_id    = models.CharField(max_length=50, blank=True,
                     help_text='UUID/ID of the source record')
+    # Cost Center
+    cost_center  = models.ForeignKey(CostCenter, on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='journal_entries',
+                    help_text='Cost center for departmental cost allocation')
+    # 3-Tier Approval Workflow
+    status       = models.CharField(max_length=10, choices=JournalEntryStatus.choices,
+                    default=JournalEntryStatus.POSTED,
+                    help_text='Approval status — auto entries are POSTED, manual entries start as DRAFT')
+    recorded_by  = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='journal_entries_recorded',
+                    help_text='Accountant who recorded this entry')
+    reviewed_by  = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='journal_entries_reviewed',
+                    help_text='Senior Accountant who reviewed this entry')
+    reviewed_at  = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+    posted_by    = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='journal_entries_posted',
+                    help_text='Finance Director who approved and posted this entry')
+    posted_at    = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
 
     class Meta:
         ordering = ['-entry_date', '-created_at']

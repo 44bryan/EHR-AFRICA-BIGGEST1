@@ -5348,7 +5348,7 @@ def asset_edit(request, asset_id):
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERAL LEDGER  —  Chart of Accounts, Journal Entries, Reports
 # ═══════════════════════════════════════════════════════════════════════════════
-from .models import GLAccount, AccountType, JournalEntry, JournalLine
+from .models import GLAccount, AccountType, JournalEntry, JournalLine, JournalEntryStatus, CostCenter
 
 
 def _can_access_gl(user):
@@ -5482,12 +5482,15 @@ def journal_entry_list(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    qs = JournalEntry.objects.filter(is_deleted=False).order_by('-entry_date', '-created_at')
+    qs = JournalEntry.objects.filter(is_deleted=False).select_related(
+        'cost_center', 'recorded_by', 'reviewed_by', 'posted_by'
+    ).order_by('-entry_date', '-created_at')
     # Filters
     source = request.GET.get('source', '')
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
     q = request.GET.get('q', '')
+    status = request.GET.get('status', '')
     if source:
         qs = qs.filter(source_type=source)
     if date_from:
@@ -5496,6 +5499,11 @@ def journal_entry_list(request):
         qs = qs.filter(entry_date__lte=date_to)
     if q:
         qs = qs.filter(Q(entry_number__icontains=q) | Q(description__icontains=q) | Q(reference__icontains=q))
+    if status:
+        qs = qs.filter(status=status)
+    # Pending counts for workflow badges
+    draft_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.DRAFT).count()
+    reviewed_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.REVIEWED).count()
     return render(request, 'billing/journal_entry_list.html', {
         'entries': qs[:200],
         'total': qs.count(),
@@ -5503,6 +5511,10 @@ def journal_entry_list(request):
         'date_from': date_from,
         'date_to': date_to,
         'q': q,
+        'status': status,
+        'status_choices': JournalEntryStatus.choices,
+        'draft_count': draft_count,
+        'reviewed_count': reviewed_count,
     })
 
 
@@ -5512,20 +5524,44 @@ def journal_entry_detail(request, entry_id):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     entry = get_object_or_404(JournalEntry, pk=entry_id, is_deleted=False)
-    return render(request, 'billing/journal_entry_detail.html', {'entry': entry})
+    # Determine what actions the current user can take
+    can_review = (
+        request.user.role in (UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN)
+        and entry.status == JournalEntryStatus.DRAFT
+    )
+    can_post = (
+        request.user.role in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN)
+        and entry.status == JournalEntryStatus.REVIEWED
+    )
+    can_reject = (
+        request.user.role in (UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN)
+        and entry.status in (JournalEntryStatus.DRAFT, JournalEntryStatus.REVIEWED)
+    )
+    return render(request, 'billing/journal_entry_detail.html', {
+        'entry': entry,
+        'can_review': can_review,
+        'can_post': can_post,
+        'can_reject': can_reject,
+    })
 
 
 @login_required
 def journal_entry_create(request):
-    """Manual journal entry — Finance Director / Senior Accountant only."""
-    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        from django.http import HttpResponseForbidden
+    """
+    Manual journal entry — 3-Tier Workflow:
+      Accountant RECORDS (DRAFT) → Senior Accountant REVIEWS → Finance Director POSTS
+    Accountant, Senior Accountant, Finance Director can all create entries.
+    """
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+                                  UserRole.ACCOUNTANT, UserRole.ADMIN, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True, allow_manual_posting=True).order_by('code')
+    cost_centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
     if request.method == 'POST':
         entry_date = request.POST.get('entry_date')
         description = request.POST.get('description', '').strip()
         reference = request.POST.get('reference', '').strip()
+        cost_center_id = request.POST.get('cost_center') or None
         acct_ids = request.POST.getlist('account_id')
         debits = request.POST.getlist('debit')
         credits = request.POST.getlist('credit')
@@ -5533,21 +5569,29 @@ def journal_entry_create(request):
 
         if not entry_date or not description:
             messages.error(request, 'Date and description are required.')
-            return render(request, 'billing/journal_entry_form.html', {'accounts': accounts})
+            return render(request, 'billing/journal_entry_form.html', {
+                'accounts': accounts, 'cost_centers': cost_centers,
+            })
 
         total_dr = sum(Decimal(d or '0') for d in debits)
         total_cr = sum(Decimal(c or '0') for c in credits)
         if abs(total_dr - total_cr) > Decimal('0.01'):
             messages.error(request, f'Entry is not balanced: Debits {total_dr:,.2f} ≠ Credits {total_cr:,.2f}')
-            return render(request, 'billing/journal_entry_form.html', {'accounts': accounts})
+            return render(request, 'billing/journal_entry_form.html', {
+                'accounts': accounts, 'cost_centers': cost_centers,
+            })
 
+        cc = CostCenter.objects.filter(pk=cost_center_id).first() if cost_center_id else None
         entry = JournalEntry.objects.create(
             entry_date=entry_date,
             description=description,
             reference=reference,
+            cost_center=cc,
             source_type='manual',
             source_id='',
-            is_posted=True,
+            is_posted=False,  # NOT posted yet — goes through approval
+            status=JournalEntryStatus.DRAFT,
+            recorded_by=request.user,
             created_by=request.user,
         )
         for seq, (acct_id, dr, cr, ld) in enumerate(zip(acct_ids, debits, credits, descs), 1):
@@ -5559,9 +5603,119 @@ def journal_entry_create(request):
                     credit_amount=Decimal(cr or '0'),
                     description=ld, sequence=seq,
                 )
-        messages.success(request, f'Journal entry {entry.entry_number} posted.')
+        messages.success(request, f'Journal entry {entry.entry_number} recorded as DRAFT — awaiting Senior Accountant review.')
         return redirect('billing:journal_entry_detail', entry_id=entry.pk)
-    return render(request, 'billing/journal_entry_form.html', {'accounts': accounts})
+    return render(request, 'billing/journal_entry_form.html', {
+        'accounts': accounts, 'cost_centers': cost_centers,
+    })
+
+
+@login_required
+@require_POST
+def journal_entry_review(request, entry_id):
+    """Senior Accountant reviews a DRAFT journal entry → REVIEWED."""
+    if request.user.role not in (UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden('Only Senior Accountant can review journal entries.')
+    entry = get_object_or_404(JournalEntry, pk=entry_id, status=JournalEntryStatus.DRAFT, is_deleted=False)
+    entry.status = JournalEntryStatus.REVIEWED
+    entry.reviewed_by = request.user
+    entry.reviewed_at = timezone.now()
+    entry.review_notes = request.POST.get('notes', '').strip()
+    entry.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_notes', 'updated_at'])
+    messages.success(request, f'{entry.entry_number} reviewed — awaiting Finance Director approval to post.')
+    return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+
+
+@login_required
+@require_POST
+def journal_entry_post(request, entry_id):
+    """Finance Director posts a REVIEWED journal entry → POSTED (affects GL balances)."""
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden('Only Finance Director can post journal entries.')
+    entry = get_object_or_404(JournalEntry, pk=entry_id, status=JournalEntryStatus.REVIEWED, is_deleted=False)
+    if not entry.is_balanced:
+        messages.error(request, f'Cannot post — entry is not balanced (Dr {entry.total_debits:,.0f} ≠ Cr {entry.total_credits:,.0f}).')
+        return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+    entry.status = JournalEntryStatus.POSTED
+    entry.is_posted = True
+    entry.posted_by = request.user
+    entry.posted_at = timezone.now()
+    entry.save(update_fields=['status', 'is_posted', 'posted_by', 'posted_at', 'updated_at'])
+    messages.success(request, f'{entry.entry_number} posted to the General Ledger.')
+    return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+
+
+@login_required
+@require_POST
+def journal_entry_reject(request, entry_id):
+    """Senior Accountant or Finance Director rejects a journal entry."""
+    if request.user.role not in (UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden('Only Senior Accountant or Finance Director can reject entries.')
+    entry = get_object_or_404(JournalEntry, pk=entry_id, is_deleted=False)
+    if entry.status not in (JournalEntryStatus.DRAFT, JournalEntryStatus.REVIEWED):
+        messages.error(request, 'Only DRAFT or REVIEWED entries can be rejected.')
+        return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+    entry.status = JournalEntryStatus.REJECTED
+    entry.is_posted = False
+    entry.rejection_reason = request.POST.get('reason', '').strip()
+    entry.save(update_fields=['status', 'is_posted', 'rejection_reason', 'updated_at'])
+    messages.warning(request, f'{entry.entry_number} rejected.')
+    return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+
+
+# ── Cost Center CRUD ─────────────────────────────────────────────────────────
+
+@login_required
+def cost_center_list(request):
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    centers = CostCenter.objects.filter(is_deleted=False).select_related('parent', 'manager').order_by('code')
+    return render(request, 'billing/cost_center_list.html', {'centers': centers})
+
+
+@login_required
+def cost_center_create(request):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip()
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        parent_id = request.POST.get('parent') or None
+        if not code or not name:
+            messages.error(request, 'Code and Name are required.')
+        elif CostCenter.objects.filter(code=code).exists():
+            messages.error(request, f'Cost center {code} already exists.')
+        else:
+            parent = CostCenter.objects.filter(pk=parent_id).first() if parent_id else None
+            CostCenter.objects.create(
+                code=code, name=name, description=description,
+                parent=parent, created_by=request.user,
+            )
+            messages.success(request, f'Cost center {code} — {name} created.')
+            return redirect('billing:cost_center_list')
+    centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    return render(request, 'billing/cost_center_form.html', {
+        'centers': centers, 'action': 'Create Cost Center',
+    })
+
+
+@login_required
+def cost_center_edit(request, center_id):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    cc = get_object_or_404(CostCenter, pk=center_id, is_deleted=False)
+    if request.method == 'POST':
+        cc.name = request.POST.get('name', cc.name).strip()
+        cc.description = request.POST.get('description', '').strip()
+        cc.is_active = request.POST.get('is_active') == 'on'
+        cc.save(update_fields=['name', 'description', 'is_active', 'updated_at'])
+        messages.success(request, f'Cost center {cc.code} updated.')
+        return redirect('billing:cost_center_list')
+    centers = CostCenter.objects.filter(is_deleted=False, is_active=True).exclude(pk=center_id).order_by('code')
+    return render(request, 'billing/cost_center_form.html', {
+        'center': cc, 'centers': centers, 'action': 'Edit Cost Center',
+    })
 
 
 # ── General Ledger Report ─────────────────────────────────────────────────────
