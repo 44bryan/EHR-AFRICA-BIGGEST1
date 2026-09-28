@@ -139,6 +139,7 @@ urlpatterns = [
     path('gl/accounts/', views.chart_of_accounts, name='chart_of_accounts'),
     path('gl/accounts/create/', views.gl_account_create, name='gl_account_create'),
     path('gl/accounts/<uuid:account_id>/edit/', views.gl_account_edit, name='gl_account_edit'),
+    path('gl/accounts/<uuid:account_id>/delete/', views.gl_account_delete, name='gl_account_delete'),
     path('gl/journal/', views.journal_entry_list, name='journal_entry_list'),
     path('gl/journal/create/', views.journal_entry_create, name='journal_entry_create'),
     path('gl/journal/<uuid:entry_id>/', views.journal_entry_detail, name='journal_entry_detail'),

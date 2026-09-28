@@ -19,6 +19,7 @@ from .models import (
     StockTakeSchedule, ABCClass, VENClass,
     SupplierQuotation, QuotationItem, QuotationStatus,
     StoreBudget,
+    StockValidation, StockValidationType, StockValidationStatus,
 )
 
 
@@ -55,6 +56,25 @@ def _can_view_reports(user):
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
         UserRole.SENIOR_ACCOUNTANT,
+    )
+
+
+# ── 4-Eyes Stock Validation Helper ────────────────────────────────────────────
+
+def _create_stock_validation(validation_type, source_id, reference, description,
+                              total_value, user):
+    """
+    Auto-create a StockValidation record (PENDING) for Finance Director review.
+    Every inventory transaction with financial impact goes through this.
+    """
+    return StockValidation.objects.create(
+        validation_type=validation_type,
+        source_id=source_id,
+        reference=reference,
+        description=description,
+        total_value=Decimal(str(total_value)),
+        submitted_by=user,
+        created_by=user,
     )
 
 
@@ -230,13 +250,22 @@ def stock_adjustment(request, item_id):
             qty = -qty
         item.current_stock = max(0, item.current_stock + qty)
         item.save()
-        StockMovement.objects.create(
+        sm = StockMovement.objects.create(
             item=item, movement_type=move_type,
             quantity=qty, balance_after=item.current_stock,
             notes=notes, performed_by=request.user,
         )
         if move_type == 'OUT':
             _trigger_auto_reorder(item, request.user)
+        # 4-Eyes: Create validation for adjustment GL posting
+        total_value = abs(qty) * float(item.unit_cost or 0)
+        if total_value > 0:
+            _create_stock_validation(
+                validation_type=StockValidationType.ADJUSTMENT,
+                source_id=sm.pk, reference=f'ADJ-{item.item_code}',
+                description=f'Stock adjustment — {item.name} ({move_type} {abs(qty)})',
+                total_value=total_value, user=request.user,
+            )
         messages.success(request, 'Stock adjusted successfully.')
         return redirect('inventory:item_detail', item_id=item.id)
     return render(request, 'inventory/stock_adjustment.html', {'item': item})
@@ -729,6 +758,18 @@ def requisition_issue(request, req_id):
             req.issued_at = timezone.now()
             req.status    = 'ISSUED' if all_fulfilled else 'PARTIAL'
             req.save(update_fields=['issued_by', 'issued_at', 'status'])
+            # 4-Eyes: Create validation for stock issue
+            total_value = sum(
+                (ri.quantity_issued or 0) * float(ri.item.unit_cost or 0)
+                for ri in req.items.select_related('item').all()
+            )
+            if total_value > 0:
+                _create_stock_validation(
+                    validation_type=StockValidationType.ISSUE,
+                    source_id=req.pk, reference=req.req_number,
+                    description=f'Stock issued — REQ {req.req_number} — {req.department}',
+                    total_value=total_value, user=request.user,
+                )
             messages.success(request, f'Items issued for REQ-{req.req_number}.')
         else:
             messages.warning(request, 'No items were issued.')
@@ -884,7 +925,19 @@ def stock_count_approve(request, count_id):
     sc.status = StockCountStatus.APPROVED
     sc.approved_by = request.user
     sc.save(update_fields=['status', 'approved_by'])
-    messages.success(request, f'Count {sc.count_number} approved — stock adjusted.')
+    # 4-Eyes: Create validation for variance GL posting
+    total_value = sum(
+        abs(sci.variance or 0) * float(sci.item.unit_cost or 0)
+        for sci in sc.items.select_related('item').exclude(variance=0)
+    )
+    if total_value > 0:
+        _create_stock_validation(
+            validation_type=StockValidationType.COUNT,
+            source_id=sc.pk, reference=sc.count_number,
+            description=f'Stock count variance — {sc.count_number}',
+            total_value=total_value, user=request.user,
+        )
+    messages.success(request, f'Count {sc.count_number} approved — stock adjusted, awaiting GL validation.')
     return redirect('inventory:stock_count_detail', count_id=sc.pk)
 
 
@@ -954,6 +1007,18 @@ def return_action(request, return_id):
         ret.status = 'ACCEPTED'
         ret.received_by = request.user
         ret.save(update_fields=['status', 'received_by'])
+        # 4-Eyes: Create validation for return GL posting
+        total_value = sum(
+            (ri.quantity or 0) * float(ri.item.unit_cost or 0)
+            for ri in ret.items.select_related('item').filter(condition='GOOD')
+        )
+        if total_value > 0:
+            _create_stock_validation(
+                validation_type=StockValidationType.RETURN,
+                source_id=ret.pk, reference=ret.return_number,
+                description=f'Department return — RET-{ret.return_number} — {ret.department}',
+                total_value=total_value, user=request.user,
+            )
         messages.success(request, f'Return RET-{ret.return_number} accepted — stock restored.')
     elif action == 'reject':
         ret.status = 'REJECTED'
@@ -1307,7 +1372,7 @@ def grn_accept(request, grn_id):
                 unit_cost=gi.po_item.unit_price,
                 purchase_order=grn.purchase_order,
             )
-    grn.status = GRNStatus.ACCEPTED
+    grn.status = GRNStatus.AWAITING_VALIDATION
     grn.save(update_fields=['status', 'updated_at'])
     # Update vendor stats
     vendor = grn.purchase_order.vendor
@@ -1318,7 +1383,18 @@ def grn_accept(request, grn_id):
     else:
         vendor.late_deliveries += 1
     vendor.save(update_fields=['total_orders', 'on_time_deliveries', 'late_deliveries'])
-    messages.success(request, f'GRN {grn.grn_number} accepted — stock updated.')
+    # 4-Eyes: Calculate total value and create validation request
+    total_value = sum(
+        (gi.quantity_accepted or 0) * float(gi.po_item.unit_price or 0)
+        for gi in grn.items.select_related('po_item').all()
+    )
+    _create_stock_validation(
+        validation_type=StockValidationType.GRN,
+        source_id=grn.pk, reference=grn.grn_number,
+        description=f'GRN {grn.grn_number} — PO {grn.purchase_order.po_number} — {grn.purchase_order.vendor.name}',
+        total_value=total_value, user=request.user,
+    )
+    messages.success(request, f'GRN {grn.grn_number} accepted — awaiting Finance Director validation for GL posting.')
     return redirect('inventory:grn_detail', grn_id=grn.pk)
 
 
@@ -1451,7 +1527,19 @@ def disposal_dispose(request, disposal_id):
     dr.witness_id = request.POST.get('witness') or None
     dr.environmental_certificate = 'env_cert' in request.POST
     dr.save(update_fields=['status', 'disposal_date', 'witness', 'environmental_certificate', 'updated_at'])
-    messages.success(request, f'Disposal {dr.disposal_number} completed — stock deducted.')
+    # 4-Eyes: Create validation for disposal GL posting
+    total_value = sum(
+        (di.quantity or 0) * float(di.unit_cost or 0)
+        for di in dr.items.all()
+    )
+    if total_value > 0:
+        _create_stock_validation(
+            validation_type=StockValidationType.DISPOSAL,
+            source_id=dr.pk, reference=dr.disposal_number,
+            description=f'Stock disposal — {dr.disposal_number} ({dr.get_disposal_method_display()})',
+            total_value=total_value, user=request.user,
+        )
+    messages.success(request, f'Disposal {dr.disposal_number} completed — stock deducted, awaiting GL validation.')
     return redirect('inventory:disposal_detail', disposal_id=dr.pk)
 
 
@@ -2408,7 +2496,24 @@ def stock_exit_create(request):
             issued_count += 1
 
         if issued_count:
-            messages.success(request, f'{issued_count} item(s) issued successfully.')
+            # 4-Eyes: Create validation for stock exit GL posting
+            recent_movements = StockMovement.objects.filter(
+                performed_by=request.user, movement_type='OUT',
+            ).order_by('-created_at')[:issued_count]
+            total_value = sum(
+                abs(m.quantity or 0) * float(m.item.unit_cost or 0)
+                for m in recent_movements.select_related('item')
+            )
+            exit_ref = f'SEX-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
+            if total_value > 0:
+                _create_stock_validation(
+                    validation_type=StockValidationType.EXIT,
+                    source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
+                    reference=exit_ref,
+                    description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s)',
+                    total_value=total_value, user=request.user,
+                )
+            messages.success(request, f'{issued_count} item(s) issued — awaiting GL validation.')
         else:
             messages.warning(request, 'No items were issued — check stock availability.')
         return redirect('inventory:stock_exit_list')
@@ -2518,10 +2623,196 @@ def stock_entry_create(request):
             received_count += 1
 
         if received_count:
-            messages.success(request, f'{received_count} item(s) received successfully.')
+            # 4-Eyes: Create validation for stock entry GL posting
+            # Recalculate total from movements just created
+            recent_movements = StockMovement.objects.filter(
+                performed_by=request.user, movement_type='IN',
+            ).order_by('-created_at')[:received_count]
+            total_value = sum(
+                abs(m.quantity or 0) * float(m.item.unit_cost or 0)
+                for m in recent_movements.select_related('item')
+            )
+            entry_ref = f'SEN-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
+            if total_value > 0:
+                _create_stock_validation(
+                    validation_type=StockValidationType.ENTRY,
+                    source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
+                    reference=entry_ref,
+                    description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s)',
+                    total_value=total_value, user=request.user,
+                )
+            messages.success(request, f'{received_count} item(s) received — awaiting GL validation.')
         return redirect('inventory:stock_entry_list')
 
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4-EYES STOCK VALIDATION (Finance Director reviews & validates)
+# GL auto-posts ONLY after Finance Director validation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _can_validate_stock(user):
+    """Only Finance Director, Senior Accountant, Super Admin can validate stock for GL."""
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.SUPER_ADMIN,
+    )
+
+
+@login_required
+def stock_validation_list(request):
+    """List all pending stock validations for Finance Director review."""
+    if not _can_validate_stock(request.user) and not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status = request.GET.get('status', 'PENDING')
+    qs = StockValidation.objects.filter(is_deleted=False).select_related('submitted_by', 'validated_by')
+    if status:
+        qs = qs.filter(status=status)
+    pending_count = StockValidation.objects.filter(status=StockValidationStatus.PENDING, is_deleted=False).count()
+    return render(request, 'inventory/stock_validation_list.html', {
+        'validations': qs[:200],
+        'status_filter': status,
+        'status_choices': StockValidationStatus.choices,
+        'pending_count': pending_count,
+        'can_validate': _can_validate_stock(request.user),
+    })
+
+
+@login_required
+def stock_validation_detail(request, validation_id):
+    """View details of a stock validation with source transaction info."""
+    sv = get_object_or_404(StockValidation, pk=validation_id, is_deleted=False)
+    if not _can_validate_stock(request.user) and not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    # Load source transaction based on type
+    source_obj = None
+    source_items = []
+    if sv.validation_type == StockValidationType.GRN:
+        source_obj = GoodsReceivedNote.objects.filter(pk=sv.source_id).select_related('purchase_order__vendor').first()
+        if source_obj:
+            source_items = source_obj.items.select_related('po_item__item').all()
+    elif sv.validation_type == StockValidationType.ISSUE:
+        source_obj = DepartmentRequisition.objects.filter(pk=sv.source_id).first()
+        if source_obj:
+            source_items = source_obj.items.select_related('item').all()
+    elif sv.validation_type == StockValidationType.DISPOSAL:
+        source_obj = DisposalRecord.objects.filter(pk=sv.source_id).first()
+        if source_obj:
+            source_items = source_obj.items.select_related('item', 'batch').all()
+    elif sv.validation_type == StockValidationType.COUNT:
+        source_obj = StockCount.objects.filter(pk=sv.source_id).first()
+        if source_obj:
+            source_items = source_obj.items.select_related('item').exclude(variance=0)
+    elif sv.validation_type == StockValidationType.RETURN:
+        source_obj = DepartmentReturn.objects.filter(pk=sv.source_id).first()
+        if source_obj:
+            source_items = source_obj.items.select_related('item').filter(condition='GOOD')
+
+    return render(request, 'inventory/stock_validation_detail.html', {
+        'sv': sv, 'source_obj': source_obj, 'source_items': source_items,
+        'can_validate': _can_validate_stock(request.user),
+    })
+
+
+@login_required
+@require_POST
+def stock_validation_approve(request, validation_id):
+    """Finance Director validates — triggers GL auto-posting."""
+    if not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Only Finance Director can validate stock transactions.')
+    sv = get_object_or_404(StockValidation, pk=validation_id, status=StockValidationStatus.PENDING)
+    notes = request.POST.get('notes', '').strip()
+
+    # Import GL service
+    from apps.inventory.gl_service import (
+        post_stock_receipt, post_stock_issue, post_stock_disposal,
+        post_stock_entry, post_stock_exit, post_stock_adjustment,
+        post_stock_count_variance, post_department_return,
+    )
+
+    journal_entry = None
+    try:
+        if sv.validation_type == StockValidationType.GRN:
+            grn = GoodsReceivedNote.objects.get(pk=sv.source_id)
+            journal_entry = post_stock_receipt(grn, user=request.user)
+            if journal_entry:
+                grn.status = GRNStatus.VALIDATED
+                grn.validated_by = request.user
+                grn.validated_at = timezone.now()
+                grn.validation_notes = notes
+                grn.journal_entry = journal_entry
+                grn.save(update_fields=['status', 'validated_by', 'validated_at', 'validation_notes', 'journal_entry'])
+
+        elif sv.validation_type == StockValidationType.ISSUE:
+            req = DepartmentRequisition.objects.get(pk=sv.source_id)
+            journal_entry = post_stock_issue(req, user=request.user)
+
+        elif sv.validation_type == StockValidationType.DISPOSAL:
+            disposal = DisposalRecord.objects.get(pk=sv.source_id)
+            journal_entry = post_stock_disposal(disposal, user=request.user)
+
+        elif sv.validation_type == StockValidationType.COUNT:
+            sc = StockCount.objects.get(pk=sv.source_id)
+            journal_entry = post_stock_count_variance(sc, user=request.user)
+
+        elif sv.validation_type == StockValidationType.RETURN:
+            ret = DepartmentReturn.objects.get(pk=sv.source_id)
+            journal_entry = post_department_return(ret, user=request.user)
+
+        elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT):
+            # For direct entries/exits, the stock is already adjusted.
+            # GL posting uses the movement data from StockMovement records.
+            movements = StockMovement.objects.filter(pk=sv.source_id).select_related('item')
+            if movements.exists():
+                m = movements.first()
+                items_data = [(m.item, abs(m.quantity), m.item.unit_cost)]
+                if sv.validation_type == StockValidationType.ENTRY:
+                    journal_entry = post_stock_entry(
+                        sv.reference, items_data,
+                        m.created_at.date(), user=request.user,
+                    )
+                else:
+                    journal_entry = post_stock_exit(
+                        sv.reference, items_data,
+                        m.created_at.date(), reason=sv.description, user=request.user,
+                    )
+
+    except Exception as e:
+        messages.error(request, f'GL posting failed: {e}')
+        return redirect('inventory:stock_validation_detail', validation_id=sv.pk)
+
+    # Update validation record
+    sv.status = StockValidationStatus.VALIDATED
+    sv.validated_by = request.user
+    sv.validated_at = timezone.now()
+    sv.validation_notes = notes
+    sv.journal_entry = journal_entry
+    sv.save(update_fields=['status', 'validated_by', 'validated_at', 'validation_notes', 'journal_entry'])
+
+    if journal_entry:
+        messages.success(request, f'{sv.get_validation_type_display()} — {sv.reference} validated. GL journal entry {journal_entry.entry_number} posted.')
+    else:
+        messages.warning(request, f'{sv.reference} validated but GL posting skipped (accounts not seeded or zero value).')
+    return redirect('inventory:stock_validation_list')
+
+
+@login_required
+@require_POST
+def stock_validation_reject(request, validation_id):
+    """Finance Director rejects a stock transaction validation."""
+    if not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Only Finance Director can reject stock validations.')
+    sv = get_object_or_404(StockValidation, pk=validation_id, status=StockValidationStatus.PENDING)
+    sv.status = StockValidationStatus.REJECTED
+    sv.validated_by = request.user
+    sv.validated_at = timezone.now()
+    sv.validation_notes = request.POST.get('notes', '').strip()
+    sv.save(update_fields=['status', 'validated_by', 'validated_at', 'validation_notes'])
+    messages.warning(request, f'{sv.reference} rejected — no GL posting.')
+    return redirect('inventory:stock_validation_list')

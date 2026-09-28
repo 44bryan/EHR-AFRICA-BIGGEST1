@@ -1,0 +1,488 @@
+"""
+Inventory GL Service — Auto-posting for stock transactions.
+
+Every financial inventory event auto-posts to the General Ledger following
+OHADA SYCEBNL standards:
+  - Stock received   → Dr Class 3 (Stock)       / Cr 603 (Variation in Stock)
+  - Stock issued out → Dr 603 (Variation in Stock) / Cr Class 3 (Stock)
+  - Stock disposal   → Dr 603 (Variation in Stock) / Cr Class 3 (Stock)
+  - Stock adjustment → Dr or Cr accordingly
+  - Stock count var  → Dr 603 or 658 / Cr Class 3 (or reverse)
+  - Department return→ Dr Class 3 (Stock)       / Cr 603 (Variation in Stock)
+
+4-Eyes Principle: GL posting happens ONLY when Finance Director validates.
+"""
+import logging
+from decimal import Decimal
+
+logger = logging.getLogger(__name__)
+
+# ── OHADA Account Code Map ───────────────────────────────────────────────────
+# Stock accounts by InventoryItem category → OHADA Class 3 sub-accounts
+STOCK_ACCOUNT_MAP = {
+    'PHARMACEUTICAL': '32',     # Merchandise, raw materials
+    'SURGICAL':       '33',     # Other supplies
+    'MEDICAL_CONSUMABLE': '33', # Other supplies
+    'DIAGNOSTIC':     '33',     # Other supplies
+    'IMPLANT':        '32',     # Merchandise
+    'LENS':           '32',     # Merchandise
+    'OFFICE':         '33',     # Other supplies
+    'CLEANING':       '33',     # Other supplies
+    'IT':             '33',     # Other supplies
+    'FURNITURE':      '33',     # Other supplies
+    'LINEN':          '33',     # Other supplies
+    'OTHER':          '33',     # Other supplies
+}
+
+# Variation in stock (expense-side)
+VARIATION_IN_STOCK = '603'      # Variation des stocks de biens achetes
+
+# Loss / shortage account (for unexplained variances)
+STOCK_LOSS_ACCOUNT = '658'      # Other expenses (shortages)
+
+
+def _get_account(code):
+    """Fetch GLAccount by code prefix. Returns the most specific match."""
+    from apps.billing.models import GLAccount
+    try:
+        # Try exact match first
+        acct = GLAccount.objects.filter(code=code, is_active=True, is_deleted=False).first()
+        if acct:
+            return acct
+        # Try prefix match (e.g. '603' matches '6031' etc.)
+        acct = GLAccount.objects.filter(
+            code__startswith=code, is_active=True, is_deleted=False
+        ).order_by('code').first()
+        if acct:
+            return acct
+        logger.warning(f"GL account {code} not found — GL not seeded. Skipping auto-post.")
+        return None
+    except Exception:
+        logger.warning(f"GL account {code} lookup failed.")
+        return None
+
+
+def _create_entry(date, description, reference, source_type, source_id, lines, user=None):
+    """
+    Create a balanced JournalEntry with the given lines.
+    lines = list of (account_code, debit, credit, description)
+    """
+    from apps.billing.models import JournalEntry, JournalLine
+    resolved = []
+    for code, debit, credit, desc in lines:
+        acct = _get_account(code)
+        if acct is None:
+            return None
+        resolved.append((acct, Decimal(str(debit)), Decimal(str(credit)), desc))
+
+    total_dr = sum(d for _, d, _, _ in resolved)
+    total_cr = sum(c for _, _, c, _ in resolved)
+    if abs(total_dr - total_cr) > Decimal('0.01'):
+        logger.error(
+            f"Unbalanced inventory journal entry for {source_type} {source_id}: "
+            f"Dr={total_dr} Cr={total_cr}"
+        )
+        return None
+
+    entry = JournalEntry.objects.create(
+        entry_date=date,
+        description=description,
+        reference=reference,
+        source_type=source_type,
+        source_id=str(source_id),
+        is_posted=True,
+        created_by=user,
+    )
+    for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
+        JournalLine.objects.create(
+            entry=entry,
+            account=acct,
+            debit_amount=debit,
+            credit_amount=credit,
+            description=desc,
+            sequence=seq,
+        )
+    return entry
+
+
+def _stock_code_for_item(item):
+    """Get the OHADA Class 3 stock account code for an inventory item."""
+    return STOCK_ACCOUNT_MAP.get(item.category, '33')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC API — Called by views after Finance Director validation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def post_stock_receipt(grn, user=None):
+    """
+    GL posting when stock is received (GRN accepted + validated by Finance Director).
+    For each accepted GRN item:
+        Dr  Class 3 (Stock account)      →  cost of goods received
+        Cr  603 (Variation in Stock)      →  counterpart
+    """
+    try:
+        from apps.inventory.models import GRNItem
+        items = GRNItem.objects.filter(grn=grn).select_related('po_item__item')
+        lines = []
+        total = Decimal('0')
+
+        for gi in items:
+            qty = gi.quantity_accepted or 0
+            if qty <= 0:
+                continue
+            unit_cost = gi.po_item.unit_price if gi.po_item else Decimal('0')
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(gi.po_item.item)
+            lines.append((
+                stock_code, amount, 0,
+                f"Stock received: {gi.po_item.item.name} x{qty} @ {unit_cost}"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        # Single credit line for variation in stock
+        lines.append((
+            VARIATION_IN_STOCK, 0, total,
+            f"Variation in stock — GRN {grn.grn_number}"
+        ))
+
+        return _create_entry(
+            date=grn.received_date,
+            description=f"Stock receipt — GRN {grn.grn_number} — PO {grn.purchase_order.po_number}",
+            reference=grn.grn_number,
+            source_type='stock_receipt',
+            source_id=grn.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for GRN {grn.pk}: {e}")
+        return None
+
+
+def post_stock_issue(requisition, user=None):
+    """
+    GL posting when stock is issued to a department (requisition fulfilled).
+        Dr  603 (Variation in Stock)
+        Cr  Class 3 (Stock account)
+    """
+    try:
+        from apps.inventory.models import RequisitionItem
+        items = RequisitionItem.objects.filter(
+            requisition=requisition
+        ).select_related('item')
+        lines = []
+        total = Decimal('0')
+
+        for ri in items:
+            qty = ri.quantity_issued or 0
+            if qty <= 0:
+                continue
+            unit_cost = ri.item.unit_cost or Decimal('0')
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(ri.item)
+            lines.append((
+                stock_code, 0, amount,
+                f"Issued: {ri.item.name} x{qty} to {requisition.department}"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        lines.insert(0, (
+            VARIATION_IN_STOCK, total, 0,
+            f"Stock issued — REQ {requisition.req_number}"
+        ))
+
+        return _create_entry(
+            date=requisition.issued_at.date() if hasattr(requisition.issued_at, 'date') else requisition.issued_at or requisition.updated_at.date(),
+            description=f"Stock issued — REQ {requisition.req_number} — {requisition.department}",
+            reference=requisition.req_number,
+            source_type='stock_issue',
+            source_id=requisition.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for requisition {requisition.pk}: {e}")
+        return None
+
+
+def post_stock_disposal(disposal, user=None):
+    """
+    GL posting when stock is disposed of.
+        Dr  603 (Variation in Stock)
+        Cr  Class 3 (Stock account)
+    """
+    try:
+        from apps.inventory.models import DisposalItem
+        items = DisposalItem.objects.filter(disposal=disposal).select_related('item')
+        lines = []
+        total = Decimal('0')
+
+        for di in items:
+            amount = Decimal(str(di.quantity)) * Decimal(str(di.unit_cost or 0))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(di.item)
+            lines.append((
+                stock_code, 0, amount,
+                f"Disposed: {di.item.name} x{di.quantity} ({disposal.get_reason_display()})"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        lines.insert(0, (
+            VARIATION_IN_STOCK, total, 0,
+            f"Stock disposal — {disposal.disposal_number}"
+        ))
+
+        return _create_entry(
+            date=disposal.disposal_date or disposal.updated_at.date(),
+            description=f"Stock disposal — {disposal.disposal_number} ({disposal.get_disposal_method_display()})",
+            reference=disposal.disposal_number,
+            source_type='stock_disposal',
+            source_id=disposal.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for disposal {disposal.pk}: {e}")
+        return None
+
+
+def post_stock_entry(entry_ref, items_data, entry_date, user=None):
+    """
+    GL posting for direct stock entry (walk-in delivery, donation, etc.).
+    items_data = list of (item, quantity, unit_cost) tuples.
+        Dr  Class 3 (Stock account)
+        Cr  603 (Variation in Stock)
+    """
+    try:
+        lines = []
+        total = Decimal('0')
+
+        for item, qty, unit_cost in items_data:
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost or 0))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(item)
+            lines.append((
+                stock_code, amount, 0,
+                f"Stock entry: {item.name} x{qty} @ {unit_cost}"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        lines.append((
+            VARIATION_IN_STOCK, 0, total,
+            f"Variation in stock — Entry {entry_ref}"
+        ))
+
+        return _create_entry(
+            date=entry_date,
+            description=f"Stock entry — {entry_ref}",
+            reference=entry_ref,
+            source_type='stock_entry',
+            source_id=entry_ref,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for stock entry {entry_ref}: {e}")
+        return None
+
+
+def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None):
+    """
+    GL posting for direct stock exit (patient use, maintenance, etc.).
+    items_data = list of (item, quantity, unit_cost) tuples.
+        Dr  603 (Variation in Stock)
+        Cr  Class 3 (Stock account)
+    """
+    try:
+        lines = []
+        total = Decimal('0')
+
+        for item, qty, unit_cost in items_data:
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost or 0))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(item)
+            lines.append((
+                stock_code, 0, amount,
+                f"Stock exit: {item.name} x{qty} ({reason})"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        lines.insert(0, (
+            VARIATION_IN_STOCK, total, 0,
+            f"Variation in stock — Exit {exit_ref}"
+        ))
+
+        return _create_entry(
+            date=exit_date,
+            description=f"Stock exit — {exit_ref} — {reason}",
+            reference=exit_ref,
+            source_type='stock_exit',
+            source_id=exit_ref,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for stock exit {exit_ref}: {e}")
+        return None
+
+
+def post_stock_adjustment(item, quantity, unit_cost, adj_date, reference, reason='', user=None):
+    """
+    GL posting for stock adjustment (manual correction).
+    Positive quantity = stock increase (Dr Stock / Cr 603)
+    Negative quantity = stock decrease (Dr 603 / Cr Stock)
+    """
+    try:
+        amount = abs(Decimal(str(quantity))) * Decimal(str(unit_cost or 0))
+        if amount <= 0:
+            return None
+
+        stock_code = _stock_code_for_item(item)
+
+        if quantity > 0:
+            lines = [
+                (stock_code, amount, 0, f"Adjustment (+): {item.name} x{quantity}"),
+                (VARIATION_IN_STOCK, 0, amount, f"Variation in stock — adjustment {reference}"),
+            ]
+        else:
+            lines = [
+                (VARIATION_IN_STOCK, amount, 0, f"Variation in stock — adjustment {reference}"),
+                (stock_code, 0, amount, f"Adjustment (-): {item.name} x{abs(quantity)}"),
+            ]
+
+        return _create_entry(
+            date=adj_date,
+            description=f"Stock adjustment — {item.name} — {reason or reference}",
+            reference=reference,
+            source_type='stock_adjustment',
+            source_id=reference,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for stock adjustment {reference}: {e}")
+        return None
+
+
+def post_stock_count_variance(stock_count, user=None):
+    """
+    GL posting for stock count variances.
+    For each item with variance:
+      Positive variance (found more): Dr Stock / Cr 603
+      Negative variance (shortage):   Dr 603 / Cr Stock
+    """
+    try:
+        from apps.inventory.models import StockCountItem
+        items = StockCountItem.objects.filter(
+            stock_count=stock_count
+        ).select_related('item')
+
+        lines = []
+        for sci in items:
+            variance = sci.variance or 0
+            if variance == 0:
+                continue
+            unit_cost = sci.item.unit_cost or Decimal('0')
+            amount = abs(Decimal(str(variance))) * Decimal(str(unit_cost))
+            if amount <= 0:
+                continue
+            stock_code = _stock_code_for_item(sci.item)
+
+            if variance > 0:
+                # Found more stock than expected
+                lines.append((stock_code, amount, 0, f"Surplus: {sci.item.name} +{variance}"))
+                lines.append((VARIATION_IN_STOCK, 0, amount, f"Stock count surplus — {sci.item.name}"))
+            else:
+                # Shortage
+                lines.append((VARIATION_IN_STOCK, amount, 0, f"Shortage: {sci.item.name} {variance}"))
+                lines.append((stock_code, 0, amount, f"Stock count shortage — {sci.item.name}"))
+
+        if not lines:
+            return None
+
+        return _create_entry(
+            date=stock_count.count_date,
+            description=f"Stock count variance — {stock_count.count_number}",
+            reference=stock_count.count_number,
+            source_type='stock_count',
+            source_id=stock_count.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for stock count {stock_count.pk}: {e}")
+        return None
+
+
+def post_department_return(dept_return, user=None):
+    """
+    GL posting when good-condition items are returned to store.
+        Dr  Class 3 (Stock account)
+        Cr  603 (Variation in Stock)
+    """
+    try:
+        from apps.inventory.models import DepartmentReturnItem
+        items = DepartmentReturnItem.objects.filter(
+            department_return=dept_return, condition='GOOD'
+        ).select_related('item')
+        lines = []
+        total = Decimal('0')
+
+        for dri in items:
+            qty = dri.quantity or 0
+            if qty <= 0:
+                continue
+            unit_cost = dri.item.unit_cost or Decimal('0')
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost))
+            if amount <= 0:
+                continue
+            total += amount
+            stock_code = _stock_code_for_item(dri.item)
+            lines.append((
+                stock_code, amount, 0,
+                f"Returned: {dri.item.name} x{qty} (good condition)"
+            ))
+
+        if total <= 0 or not lines:
+            return None
+
+        lines.append((
+            VARIATION_IN_STOCK, 0, total,
+            f"Stock return — {dept_return.return_number}"
+        ))
+
+        return _create_entry(
+            date=dept_return.updated_at.date(),
+            description=f"Department return — {dept_return.return_number} — {dept_return.department}",
+            reference=dept_return.return_number,
+            source_type='dept_return',
+            source_id=dept_return.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for return {dept_return.pk}: {e}")
+        return None

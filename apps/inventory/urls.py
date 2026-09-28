@@ -123,4 +123,10 @@ urlpatterns = [
     path('stock-exit/create/', views.stock_exit_create, name='stock_exit_create'),
     path('stock-entry/', views.stock_entry_list, name='stock_entry_list'),
     path('stock-entry/create/', views.stock_entry_create, name='stock_entry_create'),
+
+    # ── 4-Eyes Stock Validation (Finance Director) ────────────────
+    path('validations/', views.stock_validation_list, name='stock_validation_list'),
+    path('validations/<uuid:validation_id>/', views.stock_validation_detail, name='stock_validation_detail'),
+    path('validations/<uuid:validation_id>/approve/', views.stock_validation_approve, name='stock_validation_approve'),
+    path('validations/<uuid:validation_id>/reject/', views.stock_validation_reject, name='stock_validation_reject'),
 ]

@@ -5369,16 +5369,38 @@ def chart_of_accounts(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     accounts = GLAccount.objects.filter(is_deleted=False).order_by('code')
-    # Group by type for display
+    # Search / filter
+    q = request.GET.get('q', '')
+    acct_class = request.GET.get('class', '')
+    if q:
+        accounts = accounts.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(description__icontains=q))
+    if acct_class:
+        accounts = accounts.filter(code__startswith=acct_class)
+    # Group by OHADA class (first digit of code)
+    CLASS_NAMES = {
+        '1': 'Class 1 — Long-Term Resources (Equity & Liabilities)',
+        '2': 'Class 2 — Fixed Assets',
+        '3': 'Class 3 — Inventories & Stocks',
+        '4': 'Class 4 — Third Parties (AR/AP/Staff/Tax)',
+        '5': 'Class 5 — Treasury (Cash & Bank)',
+        '6': 'Class 6 — Expenses',
+        '7': 'Class 7 — Revenue',
+        '8': 'Class 8 — Exceptional Items',
+        '9': 'Class 9 — Cost Accounting',
+    }
     from collections import defaultdict
     grouped = defaultdict(list)
     for a in accounts:
-        grouped[a.account_type].append(a)
-    type_order = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']
-    groups = [(t, AccountType(t).label, grouped[t]) for t in type_order if grouped[t]]
+        cls = a.code[0] if a.code else '?'
+        grouped[cls].append(a)
+    groups = [(cls, CLASS_NAMES.get(cls, f'Class {cls}'), grouped[cls])
+              for cls in sorted(grouped.keys())]
     return render(request, 'billing/chart_of_accounts.html', {
         'groups': groups,
         'total_accounts': accounts.count(),
+        'q': q,
+        'acct_class': acct_class,
+        'class_choices': sorted(CLASS_NAMES.items()),
     })
 
 
@@ -5434,6 +5456,23 @@ def gl_account_edit(request, account_id):
         'parent_accounts': GLAccount.objects.filter(is_deleted=False, is_active=True).exclude(pk=account_id).order_by('code'),
         'action': 'Edit Account',
     })
+
+
+@login_required
+@require_POST
+def gl_account_delete(request, account_id):
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    account = get_object_or_404(GLAccount, pk=account_id, is_deleted=False)
+    # Block deletion if account has journal lines
+    if JournalLine.objects.filter(account=account).exists():
+        messages.error(request, f'Cannot delete {account.code} — it has journal entries. Deactivate it instead.')
+        return redirect('billing:chart_of_accounts')
+    account.is_deleted = True
+    account.is_active = False
+    account.save(update_fields=['is_deleted', 'is_active'])
+    messages.success(request, f'Account {account.code} — {account.name} deleted.')
+    return redirect('billing:chart_of_accounts')
 
 
 # ── Journal Entries ───────────────────────────────────────────────────────────

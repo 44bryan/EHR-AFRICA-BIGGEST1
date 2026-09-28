@@ -560,6 +560,8 @@ class GRNStatus(models.TextChoices):
     PENDING   = 'PENDING',   'Pending Inspection'
     INSPECTED = 'INSPECTED', 'Inspected'
     ACCEPTED  = 'ACCEPTED',  'Accepted — Stock Updated'
+    AWAITING_VALIDATION = 'AWAITING_VALIDATION', 'Awaiting Finance Validation'
+    VALIDATED = 'VALIDATED', 'Validated — GL Posted'
     REJECTED  = 'REJECTED',  'Rejected'
 
 
@@ -567,7 +569,7 @@ class GoodsReceivedNote(AuditModel):
     """Formal goods receipt with quality inspection checklist."""
     grn_number     = models.CharField(max_length=30, unique=True, blank=True)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='grns')
-    status         = models.CharField(max_length=15, choices=GRNStatus.choices, default=GRNStatus.PENDING)
+    status         = models.CharField(max_length=25, choices=GRNStatus.choices, default=GRNStatus.PENDING)
     received_date  = models.DateField(default=timezone.localdate)
     received_by    = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='grns_received')
     inspected_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
@@ -582,6 +584,17 @@ class GoodsReceivedNote(AuditModel):
     visual_inspection_ok = models.BooleanField(default=False, help_text='No visible damage, discoloration, leakage')
     inspection_notes    = models.TextField(blank=True)
     notes               = models.TextField(blank=True)
+    # Environmental compliance
+    environmental_certificate = models.BooleanField(default=False, help_text='Environmental compliance certificate')
+    # 4-Eyes Principle: Finance Director validation (Cameroon store-keeping law)
+    validated_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='grns_validated',
+                                       help_text='Finance Director who validated this receipt')
+    validated_at   = models.DateTimeField(null=True, blank=True)
+    validation_notes = models.TextField(blank=True, help_text='Finance Director notes on validation')
+    journal_entry  = models.ForeignKey('billing.JournalEntry', on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='grn_source',
+                                       help_text='GL journal entry created on validation')
 
     class Meta:
         ordering = ['-received_date']
@@ -846,3 +859,63 @@ class StoreBudget(AuditModel):
     @property
     def is_over_budget(self):
         return self.spent > self.allocated
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4-EYES STOCK VALIDATION (Cameroon store-keeping law)
+# Store Keeper enters stock → Finance Director reviews & validates → GL posts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StockValidationStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'Pending Finance Validation'
+    VALIDATED = 'VALIDATED', 'Validated — GL Posted'
+    REJECTED  = 'REJECTED',  'Rejected by Finance'
+
+
+class StockValidationType(models.TextChoices):
+    GRN        = 'GRN',        'Goods Received Note'
+    ENTRY      = 'ENTRY',      'Direct Stock Entry'
+    EXIT       = 'EXIT',       'Stock Exit'
+    DISPOSAL   = 'DISPOSAL',   'Disposal / Wastage'
+    ADJUSTMENT = 'ADJUSTMENT', 'Stock Adjustment'
+    COUNT      = 'COUNT',      'Stock Count Variance'
+    RETURN     = 'RETURN',     'Department Return'
+    ISSUE      = 'ISSUE',      'Requisition Issue'
+
+
+class StockValidation(AuditModel):
+    """
+    4-Eyes Principle: Every stock transaction with financial impact must be
+    validated by the Finance Director before it posts to the GL.
+
+    Flow: Store Keeper creates transaction → StockValidation auto-created (PENDING)
+          → Finance Director reviews → validates or rejects
+          → On validation: GL journal entry auto-posted
+    """
+    validation_type = models.CharField(max_length=15, choices=StockValidationType.choices)
+    status         = models.CharField(max_length=15, choices=StockValidationStatus.choices,
+                                      default=StockValidationStatus.PENDING)
+    # Link to source transaction (polymorphic via type + id)
+    source_id      = models.UUIDField(help_text='PK of the source transaction')
+    reference      = models.CharField(max_length=50, help_text='Transaction reference number')
+    description    = models.TextField(blank=True)
+    total_value    = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                         help_text='Total financial value of this transaction (XAF)')
+    # Who did what
+    submitted_by   = models.ForeignKey('accounts.User', on_delete=models.PROTECT,
+                                       related_name='stock_validations_submitted')
+    submitted_at   = models.DateTimeField(auto_now_add=True)
+    validated_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                       null=True, blank=True,
+                                       related_name='stock_validations_reviewed')
+    validated_at   = models.DateTimeField(null=True, blank=True)
+    validation_notes = models.TextField(blank=True)
+    # GL link
+    journal_entry  = models.ForeignKey('billing.JournalEntry', on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='stock_validation_source')
+
+    class Meta:
+        ordering = ['-submitted_at']
+
+    def __str__(self):
+        return f"{self.get_validation_type_display()} — {self.reference} ({self.get_status_display()})"
