@@ -1,4 +1,5 @@
 import json
+import logging
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -25,6 +26,8 @@ from apps.patients.models import Patient
 from apps.accounts.models import UserRole
 from apps.core.context_processors import qms_active as _qms_active
 from apps.core.decorators import json_error_handler
+
+logger = logging.getLogger(__name__)
 
 # ── Desk tier groupings ───────────────────────────────────────────────────────
 # Maps a desk's primary tier to ALL tiers it handles (some desks share patients).
@@ -6773,6 +6776,7 @@ def bank_statement_import(request):
         decoded = csv_file.read().decode('utf-8-sig')
         reader = csv.DictReader(io.StringIO(decoded))
         count = 0
+        skipped = 0
         for row in reader:
             try:
                 BankStatement.objects.create(
@@ -6786,9 +6790,14 @@ def bank_statement_import(request):
                     value_date=row.get('value_date', '').strip() or None,
                 )
                 count += 1
-            except Exception:
+            except Exception as e:
+                skipped += 1
+                logger.warning(f"Skipped bank statement row: {e}")
                 continue
-        messages.success(request, f'{count} statement lines imported for {bank_acct}.')
+        msg = f'{count} statement lines imported for {bank_acct}.'
+        if skipped:
+            msg += f' ({skipped} rows skipped due to errors.)'
+        messages.success(request, msg)
         return redirect('billing:bank_reconciliation_list')
     return render(request, 'billing/bank_statement_import.html', {
         'bank_accounts': bank_accounts,
@@ -6959,7 +6968,7 @@ def cash_to_bank_confirm(request, deposit_id):
             from apps.billing.gl_service import post_cash_to_bank
             post_cash_to_bank(dep, request.user)
         except Exception:
-            pass  # GL posting is best-effort; manual JE can be created
+            logger.exception(f"GL post failed for cash-to-bank deposit {dep.pk}")
         messages.success(request, 'Deposit confirmed.')
     return redirect('billing:cash_to_bank_list')
 
@@ -7026,27 +7035,31 @@ def cheque_issue(request):
         return redirect('billing:dashboard')
     books = ChequeBook.objects.filter(is_deleted=False, is_exhausted=False).select_related('bank_account')
     if request.method == 'POST':
+        from django.db import transaction
         book_id = request.POST.get('cheque_book')
         book = get_object_or_404(ChequeBook, pk=book_id, is_deleted=False)
-        cheque_number = str(book.current_number)
-        if book.series_prefix:
-            cheque_number = f"{book.series_prefix}{cheque_number}"
-        chq = ChequeRegister(
-            cheque_book=book,
-            cheque_number=cheque_number,
-            bank_account=book.bank_account,
-            payee=request.POST.get('payee', '').strip(),
-            amount=Decimal(request.POST.get('amount', '0') or '0'),
-            issue_date=request.POST.get('issue_date'),
-            reason=request.POST.get('reason', '').strip(),
-            issued_by=request.user,
-        )
-        chq.save()
-        # Advance cheque book counter
-        book.current_number += 1
-        if book.current_number > book.end_number:
-            book.is_exhausted = True
-        book.save()
+        with transaction.atomic():
+            # Lock the cheque book row to prevent duplicate numbers
+            book = ChequeBook.objects.select_for_update().get(pk=book.pk)
+            cheque_number = str(book.current_number)
+            if book.series_prefix:
+                cheque_number = f"{book.series_prefix}{cheque_number}"
+            chq = ChequeRegister(
+                cheque_book=book,
+                cheque_number=cheque_number,
+                bank_account=book.bank_account,
+                payee=request.POST.get('payee', '').strip(),
+                amount=Decimal(request.POST.get('amount', '0') or '0'),
+                issue_date=request.POST.get('issue_date'),
+                reason=request.POST.get('reason', '').strip(),
+                issued_by=request.user,
+            )
+            chq.save()
+            # Advance cheque book counter
+            book.current_number += 1
+            if book.current_number > book.end_number:
+                book.is_exhausted = True
+            book.save()
         messages.success(request, f'Cheque #{cheque_number} issued to {chq.payee}.')
         return redirect('billing:cheque_register')
     return render(request, 'billing/cheque_issue.html', {
@@ -7194,6 +7207,12 @@ def advance_disburse(request, advance_id):
         if adv.advance_type == AdvanceType.BUSINESS:
             adv.settlement_due = adv.disbursed_date + timedelta(days=5)
         adv.save()
+        # GL posting: Dr Staff Advance / Cr Cash or Bank
+        try:
+            from apps.billing.gl_service import post_advance_disbursement
+            post_advance_disbursement(adv, request.user)
+        except Exception:
+            logger.exception(f"GL post failed for advance disburse {adv.pk}")
         messages.success(request, f'Advance disbursed to {adv.staff.get_full_name()}.')
     return redirect('billing:advance_detail', advance_id=adv.pk)
 
@@ -7210,6 +7229,12 @@ def advance_settle(request, advance_id):
         adv.settled_date = timezone.localdate()
         adv.notes = request.POST.get('settlement_notes', adv.notes)
         adv.save()
+        # GL posting: Dr Cash / Cr Staff Advance
+        try:
+            from apps.billing.gl_service import post_advance_settlement
+            post_advance_settlement(adv, request.user)
+        except Exception:
+            logger.exception(f"GL post failed for advance settle {adv.pk}")
         messages.success(request, f'Advance settled for {adv.staff.get_full_name()}.')
     return redirect('billing:advance_list')
 
@@ -7425,6 +7450,12 @@ def asset_disposal_approve(request, disposal_id):
         asset = disp.asset
         asset.status = AssetStatus.DISPOSED
         asset.save()
+        # GL posting: Dr Accum Depreciation + Cash / Cr Fixed Asset + Gain/Loss
+        try:
+            from apps.billing.gl_service import post_asset_disposal
+            post_asset_disposal(disp, request.user)
+        except Exception:
+            logger.exception(f"GL post failed for asset disposal {disp.pk}")
         messages.success(request, f'Asset "{asset.name}" disposed and removed from register.')
     return redirect('billing:asset_disposal_list')
 
@@ -7455,7 +7486,7 @@ def budget_annual_create(request):
                     category=cat,
                     year=fiscal_year,
                     month=month,
-                    defaults={'amount': monthly, 'notes': f'Auto-created from annual budget wizard'},
+                    defaults={'budgeted_amount': monthly, 'notes': 'Auto-created from annual budget wizard'},
                 )
             created += 1
         messages.success(request, f'{created} annual budget lines created for FY {fiscal_year}.')

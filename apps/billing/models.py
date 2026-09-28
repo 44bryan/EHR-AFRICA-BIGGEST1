@@ -2249,3 +2249,4 @@ class FiscalPeriod(AuditModel):
     def can_post(self):
         """Can journal entries be posted to this period?"""
         return self.status == FiscalPeriodStatus.OPEN
+
