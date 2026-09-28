@@ -364,25 +364,30 @@ def home_view(request):
         today_visits_qs = Visit.objects.filter(visit_date__date=today, is_deleted=False).exclude(
             status='REGISTERED', triage_nurse__isnull=True, vital_signs={}
         )
-        today_visits        = today_visits_qs.count()
-        currently_inhouse   = today_visits_qs.filter(
-            status__in=['WAITING', 'TRIAGE', 'IN_CONSULTATION', 'INVESTIGATION']
-        ).count()
-        waiting_triage      = today_visits_qs.filter(status__in=['WAITING', 'TRIAGE']).count()
-        with_doctor         = today_visits_qs.filter(status='IN_CONSULTATION').count()
-        discharged_today    = today_visits_qs.filter(
-            status__in=['COMPLETED', 'DISCHARGED']
-        ).count()
+        from django.db.models import Case, When, IntegerField as _IntF
+        _tv = today_visits_qs.aggregate(
+            total=Count('id'),
+            inhouse=Count(Case(When(status__in=['WAITING', 'TRIAGE', 'IN_CONSULTATION', 'INVESTIGATION'], then=1), output_field=_IntF())),
+            triage=Count(Case(When(status__in=['WAITING', 'TRIAGE'], then=1), output_field=_IntF())),
+            doctor=Count(Case(When(status='IN_CONSULTATION', then=1), output_field=_IntF())),
+            done=Count(Case(When(status__in=['COMPLETED', 'DISCHARGED'], then=1), output_field=_IntF())),
+        )
+        today_visits      = _tv['total']
+        currently_inhouse = _tv['inhouse']
+        waiting_triage    = _tv['triage']
+        with_doctor       = _tv['doctor']
+        discharged_today  = _tv['done']
 
         # ── TODAY: appointments ───────────────────────────────────────────
         today_appts_qs      = Appointment.objects.filter(appointment_date=today, is_deleted=False)
-        today_appointments  = today_appts_qs.filter(
-            status__in=['SCHEDULED', 'CONFIRMED', 'CHECKED_IN']
-        ).count()
-        today_no_shows      = today_appts_qs.filter(status='NO_SHOW').count()
-        today_new_patients  = today_appts_qs.filter(
-            appointment_type='NEW'
-        ).count()
+        _ta = today_appts_qs.aggregate(
+            scheduled=Count(Case(When(status__in=['SCHEDULED', 'CONFIRMED', 'CHECKED_IN'], then=1), output_field=_IntF())),
+            no_show=Count(Case(When(status='NO_SHOW', then=1), output_field=_IntF())),
+            new_pt=Count(Case(When(appointment_type='NEW', then=1), output_field=_IntF())),
+        )
+        today_appointments = _ta['scheduled']
+        today_no_shows     = _ta['no_show']
+        today_new_patients = _ta['new_pt']
 
         # ── PHARMACY ──────────────────────────────────────────────────────
         try:
@@ -431,15 +436,15 @@ def home_view(request):
             status='IN_PROGRESS', is_deleted=False
         ).count()
 
-        # new vs follow-up this month
-        new_consults      = Appointment.objects.filter(
-            appointment_date__gte=month_start,
-            appointment_type='NEW', is_deleted=False
-        ).count()
-        followup_consults = Appointment.objects.filter(
-            appointment_date__gte=month_start,
-            appointment_type='FOLLOW_UP', is_deleted=False
-        ).count()
+        # new vs follow-up this month — single query
+        _ac = Appointment.objects.filter(
+            appointment_date__gte=month_start, is_deleted=False
+        ).aggregate(
+            new=Count(Case(When(appointment_type='NEW', then=1), output_field=_IntF())),
+            fu=Count(Case(When(appointment_type='FOLLOW_UP', then=1), output_field=_IntF())),
+        )
+        new_consults      = _ac['new']
+        followup_consults = _ac['fu']
 
         # ── CLINICAL ANALYTICS ────────────────────────────────────────────
         dept_breakdown = list(Consultation.objects.filter(
@@ -461,18 +466,23 @@ def home_view(request):
         except Exception:
             top_diagnoses = []
 
-        # ── PATIENT VOLUME TREND (6 months) ───────────────────────────────
+        # ── PATIENT VOLUME TREND (6 months) — single aggregated query ─────
         try:
+            from django.db.models.functions import TruncMonth
+            six_months_ago = (today.replace(day=1) - timedelta(days=150)).replace(day=1)
+            _trend_data = dict(
+                Visit.objects.filter(
+                    visit_date__date__gte=six_months_ago, is_deleted=False,
+                ).annotate(month=TruncMonth('visit_date')).values('month')
+                .annotate(count=Count('id')).values_list('month', 'count')
+            )
             monthly_trend = []
             for i in range(5, -1, -1):
                 m_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-                m_end   = (m_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-                count = Visit.objects.filter(
-                    visit_date__date__gte=m_start,
-                    visit_date__date__lt=m_end,
-                    is_deleted=False,
-                ).count()
-                monthly_trend.append({'month': m_start.strftime('%b'), 'count': count})
+                monthly_trend.append({
+                    'month': m_start.strftime('%b'),
+                    'count': _trend_data.get(timezone.make_aware(timezone.datetime.combine(m_start, timezone.datetime.min.time())), 0),
+                })
         except Exception:
             monthly_trend = []
 

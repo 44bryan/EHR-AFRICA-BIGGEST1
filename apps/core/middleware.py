@@ -246,8 +246,10 @@ class ContentSecurityPolicyMiddleware:
             if self._csp_header is None:
                 self._csp_header = self._build_csp()
             response['Content-Security-Policy'] = self._csp_header
-            # Prevent browser from caching HTML pages (fixes stale HTMX/pagination)
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            # Allow short browser cache (10s) — reduces repeated full-page reloads
+            # while keeping HTMX navigation fresh enough for real-time queues
+            if 'Cache-Control' not in response:
+                response['Cache-Control'] = 'private, max-age=10'
         return response
 
 

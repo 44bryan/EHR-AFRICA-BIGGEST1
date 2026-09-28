@@ -401,11 +401,16 @@ def invoice_list(request):
 
     cashier_filter = request.GET.get('cashier', '')
 
-    from django.db.models import Count as _Count
+    from django.db.models import Count as _Count, Prefetch
     invoices = (
         Invoice.objects
         .filter(is_deleted=False)
         .select_related('patient', 'created_by')
+        .prefetch_related(
+            Prefetch('items', queryset=InvoiceItem.objects.filter(is_deleted=False), to_attr='_items_cache'),
+            Prefetch('payments', queryset=Payment.objects.filter(is_deleted=False), to_attr='_payments_cache'),
+            Prefetch('refunds', queryset=Refund.objects.filter(is_deleted=False), to_attr='_refunds_cache'),
+        )
         .annotate(_item_count=_Count('items'))
         # Hide empty DRAFT invoices — these are abandoned POS sessions, not real invoices
         .exclude(status=InvoiceStatus.DRAFT, _item_count=0)

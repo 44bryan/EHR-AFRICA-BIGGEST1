@@ -210,15 +210,19 @@ def dashboard(request):
 
 @login_required
 def item_list(request):
+    from django.core.paginator import Paginator
     q        = request.GET.get('q', '')
     category = request.GET.get('category', '')
-    items    = InventoryItem.objects.filter(is_deleted=False)
+    items    = InventoryItem.objects.filter(is_deleted=False).select_related('preferred_vendor')
     if q:
         items = items.filter(Q(name__icontains=q) | Q(item_code__icontains=q))
     if category:
         items = items.filter(category=category)
+    paginator = Paginator(items.order_by('name'), 50)
+    page_obj = paginator.get_page(request.GET.get('page'))
     return render(request, 'inventory/item_list.html', {
-        'items':      items.order_by('name'),
+        'items':      page_obj,
+        'page_obj':   page_obj,
         'search':     q,
         'category':   category,
         'categories': ItemCategory.choices,
@@ -1002,7 +1006,6 @@ def return_list(request):
             Q(return_number__icontains=search) |
             Q(department__icontains=search)
         )
-    from .models import DepartmentReturn
     status_choices = [('PENDING', 'Pending'), ('ACCEPTED', 'Accepted'), ('REJECTED', 'Rejected')]
     return render(request, 'inventory/return_list.html', {
         'returns': returns, 'search': search, 'status_filter': status_filter,
