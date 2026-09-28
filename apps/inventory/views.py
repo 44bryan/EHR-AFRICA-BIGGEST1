@@ -20,6 +20,9 @@ from .models import (
     SupplierQuotation, QuotationItem, QuotationStatus,
     StoreBudget,
     StockValidation, StockValidationType, StockValidationStatus,
+    SupplierInvoice, SupplierInvoiceItem, SupplierInvoiceStatus,
+    ThreeWayMatch, ThreeWayMatchStatus,
+    PurchaseOrderStatus,
 )
 
 
@@ -275,8 +278,19 @@ def stock_adjustment(request, item_id):
 
 @login_required
 def purchase_order_list(request):
+    status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '')
     pos = PurchaseOrder.objects.filter(is_deleted=False).select_related('vendor').order_by('-ordered_date')
-    return render(request, 'inventory/po_list.html', {'purchase_orders': pos})
+    if status_filter:
+        pos = pos.filter(status=status_filter)
+    if search:
+        pos = pos.filter(Q(po_number__icontains=search) | Q(vendor__name__icontains=search))
+    return render(request, 'inventory/po_list.html', {
+        'purchase_orders': pos,
+        'status_filter': status_filter,
+        'search': search,
+        'statuses': PurchaseOrderStatus.choices,
+    })
 
 
 @login_required
@@ -421,8 +435,24 @@ def po_receive(request, po_id):
 
 @login_required
 def vendor_list(request):
-    vendors = Vendor.objects.filter(is_deleted=False, is_active=True)
-    return render(request, 'inventory/vendor_list.html', {'vendors': vendors})
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('active', '')
+    vendors = Vendor.objects.filter(is_deleted=False)
+    if status_filter == '1':
+        vendors = vendors.filter(is_active=True)
+    elif status_filter == '0':
+        vendors = vendors.filter(is_active=False)
+    if search:
+        vendors = vendors.filter(
+            Q(name__icontains=search) |
+            Q(contact_person__icontains=search) |
+            Q(email__icontains=search)
+        )
+    return render(request, 'inventory/vendor_list.html', {
+        'vendors': vendors,
+        'search': search,
+        'active_filter': status_filter,
+    })
 
 
 @login_required
@@ -601,12 +631,19 @@ DEPARTMENTS = [
 @login_required
 def requisition_list(request):
     status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
     reqs = DepartmentRequisition.objects.filter(is_deleted=False).select_related('requested_by')
     if status_filter:
         reqs = reqs.filter(status=status_filter)
+    if search:
+        reqs = reqs.filter(
+            Q(req_number__icontains=search) |
+            Q(department__icontains=search)
+        )
     return render(request, 'inventory/requisition_list.html', {
         'reqs':          reqs,
         'status_filter': status_filter,
+        'search':        search,
         'statuses':      RequisitionStatus.choices,
     })
 
@@ -834,8 +871,14 @@ def store_location_edit(request, loc_id):
 def stock_count_list(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    status_filter = request.GET.get('status', '')
     counts = StockCount.objects.filter(is_deleted=False).select_related('counted_by', 'approved_by')
-    return render(request, 'inventory/stock_count_list.html', {'counts': counts})
+    if status_filter:
+        counts = counts.filter(status=status_filter)
+    return render(request, 'inventory/stock_count_list.html', {
+        'counts': counts, 'status_filter': status_filter,
+        'statuses': StockCountStatus.choices,
+    })
 
 
 @login_required
@@ -949,8 +992,22 @@ def stock_count_approve(request, count_id):
 def return_list(request):
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
     returns = DepartmentReturn.objects.filter(is_deleted=False).select_related('returned_by', 'received_by')
-    return render(request, 'inventory/return_list.html', {'returns': returns})
+    if status_filter:
+        returns = returns.filter(status=status_filter)
+    if search:
+        returns = returns.filter(
+            Q(return_number__icontains=search) |
+            Q(department__icontains=search)
+        )
+    from .models import DepartmentReturn
+    status_choices = [('PENDING', 'Pending'), ('ACCEPTED', 'Accepted'), ('REJECTED', 'Rejected')]
+    return render(request, 'inventory/return_list.html', {
+        'returns': returns, 'search': search, 'status_filter': status_filter,
+        'statuses': status_choices,
+    })
 
 
 @login_required
@@ -1145,13 +1202,20 @@ def transfer_list(request):
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
     status = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
     qs = StoreTransfer.objects.filter(is_deleted=False).select_related(
         'from_location', 'to_location', 'requested_by',
     )
     if status:
         qs = qs.filter(status=status)
+    if search:
+        qs = qs.filter(
+            Q(transfer_number__icontains=search) |
+            Q(from_location__name__icontains=search) |
+            Q(to_location__name__icontains=search)
+        )
     return render(request, 'inventory/transfer_list.html', {
-        'transfers': qs[:200], 'status_filter': status,
+        'transfers': qs[:200], 'status_filter': status, 'search': search,
         'status_choices': StoreTransferStatus.choices,
     })
 
@@ -1288,10 +1352,25 @@ def transfer_cancel(request, transfer_id):
 def grn_list(request):
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
     grns = GoodsReceivedNote.objects.filter(is_deleted=False).select_related(
         'purchase_order__vendor', 'received_by',
-    )[:200]
-    return render(request, 'inventory/grn_list.html', {'grns': grns})
+    )
+    if status_filter:
+        grns = grns.filter(status=status_filter)
+    if search:
+        grns = grns.filter(
+            Q(grn_number__icontains=search) |
+            Q(purchase_order__vendor__name__icontains=search) |
+            Q(purchase_order__po_number__icontains=search)
+        )
+    return render(request, 'inventory/grn_list.html', {
+        'grns': grns[:200],
+        'search': search,
+        'status_filter': status_filter,
+        'statuses': GRNStatus.choices,
+    })
 
 
 @login_required
@@ -1423,13 +1502,16 @@ def grn_reject(request, grn_id):
 def disposal_list(request):
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
-    status = request.GET.get('status', '')
+    status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
     qs = DisposalRecord.objects.filter(is_deleted=False).select_related('requested_by')
-    if status:
-        qs = qs.filter(status=status)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if search:
+        qs = qs.filter(Q(disposal_number__icontains=search))
     return render(request, 'inventory/disposal_list.html', {
-        'disposals': qs[:200], 'status_filter': status,
-        'status_choices': DisposalStatus.choices,
+        'disposals': qs[:200], 'status_filter': status_filter, 'search': search,
+        'statuses': DisposalStatus.choices,
     })
 
 
@@ -2423,13 +2505,18 @@ def stock_exit_list(request):
         return HttpResponseForbidden('Access denied.')
     import datetime
     days = int(request.GET.get('days', 30))
+    search = request.GET.get('q', '').strip()
     cutoff = timezone.localdate() - datetime.timedelta(days=days)
     exits = StockMovement.objects.filter(
         movement_type__in=['OUT', 'ISSUE', 'EXPIRE'],
         created_at__date__gte=cutoff,
-    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')[:500]
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    if search:
+        exits = exits.filter(
+            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        )
     return render(request, 'inventory/stock_exit_list.html', {
-        'exits': exits, 'days': days,
+        'exits': exits[:500], 'days': days, 'search': search,
     })
 
 
@@ -2546,13 +2633,18 @@ def stock_entry_list(request):
         return HttpResponseForbidden('Access denied.')
     import datetime
     days = int(request.GET.get('days', 30))
+    search = request.GET.get('q', '').strip()
     cutoff = timezone.localdate() - datetime.timedelta(days=days)
     entries = StockMovement.objects.filter(
         movement_type='IN',
         created_at__date__gte=cutoff,
-    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')[:500]
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    if search:
+        entries = entries.filter(
+            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        )
     return render(request, 'inventory/stock_entry_list.html', {
-        'entries': entries, 'days': days,
+        'entries': entries[:500], 'days': days, 'search': search,
     })
 
 
@@ -2669,14 +2761,19 @@ def stock_validation_list(request):
     """List all pending stock validations for Finance Director review."""
     if not _can_validate_stock(request.user) and not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
-    status = request.GET.get('status', 'PENDING')
+    status = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
     qs = StockValidation.objects.filter(is_deleted=False).select_related('submitted_by', 'validated_by')
     if status:
         qs = qs.filter(status=status)
+    if search:
+        qs = qs.filter(
+            Q(reference__icontains=search) | Q(description__icontains=search)
+        )
     pending_count = StockValidation.objects.filter(status=StockValidationStatus.PENDING, is_deleted=False).count()
     return render(request, 'inventory/stock_validation_list.html', {
         'validations': qs[:200],
-        'status_filter': status,
+        'status_filter': status, 'search': search,
         'status_choices': StockValidationStatus.choices,
         'pending_count': pending_count,
         'can_validate': _can_validate_stock(request.user),
@@ -2816,3 +2913,527 @@ def stock_validation_reject(request, validation_id):
     sv.save(update_fields=['status', 'validated_by', 'validated_at', 'validation_notes'])
     messages.warning(request, f'{sv.reference} rejected — no GL posting.')
     return redirect('inventory:stock_validation_list')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK CARD (Fiche de Stock) — per-item movement history
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stock_card(request, item_id):
+    """
+    Stock Card (Fiche de Stock): complete movement history for a single item.
+    Shows opening balance, each IN/OUT/ADJUST/RETURN/ISSUE with running balance.
+    """
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
+
+    date_from = request.GET.get('from', '')
+    date_to   = request.GET.get('to', '')
+    movements = StockMovement.objects.filter(
+        item=item, is_deleted=False
+    ).select_related('performed_by', 'batch').order_by('created_at')
+
+    if date_from:
+        movements = movements.filter(created_at__date__gte=date_from)
+    if date_to:
+        movements = movements.filter(created_at__date__lte=date_to)
+
+    # Calculate running balance
+    running = Decimal('0')
+    card_rows = []
+    for m in movements:
+        qty_in  = m.quantity if m.quantity > 0 else 0
+        qty_out = abs(m.quantity) if m.quantity < 0 else 0
+        if m.movement_type in ('IN', 'RETURN'):
+            running += abs(m.quantity)
+            qty_in = abs(m.quantity)
+            qty_out = 0
+        elif m.movement_type in ('OUT', 'ISSUE', 'EXPIRE'):
+            running -= abs(m.quantity)
+            qty_in = 0
+            qty_out = abs(m.quantity)
+        else:  # ADJUST
+            running += m.quantity
+            if m.quantity >= 0:
+                qty_in = m.quantity
+                qty_out = 0
+            else:
+                qty_in = 0
+                qty_out = abs(m.quantity)
+
+        card_rows.append({
+            'date': m.created_at,
+            'type': m.movement_type,
+            'reference': m.reference,
+            'notes': m.notes,
+            'qty_in': qty_in,
+            'qty_out': qty_out,
+            'balance': running,
+            'batch': m.batch,
+            'user': m.performed_by,
+        })
+
+    return render(request, 'inventory/stock_card.html', {
+        'item': item,
+        'card_rows': card_rows,
+        'current_stock': item.current_stock,
+        'date_from': date_from,
+        'date_to': date_to,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BIN CARD — physical location card
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def bin_card(request, item_id):
+    """
+    Bin Card: physical location-based stock tracking for a single item.
+    Shows item location, batches, expiry dates, and recent movements.
+    """
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
+
+    batches = BatchStock.objects.filter(
+        item=item, is_deleted=False, quantity_remaining__gt=0
+    ).order_by('expiry_date')
+
+    recent_movements = StockMovement.objects.filter(
+        item=item, is_deleted=False
+    ).select_related('performed_by', 'batch').order_by('-created_at')[:20]
+
+    return render(request, 'inventory/bin_card.html', {
+        'item': item,
+        'batches': batches,
+        'recent_movements': recent_movements,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STOCK LEDGER (Grand Livre des Stocks)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stock_ledger(request):
+    """
+    Stock Ledger (Grand Livre des Stocks): master ledger of all items with
+    opening stock, total IN, total OUT, closing stock, and total value.
+    """
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    category = request.GET.get('category', '')
+    search   = request.GET.get('q', '')
+
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False)
+    if category:
+        items = items.filter(category=category)
+    if search:
+        items = items.filter(Q(name__icontains=search) | Q(item_code__icontains=search))
+
+    # Annotate with total IN and OUT movements
+    from django.db.models import Case, When, Value, IntegerField
+    items = items.annotate(
+        total_in=Coalesce(Sum(
+            Case(
+                When(movements__movement_type__in=['IN', 'RETURN'], movements__is_deleted=False,
+                     then='movements__quantity'),
+                default=Value(0), output_field=IntegerField(),
+            )
+        ), Value(0)),
+        total_out=Coalesce(Sum(
+            Case(
+                When(movements__movement_type__in=['OUT', 'ISSUE', 'EXPIRE'], movements__is_deleted=False,
+                     then='movements__quantity'),
+                default=Value(0), output_field=IntegerField(),
+            )
+        ), Value(0)),
+    ).order_by('category', 'name')
+
+    # Calculate total stock value
+    ledger_rows = []
+    grand_total = Decimal('0')
+    for item in items:
+        stock_value = item.current_stock * (item.unit_cost or 0)
+        grand_total += stock_value
+        ledger_rows.append({
+            'item': item,
+            'total_in': abs(item.total_in),
+            'total_out': abs(item.total_out),
+            'stock_value': stock_value,
+        })
+
+    return render(request, 'inventory/stock_ledger.html', {
+        'ledger_rows': ledger_rows,
+        'grand_total': grand_total,
+        'categories': ItemCategory.choices,
+        'filter_category': category,
+        'search': search,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ANNUAL STOCK TAKE REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def annual_stock_take_report(request):
+    """
+    Annual Stock Take Report: comprehensive year-end inventory report.
+    Shows all items, their system vs physical quantities, variances,
+    and total stock valuation.
+    """
+    if not _can_manage_store(request.user) and not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    year = request.GET.get('year', str(timezone.localdate().year))
+    try:
+        year = int(year)
+    except ValueError:
+        year = timezone.localdate().year
+
+    # Get all stock counts approved in the selected year
+    counts = StockCount.objects.filter(
+        status=StockCountStatus.APPROVED,
+        count_date__year=year,
+        is_deleted=False,
+    ).select_related('counted_by', 'approved_by').order_by('-count_date')
+
+    # Latest approved count per item
+    latest_count_items = {}
+    for count in counts:
+        for ci in count.items.select_related('item').all():
+            if ci.item_id not in latest_count_items:
+                latest_count_items[ci.item_id] = {
+                    'item': ci.item,
+                    'system_qty': ci.system_quantity,
+                    'physical_qty': ci.physical_quantity,
+                    'variance': ci.variance,
+                    'count_date': count.count_date,
+                    'counted_by': count.counted_by,
+                }
+
+    # All items with their status
+    all_items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('category', 'name')
+    report_rows = []
+    total_system_value = Decimal('0')
+    total_physical_value = Decimal('0')
+    total_variance_value = Decimal('0')
+    items_counted = 0
+    items_with_variance = 0
+
+    for item in all_items:
+        count_data = latest_count_items.get(item.id)
+        system_qty = item.current_stock
+        physical_qty = count_data['physical_qty'] if count_data else None
+        variance = count_data['variance'] if count_data else None
+        unit_cost = item.unit_cost or Decimal('0')
+
+        sys_val = system_qty * unit_cost
+        phys_val = (physical_qty * unit_cost) if physical_qty is not None else None
+        var_val = (variance * unit_cost) if variance is not None else None
+
+        total_system_value += sys_val
+        if phys_val is not None:
+            total_physical_value += phys_val
+            items_counted += 1
+        if variance and variance != 0:
+            items_with_variance += 1
+            total_variance_value += var_val or Decimal('0')
+
+        report_rows.append({
+            'item': item,
+            'system_qty': system_qty,
+            'physical_qty': physical_qty,
+            'variance': variance,
+            'unit_cost': unit_cost,
+            'system_value': sys_val,
+            'physical_value': phys_val,
+            'variance_value': var_val,
+            'count_date': count_data['count_date'] if count_data else None,
+        })
+
+    return render(request, 'inventory/annual_stock_take_report.html', {
+        'year': year,
+        'report_rows': report_rows,
+        'total_items': all_items.count(),
+        'items_counted': items_counted,
+        'items_with_variance': items_with_variance,
+        'total_system_value': total_system_value,
+        'total_physical_value': total_physical_value,
+        'total_variance_value': total_variance_value,
+        'stock_counts': counts,
+        'years': range(timezone.localdate().year, 2024, -1),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PO FINANCE APPROVAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def po_finance_approve(request, po_id):
+    """Finance Director approval of a Purchase Order (budget gate)."""
+    if not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Only Finance Director can approve POs.')
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    if po.finance_approved_by:
+        messages.info(request, 'This PO has already been finance-approved.')
+        return redirect('inventory:po_detail', po_id=po.id)
+
+    po.finance_approved_by = request.user
+    po.finance_approved_at = timezone.now()
+    po.finance_notes = request.POST.get('finance_notes', '').strip()
+    if po.status == PurchaseOrderStatus.SUBMITTED:
+        po.status = PurchaseOrderStatus.APPROVED
+        po.approved_by = request.user
+    po.save(update_fields=['finance_approved_by', 'finance_approved_at', 'finance_notes', 'status', 'approved_by'])
+    messages.success(request, f'PO {po.po_number} approved by Finance. Budget gate cleared.')
+    return redirect('inventory:po_detail', po_id=po.id)
+
+
+@login_required
+@require_POST
+def po_finance_reject(request, po_id):
+    """Finance Director rejects a Purchase Order."""
+    if not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Only Finance Director can reject POs.')
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    po.status = PurchaseOrderStatus.CANCELLED
+    po.finance_notes = request.POST.get('finance_notes', '').strip() or 'Rejected by Finance'
+    po.save(update_fields=['status', 'finance_notes'])
+    messages.warning(request, f'PO {po.po_number} rejected by Finance.')
+    return redirect('inventory:po_detail', po_id=po.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUPPLIER INVOICE MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def supplier_invoice_list(request):
+    """List all supplier invoices."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
+    invoices = SupplierInvoice.objects.filter(is_deleted=False).select_related('vendor', 'purchase_order', 'grn')
+    if status_filter:
+        invoices = invoices.filter(status=status_filter)
+    if search:
+        invoices = invoices.filter(
+            Q(invoice_number__icontains=search) | Q(vendor__name__icontains=search)
+        )
+    return render(request, 'inventory/supplier_invoice_list.html', {
+        'invoices': invoices[:200],
+        'statuses': SupplierInvoiceStatus.choices,
+        'filter_status': status_filter, 'search': search,
+    })
+
+
+@login_required
+def supplier_invoice_create(request):
+    """Record a new supplier invoice."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    pos     = PurchaseOrder.objects.filter(is_deleted=False, status__in=['APPROVED', 'RECEIVED']).order_by('-ordered_date')
+    grns    = GoodsReceivedNote.objects.filter(is_deleted=False, status__in=['ACCEPTED', 'AWAITING_VALIDATION', 'VALIDATED']).order_by('-received_date')
+    items_qs = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        vendor = get_object_or_404(Vendor, id=request.POST.get('vendor_id', ''), is_deleted=False)
+        po_id  = request.POST.get('purchase_order_id', '').strip()
+        grn_id = request.POST.get('grn_id', '').strip()
+        inv_number = request.POST.get('invoice_number', '').strip()
+        inv_date   = request.POST.get('invoice_date', '')
+        due_date   = request.POST.get('due_date', '') or None
+        notes      = request.POST.get('notes', '').strip()
+
+        if not inv_number or not inv_date:
+            messages.error(request, 'Invoice number and date are required.')
+            return redirect('inventory:supplier_invoice_create')
+
+        si = SupplierInvoice.objects.create(
+            invoice_number=inv_number,
+            vendor=vendor,
+            purchase_order_id=po_id or None,
+            grn_id=grn_id or None,
+            invoice_date=inv_date,
+            due_date=due_date,
+            total_amount=0,
+            notes=notes,
+            created_by=request.user,
+        )
+
+        item_ids    = request.POST.getlist('item_id[]')
+        quantities  = request.POST.getlist('quantity[]')
+        unit_prices = request.POST.getlist('unit_price[]')
+        total = Decimal('0')
+        for item_id, qty_str, price_str in zip(item_ids, quantities, unit_prices):
+            if not item_id or not qty_str:
+                continue
+            try:
+                qty   = int(qty_str)
+                price = Decimal(price_str or '0')
+                SupplierInvoiceItem.objects.create(
+                    supplier_invoice=si, item_id=item_id,
+                    quantity=qty, unit_price=price,
+                )
+                total += qty * price
+            except (ValueError, Exception):
+                continue
+
+        si.total_amount = total
+        si.save(update_fields=['total_amount'])
+        messages.success(request, f'Supplier invoice {si.invoice_number} recorded ({total:,.0f} XAF).')
+        return redirect('inventory:supplier_invoice_list')
+
+    return render(request, 'inventory/supplier_invoice_form.html', {
+        'vendors': vendors, 'purchase_orders': pos, 'grns': grns, 'items': items_qs,
+    })
+
+
+@login_required
+def supplier_invoice_detail(request, invoice_id):
+    """View supplier invoice detail."""
+    si = get_object_or_404(SupplierInvoice, id=invoice_id, is_deleted=False)
+    si_items = si.items.select_related('item').all()
+    matches = si.three_way_matches.all()
+    return render(request, 'inventory/supplier_invoice_detail.html', {
+        'si': si, 'si_items': si_items, 'matches': matches,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3-WAY MATCH (PO vs GRN vs Supplier Invoice)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def three_way_match_list(request):
+    """List all 3-way matches."""
+    if not _can_access_store(request.user) and not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Access denied.')
+    status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '').strip()
+    matches = ThreeWayMatch.objects.filter(is_deleted=False).select_related(
+        'purchase_order__vendor', 'grn', 'supplier_invoice', 'resolved_by'
+    )
+    if status_filter:
+        matches = matches.filter(status=status_filter)
+    if search:
+        matches = matches.filter(
+            Q(match_number__icontains=search) |
+            Q(purchase_order__po_number__icontains=search) |
+            Q(supplier_invoice__invoice_number__icontains=search)
+        )
+    return render(request, 'inventory/three_way_match_list.html', {
+        'matches': matches[:200],
+        'statuses': ThreeWayMatchStatus.choices,
+        'filter_status': status_filter, 'search': search,
+    })
+
+
+@login_required
+def three_way_match_create(request):
+    """Create a new 3-way match by selecting PO, GRN, and Supplier Invoice."""
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+
+    if request.method == 'POST':
+        po_id  = request.POST.get('purchase_order_id', '')
+        grn_id = request.POST.get('grn_id', '')
+        si_id  = request.POST.get('supplier_invoice_id', '')
+
+        if not po_id or not grn_id or not si_id:
+            messages.error(request, 'All three documents (PO, GRN, Supplier Invoice) are required.')
+            return redirect('inventory:three_way_match_create')
+
+        po  = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+        grn = get_object_or_404(GoodsReceivedNote, id=grn_id, is_deleted=False)
+        si  = get_object_or_404(SupplierInvoice, id=si_id, is_deleted=False)
+
+        match = ThreeWayMatch(
+            purchase_order=po, grn=grn, supplier_invoice=si,
+            created_by=request.user,
+        )
+        match.save()
+        match.perform_match()
+
+        status_msg = match.get_status_display()
+        if match.status == ThreeWayMatchStatus.MATCHED:
+            si.status = SupplierInvoiceStatus.MATCHED
+            si.save(update_fields=['status'])
+            messages.success(request, f'3-Way Match {match.match_number}: {status_msg}. All documents align.')
+        else:
+            messages.warning(request, f'3-Way Match {match.match_number}: {status_msg}. Review discrepancies.')
+        return redirect('inventory:three_way_match_detail', match_id=match.pk)
+
+    pos  = PurchaseOrder.objects.filter(is_deleted=False, status__in=['APPROVED', 'RECEIVED']).order_by('-ordered_date')
+    grns = GoodsReceivedNote.objects.filter(is_deleted=False, status__in=['ACCEPTED', 'AWAITING_VALIDATION', 'VALIDATED']).order_by('-received_date')
+    sis  = SupplierInvoice.objects.filter(is_deleted=False, status='RECEIVED').order_by('-invoice_date')
+
+    return render(request, 'inventory/three_way_match_form.html', {
+        'purchase_orders': pos, 'grns': grns, 'supplier_invoices': sis,
+    })
+
+
+@login_required
+def three_way_match_detail(request, match_id):
+    """View 3-way match result with line-by-line comparison."""
+    match = get_object_or_404(ThreeWayMatch, id=match_id, is_deleted=False)
+    po_items  = match.purchase_order.items.select_related('item').all()
+    grn_items = match.grn.items.select_related('po_item__item').all()
+    si_items  = match.supplier_invoice.items.select_related('item').all()
+
+    # Build comparison table
+    item_map = {}
+    for pi in po_items:
+        item_map.setdefault(pi.item_id, {'item': pi.item, 'po_qty': 0, 'po_price': 0, 'grn_qty': 0, 'si_qty': 0, 'si_price': 0})
+        item_map[pi.item_id]['po_qty'] = pi.quantity_ordered
+        item_map[pi.item_id]['po_price'] = pi.unit_price
+    for gi in grn_items:
+        item_id = gi.po_item.item_id if gi.po_item else None
+        if item_id and item_id in item_map:
+            item_map[item_id]['grn_qty'] = gi.quantity_accepted
+    for si in si_items:
+        item_map.setdefault(si.item_id, {'item': si.item, 'po_qty': 0, 'po_price': 0, 'grn_qty': 0, 'si_qty': 0, 'si_price': 0})
+        item_map[si.item_id]['si_qty'] = si.quantity
+        item_map[si.item_id]['si_price'] = si.unit_price
+
+    comparison_rows = []
+    for item_id, data in item_map.items():
+        qty_ok = (data['po_qty'] == data['grn_qty'] == data['si_qty'])
+        price_ok = (abs(data['po_price'] - data['si_price']) <= Decimal('0.01'))
+        comparison_rows.append({**data, 'qty_ok': qty_ok, 'price_ok': price_ok})
+
+    can_resolve = _can_validate_stock(request.user) and match.status in (
+        ThreeWayMatchStatus.PARTIAL, ThreeWayMatchStatus.MISMATCH
+    )
+
+    return render(request, 'inventory/three_way_match_detail.html', {
+        'match': match,
+        'comparison_rows': comparison_rows,
+        'can_resolve': can_resolve,
+    })
+
+
+@login_required
+@require_POST
+def three_way_match_resolve(request, match_id):
+    """Finance Director resolves a mismatched 3-way match."""
+    if not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Only Finance Director can resolve match discrepancies.')
+    match = get_object_or_404(ThreeWayMatch, id=match_id, is_deleted=False)
+    match.status = ThreeWayMatchStatus.RESOLVED
+    match.resolved_by = request.user
+    match.resolved_at = timezone.now()
+    match.discrepancy_notes = request.POST.get('notes', '').strip()
+    match.save(update_fields=['status', 'resolved_by', 'resolved_at', 'discrepancy_notes'])
+    messages.success(request, f'3-Way Match {match.match_number} resolved.')
+    return redirect('inventory:three_way_match_detail', match_id=match.pk)

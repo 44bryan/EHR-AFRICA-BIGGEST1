@@ -196,12 +196,23 @@ class PurchaseOrder(AuditModel):
         on_delete=models.SET_NULL, related_name='approved_pos'
     )
     is_auto_generated = models.BooleanField(default=False, help_text='Created by auto-reorder trigger')
+    # Finance Director approval (separate from store approval)
+    finance_approved_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='finance_approved_pos'
+    )
+    finance_approved_at = models.DateTimeField(null=True, blank=True)
+    finance_notes = models.TextField(blank=True, help_text='Finance Director remarks on PO approval')
 
     class Meta:
         ordering = ['-ordered_date']
 
     def __str__(self):
         return f"PO-{self.po_number} ({self.vendor.name})"
+
+    @property
+    def is_finance_approved(self):
+        return self.finance_approved_by is not None
 
     def save(self, *args, **kwargs):
         if not self.po_number:
@@ -919,3 +930,145 @@ class StockValidation(AuditModel):
 
     def __str__(self):
         return f"{self.get_validation_type_display()} — {self.reference} ({self.get_status_display()})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUPPLIER INVOICE + 3-WAY MATCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SupplierInvoiceStatus(models.TextChoices):
+    RECEIVED   = 'RECEIVED',   'Received'
+    MATCHED    = 'MATCHED',    'Matched (3-Way OK)'
+    DISPUTED   = 'DISPUTED',   'Disputed'
+    PAID       = 'PAID',       'Paid'
+    VOID       = 'VOID',       'Void'
+
+
+class SupplierInvoice(AuditModel):
+    """
+    Vendor/supplier invoice received against a PO.
+    Used for 3-way match: PO vs GRN vs Supplier Invoice.
+    """
+    invoice_number = models.CharField(max_length=100)
+    vendor         = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='supplier_invoices')
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='supplier_invoices')
+    grn            = models.ForeignKey(GoodsReceivedNote, on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='supplier_invoices')
+    invoice_date   = models.DateField()
+    due_date       = models.DateField(null=True, blank=True)
+    total_amount   = models.DecimalField(max_digits=14, decimal_places=2)
+    status         = models.CharField(max_length=20, choices=SupplierInvoiceStatus.choices,
+                                      default=SupplierInvoiceStatus.RECEIVED)
+    notes          = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-invoice_date']
+        verbose_name = 'Supplier Invoice'
+
+    def __str__(self):
+        return f"SI-{self.invoice_number} — {self.vendor.name} ({self.total_amount:,.0f} XAF)"
+
+
+class SupplierInvoiceItem(TimeStampedModel):
+    """Line items on a supplier invoice."""
+    supplier_invoice = models.ForeignKey(SupplierInvoice, on_delete=models.CASCADE, related_name='items')
+    item             = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    quantity         = models.PositiveIntegerField()
+    unit_price       = models.DecimalField(max_digits=10, decimal_places=2)
+
+    @property
+    def line_total(self):
+        return self.quantity * self.unit_price
+
+
+class ThreeWayMatchStatus(models.TextChoices):
+    PENDING  = 'PENDING',  'Pending Review'
+    MATCHED  = 'MATCHED',  'Fully Matched'
+    PARTIAL  = 'PARTIAL',  'Partial Match'
+    MISMATCH = 'MISMATCH', 'Mismatch (Discrepancy)'
+    RESOLVED = 'RESOLVED', 'Resolved'
+
+
+class ThreeWayMatch(AuditModel):
+    """
+    3-Way Match: PO vs GRN vs Supplier Invoice.
+    Ensures quantities and prices align across all three documents.
+    Discrepancies flagged for Finance Director review.
+    """
+    match_number      = models.CharField(max_length=30, unique=True)
+    purchase_order    = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='three_way_matches')
+    grn               = models.ForeignKey(GoodsReceivedNote, on_delete=models.PROTECT, related_name='three_way_matches')
+    supplier_invoice  = models.ForeignKey(SupplierInvoice, on_delete=models.PROTECT, related_name='three_way_matches')
+    status            = models.CharField(max_length=20, choices=ThreeWayMatchStatus.choices,
+                                         default=ThreeWayMatchStatus.PENDING)
+    po_total          = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    grn_total         = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    invoice_total     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    qty_match         = models.BooleanField(default=False, help_text='Do PO/GRN/Invoice quantities match?')
+    price_match       = models.BooleanField(default=False, help_text='Do PO/Invoice unit prices match?')
+    total_match       = models.BooleanField(default=False, help_text='Do totals match within tolerance?')
+    discrepancy_notes = models.TextField(blank=True)
+    resolved_by       = models.ForeignKey('accounts.User', null=True, blank=True,
+                                          on_delete=models.SET_NULL, related_name='resolved_matches')
+    resolved_at       = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '3-Way Match'
+        verbose_name_plural = '3-Way Matches'
+
+    def __str__(self):
+        return f"{self.match_number} — {self.get_status_display()}"
+
+    def save(self, *args, **kwargs):
+        if not self.match_number:
+            today = timezone.localdate()
+            count = ThreeWayMatch.objects.filter(created_at__year=today.year).count() + 1
+            self.match_number = f"3WM-{today.year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    def perform_match(self):
+        """Run the 3-way match comparison and set flags."""
+        from decimal import Decimal
+        tolerance = Decimal('0.01')
+
+        # Quantity match: compare PO ordered vs GRN received vs Invoice qty
+        po_items = {pi.item_id: pi.quantity_ordered for pi in self.purchase_order.items.all()}
+        grn_items = {}
+        for gi in self.grn.items.select_related('po_item').all():
+            item_id = gi.po_item.item_id if gi.po_item else None
+            if item_id:
+                grn_items[item_id] = grn_items.get(item_id, 0) + gi.quantity_accepted
+        inv_items = {si.item_id: si.quantity for si in self.supplier_invoice.items.all()}
+
+        self.qty_match = (po_items == grn_items == inv_items)
+
+        # Price match: PO unit prices vs Invoice unit prices
+        po_prices = {pi.item_id: pi.unit_price for pi in self.purchase_order.items.all()}
+        inv_prices = {si.item_id: si.unit_price for si in self.supplier_invoice.items.all()}
+        self.price_match = all(
+            abs(po_prices.get(k, 0) - inv_prices.get(k, 0)) <= tolerance
+            for k in set(po_prices) | set(inv_prices)
+        )
+
+        # Total match
+        self.po_total = self.purchase_order.total_amount
+        self.grn_total = sum(
+            gi.quantity_accepted * (gi.po_item.unit_price if gi.po_item else 0)
+            for gi in self.grn.items.select_related('po_item').all()
+        )
+        self.invoice_total = self.supplier_invoice.total_amount
+        self.total_match = (
+            abs(self.po_total - self.invoice_total) <= tolerance
+            and abs(self.grn_total - self.invoice_total) <= tolerance
+        )
+
+        if self.qty_match and self.price_match and self.total_match:
+            self.status = ThreeWayMatchStatus.MATCHED
+        elif self.qty_match or self.price_match:
+            self.status = ThreeWayMatchStatus.PARTIAL
+        else:
+            self.status = ThreeWayMatchStatus.MISMATCH
+
+        self.save()

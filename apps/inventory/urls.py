@@ -129,4 +129,27 @@ urlpatterns = [
     path('validations/<uuid:validation_id>/', views.stock_validation_detail, name='stock_validation_detail'),
     path('validations/<uuid:validation_id>/approve/', views.stock_validation_approve, name='stock_validation_approve'),
     path('validations/<uuid:validation_id>/reject/', views.stock_validation_reject, name='stock_validation_reject'),
+
+    # ── Stock Card / Bin Card / Stock Ledger ───────────────────
+    path('items/<uuid:item_id>/stock-card/', views.stock_card, name='stock_card'),
+    path('items/<uuid:item_id>/bin-card/', views.bin_card, name='bin_card'),
+    path('stock-ledger/', views.stock_ledger, name='stock_ledger'),
+
+    # ── Annual Stock Take Report ───────────────────────────────
+    path('reports/annual-stock-take/', views.annual_stock_take_report, name='report_annual_stock_take'),
+
+    # ── PO Finance Approval ────────────────────────────────────
+    path('purchase-orders/<uuid:po_id>/finance-approve/', views.po_finance_approve, name='po_finance_approve'),
+    path('purchase-orders/<uuid:po_id>/finance-reject/', views.po_finance_reject, name='po_finance_reject'),
+
+    # ── Supplier Invoices ──────────────────────────────────────
+    path('supplier-invoices/', views.supplier_invoice_list, name='supplier_invoice_list'),
+    path('supplier-invoices/create/', views.supplier_invoice_create, name='supplier_invoice_create'),
+    path('supplier-invoices/<uuid:invoice_id>/', views.supplier_invoice_detail, name='supplier_invoice_detail'),
+
+    # ── 3-Way Match ────────────────────────────────────────────
+    path('three-way-match/', views.three_way_match_list, name='three_way_match_list'),
+    path('three-way-match/create/', views.three_way_match_create, name='three_way_match_create'),
+    path('three-way-match/<uuid:match_id>/', views.three_way_match_detail, name='three_way_match_detail'),
+    path('three-way-match/<uuid:match_id>/resolve/', views.three_way_match_resolve, name='three_way_match_resolve'),
 ]

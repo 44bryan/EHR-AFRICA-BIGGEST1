@@ -416,3 +416,370 @@ def post_asset_disposal(disposal, user=None):
         return entry
     except Exception as e:
         logger.exception(f"GL auto-post failed for asset disposal {disposal.pk}: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REFUND GL POSTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BAD_DEBT_EXPENSE = '658000'    # Bad Debt / Write-off Expense
+PETTY_CASH       = '573000'    # Petty Cash Account
+VARIANCE_INCOME  = '758000'    # Other Income (cash overage)
+VARIANCE_EXPENSE = '658100'    # Shortage / Variance Expense
+
+
+def post_refund(refund, user=None):
+    """
+    Auto-post a refund to the GL.
+    Reverses revenue previously recognized:
+        Dr  Revenue (by service category, proportional)  |  Cr  Cash/Bank
+    """
+    try:
+        from apps.billing.models import ServiceCategory
+        credit_code = PAYMENT_METHOD_ACCOUNT.get(refund.payment_method, CASH_ACCOUNT)
+        if credit_code is None:
+            credit_code = CASH_ACCOUNT
+
+        invoice = refund.invoice
+        items = invoice.items.filter(is_deleted=False)
+        total_inv = invoice.total or Decimal('0')
+        amount = Decimal(str(refund.amount))
+        lines = []
+
+        # Debit side: reverse revenue proportionally
+        item_list = list(items)
+        total_allocated = Decimal('0')
+        for i, item in enumerate(item_list):
+            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            if i == len(item_list) - 1:
+                item_amount = amount - total_allocated
+            else:
+                proportion = (item.line_total / total_inv) if total_inv else Decimal('1')
+                item_amount = (amount * proportion).quantize(Decimal('0.01'))
+                total_allocated += item_amount
+            if item_amount > 0:
+                lines.append((rev_code, item_amount, 0, f"Refund: {item.description}"))
+
+        if not item_list:
+            lines.append((REVENUE_MAP['OTHER'], amount, 0, f"Refund — {invoice.invoice_number}"))
+
+        # Credit side: cash/bank out
+        lines.append((credit_code, 0, amount, f"Refund issued via {refund.payment_method}"))
+
+        _create_entry(
+            date=refund.refund_date.date() if hasattr(refund.refund_date, 'date') else refund.refund_date,
+            description=f"Refund — {invoice.invoice_number} — {invoice.patient.full_name}",
+            reference=refund.reference or f"REF-{refund.pk}",
+            source_type='refund',
+            source_id=refund.pk,
+            lines=lines,
+            user=user or refund.processed_by,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for refund {refund.pk}: {e}")
+
+
+def post_invoice_cancellation(invoice, user=None):
+    """
+    Reverse GL entries for a cancelled invoice.
+    Finds the original payment GL entries and creates reversals.
+    """
+    try:
+        from apps.billing.models import JournalEntry
+        original_entries = JournalEntry.objects.filter(
+            source_type='payment',
+            source_id__in=[str(p.pk) for p in invoice.payments.filter(is_deleted=False)],
+            is_posted=True,
+            is_reversal=False,
+        )
+        for entry in original_entries:
+            # Only reverse if not already reversed
+            if not JournalEntry.objects.filter(
+                source_type='reversal', reversed_entry=entry
+            ).exists():
+                reverse_entry(entry, f"Invoice {invoice.invoice_number} cancelled", user)
+    except Exception as e:
+        logger.exception(f"GL reversal failed for invoice cancellation {invoice.pk}: {e}")
+
+
+def post_waiver(invoice, user=None):
+    """
+    Post a waiver (full write-off) to the GL.
+        Dr  Bad Debt Expense 658000  |  Cr  Revenue (by category)
+    """
+    try:
+        items = invoice.items.filter(is_deleted=False)
+        total_inv = invoice.total or Decimal('0')
+        if total_inv <= 0:
+            return
+
+        amount = Decimal(str(total_inv))
+        lines = []
+
+        # Credit side: reduce revenue by category
+        item_list = list(items)
+        total_allocated = Decimal('0')
+        for i, item in enumerate(item_list):
+            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            if i == len(item_list) - 1:
+                item_amount = amount - total_allocated
+            else:
+                proportion = (item.line_total / total_inv) if total_inv else Decimal('1')
+                item_amount = (amount * proportion).quantize(Decimal('0.01'))
+                total_allocated += item_amount
+            if item_amount > 0:
+                lines.append((rev_code, 0, item_amount, f"Waiver: {item.description}"))
+
+        if not item_list:
+            lines.append((REVENUE_MAP['OTHER'], 0, amount, f"Waiver — {invoice.invoice_number}"))
+
+        # Debit: bad debt expense
+        lines.insert(0, (BAD_DEBT_EXPENSE, amount, 0, f"Write-off — {invoice.invoice_number}"))
+
+        _create_entry(
+            date=invoice.updated_at.date() if hasattr(invoice.updated_at, 'date') else invoice.updated_at,
+            description=f"Invoice waiver — {invoice.invoice_number} — {invoice.patient.full_name}",
+            reference=f"WAIV-{invoice.pk}",
+            source_type='waiver',
+            source_id=invoice.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for waiver {invoice.pk}: {e}")
+
+
+def post_wallet_deposit(wallet_txn, user=None):
+    """
+    Post a patient wallet deposit to the GL.
+        Dr  Cash/Bank  |  Cr  Patient Deposits Liability 499000
+    """
+    try:
+        amount = Decimal(str(wallet_txn.amount))
+        if amount <= 0:
+            return
+        method = getattr(wallet_txn, 'payment_method', 'CASH')
+        debit_code = PAYMENT_METHOD_ACCOUNT.get(method, CASH_ACCOUNT) or CASH_ACCOUNT
+
+        _create_entry(
+            date=wallet_txn.created_at.date() if hasattr(wallet_txn.created_at, 'date') else wallet_txn.created_at,
+            description=f"Wallet deposit — {wallet_txn.wallet.patient.full_name}",
+            reference=wallet_txn.reference or f"WDEP-{wallet_txn.pk}",
+            source_type='wallet_deposit',
+            source_id=wallet_txn.pk,
+            lines=[
+                (debit_code, amount, 0, f"Cash received from {wallet_txn.wallet.patient.full_name}"),
+                (PATIENT_DEPOSITS, 0, amount, "Patient deposit liability"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for wallet deposit {wallet_txn.pk}: {e}")
+
+
+def post_wallet_deduction(wallet_txn, user=None):
+    """
+    Post a patient wallet deduction to the GL.
+        Dr  Patient Deposits Liability 499000  |  Cr  Revenue (or Cash if refund)
+    """
+    try:
+        amount = Decimal(str(wallet_txn.amount))
+        if amount <= 0:
+            return
+
+        credit_code = REVENUE_MAP['OTHER']
+        credit_desc = "Revenue from wallet deduction"
+
+        # If linked to an invoice, try to get revenue categories
+        if wallet_txn.invoice:
+            items = wallet_txn.invoice.items.filter(is_deleted=False)
+            item_list = list(items)
+            if item_list:
+                lines = [(PATIENT_DEPOSITS, amount, 0, "Wallet payment applied")]
+                total_inv = wallet_txn.invoice.total or Decimal('0')
+                total_allocated = Decimal('0')
+                for i, item in enumerate(item_list):
+                    rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+                    if i == len(item_list) - 1:
+                        item_amount = amount - total_allocated
+                    else:
+                        proportion = (item.line_total / total_inv) if total_inv else Decimal('1')
+                        item_amount = (amount * proportion).quantize(Decimal('0.01'))
+                        total_allocated += item_amount
+                    if item_amount > 0:
+                        lines.append((rev_code, 0, item_amount, item.description))
+
+                _create_entry(
+                    date=wallet_txn.created_at.date(),
+                    description=f"Wallet payment — {wallet_txn.wallet.patient.full_name} — Inv {wallet_txn.invoice.invoice_number}",
+                    reference=f"WPAY-{wallet_txn.pk}",
+                    source_type='wallet_deduction',
+                    source_id=wallet_txn.pk,
+                    lines=lines,
+                    user=user,
+                )
+                return
+
+        # No invoice — simple deduction
+        _create_entry(
+            date=wallet_txn.created_at.date(),
+            description=f"Wallet deduction — {wallet_txn.wallet.patient.full_name}",
+            reference=f"WDED-{wallet_txn.pk}",
+            source_type='wallet_deduction',
+            source_id=wallet_txn.pk,
+            lines=[
+                (PATIENT_DEPOSITS, amount, 0, "Patient deposit applied"),
+                (credit_code, 0, amount, credit_desc),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for wallet deduction {wallet_txn.pk}: {e}")
+
+
+def post_petty_cash_entry(entry, user=None):
+    """
+    Post a petty cash entry to the GL.
+    DEBIT (expense payment):
+        Dr  Expense Category Account  |  Cr  Petty Cash 573000
+    CREDIT (top-up / replenishment):
+        Dr  Petty Cash 573000  |  Cr  Cash 572000
+    """
+    try:
+        amount = Decimal(str(entry.amount))
+        if amount <= 0:
+            return
+
+        if entry.entry_type == 'DEBIT':
+            # Expense from petty cash
+            debit_code = EXPENSE_MAP.get(entry.category, EXPENSE_MAP.get('EXP_OTHER', '658000'))
+            lines = [
+                (debit_code, amount, 0, entry.description),
+                (PETTY_CASH, 0, amount, f"Petty cash payment — {entry.fund.name}"),
+            ]
+        else:
+            # Top-up / replenishment of petty cash
+            lines = [
+                (PETTY_CASH, amount, 0, f"Petty cash top-up — {entry.fund.name}"),
+                (CASH_ACCOUNT, 0, amount, "Cash used for petty cash replenishment"),
+            ]
+
+        _create_entry(
+            date=entry.date,
+            description=f"Petty cash — {entry.description}",
+            reference=entry.reference or f"PC-{entry.pk}",
+            source_type='petty_cash',
+            source_id=entry.pk,
+            lines=lines,
+            user=user or entry.created_by,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for petty cash entry {entry.pk}: {e}")
+
+
+def post_petty_cash_fund_creation(fund, user=None):
+    """
+    Post initial petty cash float allocation to the GL.
+        Dr  Petty Cash 573000  |  Cr  Cash 572000
+    """
+    try:
+        amount = Decimal(str(fund.opening_balance))
+        if amount <= 0:
+            return
+
+        _create_entry(
+            date=fund.created_at.date() if hasattr(fund.created_at, 'date') else fund.created_at,
+            description=f"Petty cash fund created — {fund.name}",
+            reference=f"PCF-{fund.pk}",
+            source_type='petty_cash_fund',
+            source_id=fund.pk,
+            lines=[
+                (PETTY_CASH, amount, 0, f"Opening float — {fund.name}"),
+                (CASH_ACCOUNT, 0, amount, "Cash allocated to petty cash"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for petty cash fund {fund.pk}: {e}")
+
+
+def post_cash_transfer(transfer, user=None):
+    """
+    Post a confirmed cash transfer to the GL.
+    DESK_SAFE:  Dr  Cash (Safe) 572100  |  Cr  Cash (Desk) 572000
+    SAFE_BANK:  Dr  Bank 521000        |  Cr  Cash (Safe) 572100
+    DESK_DESK:  Dr  Cash (To) 572000   |  Cr  Cash (From) 572000
+    FLOAT:      Dr  Cash (Desk) 572000 |  Cr  Cash (Safe) 572100
+
+    For simplicity, all internal cash movements:
+        Dr Cash 572000 / Cr Cash 572000 (same code, differentiated by description)
+    """
+    try:
+        amount = Decimal(str(transfer.amount))
+        if amount <= 0:
+            return
+
+        xtype = transfer.transfer_type
+        if xtype == 'SAFE_BANK':
+            # Safe → Bank
+            lines = [
+                (BANK_ACCOUNT, amount, 0, f"Bank deposit from safe"),
+                (CASH_ACCOUNT, 0, amount, f"Cash withdrawn from safe"),
+            ]
+        else:
+            # Internal cash movements (desk→safe, safe→desk, desk→desk, float)
+            from_desc = str(transfer.from_desk or 'Safe/Main')
+            to_desc = str(transfer.to_desk or 'Safe/Main')
+            lines = [
+                (CASH_ACCOUNT, amount, 0, f"Cash received at {to_desc}"),
+                (CASH_ACCOUNT, 0, amount, f"Cash sent from {from_desc}"),
+            ]
+
+        _create_entry(
+            date=transfer.confirmed_at.date() if transfer.confirmed_at else transfer.transfer_date.date(),
+            description=f"Cash transfer — {transfer.get_transfer_type_display()}",
+            reference=transfer.reference or f"XFER-{transfer.pk}",
+            source_type='cash_transfer',
+            source_id=transfer.pk,
+            lines=lines,
+            user=user or transfer.confirmed_by,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for cash transfer {transfer.pk}: {e}")
+
+
+def post_cash_variance(variance, user=None):
+    """
+    Post a resolved cash variance to the GL.
+    Shortage (negative): Dr  Variance Expense 658100  |  Cr  Cash 572000
+    Overage (positive):  Dr  Cash 572000              |  Cr  Other Income 758000
+    """
+    try:
+        amount = abs(Decimal(str(variance.variance_amount)))
+        if amount <= 0:
+            return
+
+        if variance.variance_amount < 0:
+            # Shortage
+            lines = [
+                (VARIANCE_EXPENSE, amount, 0, f"Cash shortage — {variance.cashier.get_full_name()}"),
+                (CASH_ACCOUNT, 0, amount, "Cash short from drawer"),
+            ]
+        else:
+            # Overage
+            lines = [
+                (CASH_ACCOUNT, amount, 0, "Cash overage in drawer"),
+                (VARIANCE_INCOME, 0, amount, f"Cash overage — {variance.cashier.get_full_name()}"),
+            ]
+
+        _create_entry(
+            date=variance.variance_date,
+            description=f"Cash variance — {variance.cashier.get_full_name()} — {'shortage' if variance.variance_amount < 0 else 'overage'}",
+            reference=f"VAR-{variance.pk}",
+            source_type='cash_variance',
+            source_id=variance.pk,
+            lines=lines,
+            user=user or variance.resolved_by,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for cash variance {variance.pk}: {e}")

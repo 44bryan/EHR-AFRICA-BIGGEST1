@@ -8,7 +8,10 @@ class BillingConfig(AppConfig):
 
     def ready(self):
         from django.db.models.signals import post_save
-        from apps.billing.models import Payment, Expense, APPayment, APBill
+        from apps.billing.models import (
+            Payment, Expense, APPayment, APBill,
+            Refund, PettyCashEntry, PettyCashFund, WalletTransaction,
+        )
         from apps.billing import gl_service
 
         def on_payment_saved(sender, instance, created, **kwargs):
@@ -16,9 +19,7 @@ class BillingConfig(AppConfig):
                 gl_service.post_payment(instance)
 
         def on_expense_approved(sender, instance, created, **kwargs):
-            # Post to GL when expense is approved (approved_by is set)
             if not created and instance.approved_by:
-                # Only post once — check no existing GL entry for this expense
                 from apps.billing.models import JournalEntry
                 if not JournalEntry.objects.filter(
                     source_type='expense', source_id=str(instance.pk)
@@ -33,7 +34,34 @@ class BillingConfig(AppConfig):
             if created and instance.status not in ('DRAFT', 'VOID'):
                 gl_service.post_ap_bill(instance)
 
+        def on_refund_saved(sender, instance, created, **kwargs):
+            if created:
+                gl_service.post_refund(instance)
+
+        def on_petty_cash_entry_saved(sender, instance, created, **kwargs):
+            if created:
+                gl_service.post_petty_cash_entry(instance)
+
+        def on_petty_cash_fund_saved(sender, instance, created, **kwargs):
+            if created and instance.opening_balance > 0:
+                gl_service.post_petty_cash_fund_creation(instance)
+
+        def on_wallet_txn_saved(sender, instance, created, **kwargs):
+            if created:
+                from apps.billing.models import WalletTransactionType
+                if instance.transaction_type == WalletTransactionType.DEPOSIT:
+                    gl_service.post_wallet_deposit(instance)
+                elif instance.transaction_type in (
+                    WalletTransactionType.DEDUCTION,
+                    WalletTransactionType.WITHDRAWAL,
+                ):
+                    gl_service.post_wallet_deduction(instance)
+
         post_save.connect(on_payment_saved,    sender=Payment)
         post_save.connect(on_expense_approved, sender=Expense)
         post_save.connect(on_ap_payment_saved, sender=APPayment)
         post_save.connect(on_ap_bill_saved,    sender=APBill)
+        post_save.connect(on_refund_saved,     sender=Refund)
+        post_save.connect(on_petty_cash_entry_saved, sender=PettyCashEntry)
+        post_save.connect(on_petty_cash_fund_saved,  sender=PettyCashFund)
+        post_save.connect(on_wallet_txn_saved, sender=WalletTransaction)

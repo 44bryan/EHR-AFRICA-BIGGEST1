@@ -54,24 +54,30 @@
   </div>
 </div>
 
-<!-- Status filter tabs -->
-<ul class="nav nav-pills mb-3 gap-1 flex-wrap">
-  <li class="nav-item">
-    <a class="nav-link py-1 px-3 {% if not status_filter %}active{% endif %}" href="{% url 'inventory:po_list' %}">All</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link py-1 px-3 {% if status_filter == 'DRAFT' %}active{% endif %}" href="?status=DRAFT">Draft / Auto</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link py-1 px-3 {% if status_filter == 'SUBMITTED' %}active{% endif %}" href="?status=SUBMITTED">Submitted</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link py-1 px-3 {% if status_filter == 'APPROVED' %}active{% endif %}" href="?status=APPROVED">Approved</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link py-1 px-3 {% if status_filter == 'RECEIVED' %}active{% endif %}" href="?status=RECEIVED">Received</a>
-  </li>
-</ul>
+<!-- Filter bar -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search PO # or vendor..." value="{{ search }}">
+      </div>
+      <div class="col-md-3">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All Statuses</option>
+          {% for val, label in statuses %}
+          <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+        {% if search or status_filter %}
+        <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- PO table -->
 <div class="card border-0 shadow-sm">
@@ -93,7 +99,6 @@
         </thead>
         <tbody>
           {% for po in purchase_orders %}
-          {% if not status_filter or po.status == status_filter %}
           <tr>
             <td>
               <strong>PO-{{ po.po_number }}</strong>
@@ -153,7 +158,7 @@
               </div>
             </td>
           </tr>
-          {% endif %}
+          {% endfor %}
           {% empty %}
           <tr>
             <td colspan="9" class="text-center text-muted py-5">

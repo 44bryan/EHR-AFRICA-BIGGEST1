@@ -799,6 +799,11 @@ def cancel_invoice(request, invoice_id):
             f"{timezone.now().strftime('%d/%m/%Y %H:%M')} — Reason: {void_reason.label}]"
         ).strip()
         invoice.save(update_fields=['status', 'void_reason', 'notes', 'updated_at'])
+
+        # GL: reverse all payment entries for this invoice
+        from apps.billing import gl_service
+        gl_service.post_invoice_cancellation(invoice, user=request.user)
+
         messages.warning(
             request,
             f'Invoice {invoice.invoice_number} cancelled. Reason: {void_reason.label}'
@@ -862,6 +867,11 @@ def waive_invoice(request, invoice_id):
     invoice.discount_amount = invoice.total           # full write-off
     invoice.discount_reason = f'WAIVED by {request.user.get_full_name()} — {reason}'
     invoice.save(update_fields=['status', 'discount_amount', 'discount_reason', 'updated_at'])
+
+    # GL: post bad debt write-off entry
+    from apps.billing import gl_service
+    gl_service.post_waiver(invoice, user=request.user)
+
     messages.success(
         request,
         f'Invoice {invoice.invoice_number} has been waived. Reason: {reason}'
@@ -7488,6 +7498,11 @@ def cash_transfer_confirm(request, transfer_id):
         xfer.confirmed_by = request.user
         xfer.confirmed_at = timezone.now()
         xfer.save()
+
+        # GL: post cash transfer journal entry
+        from apps.billing import gl_service
+        gl_service.post_cash_transfer(xfer, user=request.user)
+
         messages.success(request, 'Cash transfer confirmed.')
     return redirect('billing:cash_transfer_list')
 
@@ -7570,6 +7585,11 @@ def variance_resolve(request, variance_id):
         var.resolved_at = timezone.now()
         var.is_resolved = True
         var.save()
+
+        # GL: post cash variance entry (shortage or overage)
+        from apps.billing import gl_service
+        gl_service.post_cash_variance(var, user=request.user)
+
         messages.success(request, f'Variance for {var.cashier.get_full_name()} resolved.')
     return redirect('billing:variance_register')
 

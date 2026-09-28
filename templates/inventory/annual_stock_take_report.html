@@ -1,0 +1,230 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+
+{% block title %}Annual Stock Take Report — {{ year }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ── Header ── #}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Annual Stock Take Report</h4>
+    <div class="d-flex align-items-center gap-2">
+      <form method="get" class="d-flex align-items-center gap-2">
+        <label for="yearSelect" class="form-label mb-0 fw-semibold">Year:</label>
+        <select name="year" id="yearSelect" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+          {% for y in years %}
+            <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i>Print
+      </button>
+    </div>
+  </div>
+
+  {# ── Summary Cards ── #}
+  <div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Total Items</div>
+          <div class="fs-3 fw-bold">{{ total_items|intcomma }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Items Counted</div>
+          <div class="fs-3 fw-bold">{{ items_counted|intcomma }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Items with Variance</div>
+          <div class="fs-3 fw-bold {% if items_with_variance > 0 %}text-danger{% endif %}">{{ items_with_variance|intcomma }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Total Variance Value</div>
+          <div class="fs-3 fw-bold">{{ total_variance_value|intcomma }} XAF</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Valuation Summary ── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold">Valuation Summary</div>
+    <div class="card-body">
+      <div class="row text-center">
+        <div class="col-md-4">
+          <div class="text-muted small">System Value</div>
+          <div class="fs-5 fw-bold">{{ total_system_value|intcomma }} XAF</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small">Physical Value</div>
+          <div class="fs-5 fw-bold">{{ total_physical_value|intcomma }} XAF</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small">Variance</div>
+          <div class="fs-5 fw-bold {% if total_variance_value < 0 %}text-danger{% elif total_variance_value > 0 %}text-success{% endif %}">
+            {{ total_variance_value|intcomma }} XAF
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Main Table ── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold">Stock Take Details</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th class="text-end">System Qty</th>
+              <th class="text-end">Physical Qty</th>
+              <th class="text-end">Variance</th>
+              <th class="text-end">Unit Cost</th>
+              <th class="text-end">System Value</th>
+              <th class="text-end">Physical Value</th>
+              <th class="text-end">Variance Value</th>
+              <th>Last Count Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report_rows %}
+              <tr>
+                <td>{{ row.item_code }}</td>
+                <td>{{ row.item_name }}</td>
+                <td>{{ row.category }}</td>
+                <td class="text-end">{{ row.system_qty|intcomma }}</td>
+                <td class="text-end">
+                  {% if row.physical_qty is None %}
+                    <span class="text-muted fst-italic">Not counted</span>
+                  {% else %}
+                    {{ row.physical_qty|intcomma }}
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.variance is None %}
+                    <span class="text-muted">—</span>
+                  {% elif row.variance < 0 %}
+                    <span class="text-danger fw-semibold">{{ row.variance|intcomma }}</span>
+                  {% elif row.variance > 0 %}
+                    <span class="text-success fw-semibold">+{{ row.variance|intcomma }}</span>
+                  {% else %}
+                    {{ row.variance|intcomma }}
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ row.unit_cost|intcomma }}</td>
+                <td class="text-end">{{ row.system_value|intcomma }}</td>
+                <td class="text-end">
+                  {% if row.physical_qty is None %}
+                    <span class="text-muted">—</span>
+                  {% else %}
+                    {{ row.physical_value|intcomma }}
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.variance_value is None %}
+                    <span class="text-muted">—</span>
+                  {% elif row.variance_value < 0 %}
+                    <span class="text-danger fw-semibold">{{ row.variance_value|intcomma }}</span>
+                  {% elif row.variance_value > 0 %}
+                    <span class="text-success fw-semibold">+{{ row.variance_value|intcomma }}</span>
+                  {% else %}
+                    {{ row.variance_value|intcomma }}
+                  {% endif %}
+                </td>
+                <td>{{ row.last_count_date|date:"d M Y"|default:"—" }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="11" class="text-center text-muted py-4">No stock take data for {{ year }}.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          {% if report_rows %}
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td colspan="3">Totals</td>
+                <td class="text-end">{{ total_system_qty|intcomma }}</td>
+                <td class="text-end">{{ total_physical_qty|intcomma }}</td>
+                <td class="text-end">
+                  {% if total_variance_qty < 0 %}
+                    <span class="text-danger">{{ total_variance_qty|intcomma }}</span>
+                  {% elif total_variance_qty > 0 %}
+                    <span class="text-success">+{{ total_variance_qty|intcomma }}</span>
+                  {% else %}
+                    {{ total_variance_qty|intcomma }}
+                  {% endif %}
+                </td>
+                <td></td>
+                <td class="text-end">{{ total_system_value|intcomma }}</td>
+                <td class="text-end">{{ total_physical_value|intcomma }}</td>
+                <td class="text-end">
+                  {% if total_variance_value < 0 %}
+                    <span class="text-danger">{{ total_variance_value|intcomma }}</span>
+                  {% elif total_variance_value > 0 %}
+                    <span class="text-success">+{{ total_variance_value|intcomma }}</span>
+                  {% else %}
+                    {{ total_variance_value|intcomma }}
+                  {% endif %}
+                </td>
+                <td></td>
+              </tr>
+            </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Approved Stock Counts in the Year ── #}
+  {% if approved_counts %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold">Approved Stock Counts in {{ year }}</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Count Number</th>
+              <th>Count Date</th>
+              <th>Counted By</th>
+              <th>Approved By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for count in approved_counts %}
+              <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ count.count_number }}</td>
+                <td>{{ count.count_date|date:"d M Y" }}</td>
+                <td>{{ count.counted_by }}</td>
+                <td>{{ count.approved_by }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

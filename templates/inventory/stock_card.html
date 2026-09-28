@@ -1,0 +1,172 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+
+{% block title %}Stock Card — {{ item.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="mb-0">Stock Card <small class="text-muted">(Fiche de Stock)</small></h4>
+            <p class="text-muted mb-0">{{ item.name }} &mdash; <code>{{ item.item_code }}</code></p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="window.print();">
+                <i class="bi bi-printer"></i> Print
+            </button>
+            <a href="{% url 'inventory:item_detail' item.id %}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-left"></i> Back to Item
+            </a>
+        </div>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form method="get" action="{% url 'inventory:stock_card' item.id %}" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label for="date_from" class="form-label mb-0 small">From</label>
+                    <input type="date" id="date_from" name="date_from" class="form-control form-control-sm"
+                           value="{{ request.GET.date_from|default:'' }}">
+                </div>
+                <div class="col-auto">
+                    <label for="date_to" class="form-label mb-0 small">To</label>
+                    <input type="date" id="date_to" name="date_to" class="form-control form-control-sm"
+                           value="{{ request.GET.date_to|default:'' }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-funnel"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Item Info Card -->
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Item Information</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Item Code</small>
+                    <strong>{{ item.item_code }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Name</small>
+                    <strong>{{ item.name }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Category</small>
+                    <strong>{{ item.category|default:"—" }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Unit</small>
+                    <strong>{{ item.unit|default:"—" }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Location</small>
+                    <strong>{{ item.location|default:"—" }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Current Stock</small>
+                    <strong class="text-primary">{{ item.current_stock|intcomma }}</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Unit Cost</small>
+                    <strong>{{ item.unit_cost|intcomma }} FCFA</strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <small class="text-muted d-block">Reorder Level</small>
+                    <strong>{{ item.reorder_level|intcomma }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Movements Table -->
+    <div class="card">
+        <div class="card-header fw-semibold">Stock Movements</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Reference</th>
+                            <th class="text-end">In</th>
+                            <th class="text-end">Out</th>
+                            <th class="text-end">Balance</th>
+                            <th>Batch/Lot</th>
+                            <th>User</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in card_rows %}
+                        <tr>
+                            <td class="text-nowrap">{{ row.date|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if row.type == "IN" %}
+                                    <span class="badge bg-success">IN</span>
+                                {% elif row.type == "OUT" %}
+                                    <span class="badge bg-danger">OUT</span>
+                                {% elif row.type == "ADJUST" %}
+                                    <span class="badge bg-warning text-dark">ADJUST</span>
+                                {% elif row.type == "RETURN" %}
+                                    <span class="badge bg-info text-dark">RETURN</span>
+                                {% elif row.type == "ISSUE" %}
+                                    <span class="badge bg-danger">ISSUE</span>
+                                {% elif row.type == "EXPIRE" %}
+                                    <span class="badge bg-dark">EXPIRE</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ row.type }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.reference|default:"—" }}</td>
+                            <td class="text-end">
+                                {% if row.qty_in and row.qty_in > 0 %}
+                                    <span class="text-success fw-semibold">{{ row.qty_in|intcomma }}</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if row.qty_out and row.qty_out > 0 %}
+                                    <span class="text-danger fw-semibold">{{ row.qty_out|intcomma }}</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-semibold">{{ row.balance|intcomma }}</td>
+                            <td>{{ row.batch.lot_number|default:"—" }}</td>
+                            <td>{{ row.user.get_full_name|default:"—" }}</td>
+                            <td>{{ row.notes|default:"" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">
+                                No stock movements found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+
+                        {% if card_rows %}
+                        <!-- Summary Row -->
+                        <tr class="table-primary fw-bold">
+                            <td colspan="5" class="text-end">Current Stock:</td>
+                            <td class="text-end">{{ item.current_stock|intcomma }}</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

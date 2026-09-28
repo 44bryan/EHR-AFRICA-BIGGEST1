@@ -1,0 +1,193 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}3-Way Match {{ match.match_number }}{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-0">3-Way Match {{ match.match_number }}</h1>
+    <small class="text-muted">PO {{ match.purchase_order.po_number }} &middot; GRN {{ match.grn.grn_number }} &middot; Invoice {{ match.supplier_invoice.invoice_number }}</small>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if match.status == 'PENDING' %}
+      <span class="badge bg-warning text-dark fs-6">Pending</span>
+    {% elif match.status == 'MATCHED' %}
+      <span class="badge bg-success fs-6">Matched</span>
+    {% elif match.status == 'PARTIAL' %}
+      <span class="badge bg-info fs-6">Partial</span>
+    {% elif match.status == 'MISMATCH' %}
+      <span class="badge bg-danger fs-6">Mismatch</span>
+    {% elif match.status == 'RESOLVED' %}
+      <span class="badge bg-secondary fs-6">Resolved</span>
+    {% endif %}
+    <a href="{% url 'inventory:three_way_match_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<!-- Summary totals -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">PO Total</div>
+      <div class="fw-bold fs-4 text-primary">{{ match.po_total|floatformat:0|intcomma }} <small class="text-muted">FCFA</small></div>
+      <div class="mt-1">
+        {% if match.total_match or match.po_total == match.invoice_total %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">GRN Total</div>
+      <div class="fw-bold fs-4 text-primary">{{ match.grn_total|floatformat:0|intcomma }} <small class="text-muted">FCFA</small></div>
+      <div class="mt-1">
+        {% if match.total_match or match.grn_total == match.po_total %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small mb-1">Invoice Total</div>
+      <div class="fw-bold fs-4 text-primary">{{ match.invoice_total|floatformat:0|intcomma }} <small class="text-muted">FCFA</small></div>
+      <div class="mt-1">
+        {% if match.total_match or match.invoice_total == match.po_total %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Match flags -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Match Flags</div>
+  <div class="card-body">
+    <div class="d-flex gap-4 flex-wrap">
+      <div class="d-flex align-items-center gap-2">
+        {% if match.qty_match %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+        <span class="fw-semibold">Quantity Match</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        {% if match.price_match %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+        <span class="fw-semibold">Price Match</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        {% if match.total_match %}
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+        {% endif %}
+        <span class="fw-semibold">Total Match</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Comparison table -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Line-by-Line Comparison</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Item</th>
+            <th class="text-end">PO Qty</th>
+            <th class="text-end">GRN Qty</th>
+            <th class="text-end">Invoice Qty</th>
+            <th class="text-center">Qty OK?</th>
+            <th class="text-end">PO Price</th>
+            <th class="text-end">Invoice Price</th>
+            <th class="text-center">Price OK?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in comparison_rows %}
+          <tr>
+            <td class="fw-semibold">{{ row.item.name }}</td>
+            <td class="text-end">{{ row.po_qty }}</td>
+            <td class="text-end">{{ row.grn_qty }}</td>
+            <td class="text-end">{{ row.si_qty }}</td>
+            <td class="text-center">
+              {% if row.qty_ok %}
+                <i class="bi bi-check-circle-fill text-success"></i>
+              {% else %}
+                <i class="bi bi-x-circle-fill text-danger"></i>
+              {% endif %}
+            </td>
+            <td class="text-end">{{ row.po_price|intcomma }}</td>
+            <td class="text-end">{{ row.si_price|intcomma }}</td>
+            <td class="text-center">
+              {% if row.price_ok %}
+                <i class="bi bi-check-circle-fill text-success"></i>
+              {% else %}
+                <i class="bi bi-x-circle-fill text-danger"></i>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">No comparison data available.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Resolution section -->
+{% if match.resolved_by %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Resolution</div>
+  <div class="card-body" style="font-size:0.875rem;">
+    <dl class="row mb-0">
+      <dt class="col-sm-3 text-muted">Resolved By</dt>
+      <dd class="col-sm-9">{{ match.resolved_by.get_full_name }}</dd>
+      <dt class="col-sm-3 text-muted">Resolved At</dt>
+      <dd class="col-sm-9">{{ match.resolved_at|date:"d M Y H:i" }}</dd>
+      <dt class="col-sm-3 text-muted">Discrepancy Notes</dt>
+      <dd class="col-sm-9">{{ match.discrepancy_notes|default:"--" }}</dd>
+    </dl>
+  </div>
+</div>
+{% elif can_resolve %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Resolve Discrepancy</div>
+  <div class="card-body">
+    <form method="post" action="{% url 'inventory:three_way_match_resolve' match.pk %}">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label for="discrepancy_notes" class="form-label fw-semibold">Notes <span class="text-danger">*</span></label>
+        <textarea name="discrepancy_notes" id="discrepancy_notes" class="form-control" rows="3"
+                  placeholder="Explain how the discrepancy was resolved..." required></textarea>
+      </div>
+      <div class="d-flex justify-content-end">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Resolve Discrepancy
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

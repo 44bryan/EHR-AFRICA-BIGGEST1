@@ -1,0 +1,198 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Record Supplier Invoice{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <div>
+      <h5 class="mb-0 fw-bold">Record Supplier Invoice</h5>
+      <div class="text-muted small">Enter vendor invoice details and line items for three-way matching</div>
+    </div>
+  </div>
+  <a href="{% url 'inventory:supplier_invoice_list' %}" class="btn btn-outline-secondary btn-sm">
+    Back to Invoices
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" action="{% url 'inventory:supplier_invoice_create' %}">
+  {% csrf_token %}
+
+  <!-- Invoice header -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-receipt me-1"></i>Invoice Details</h6>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label for="vendor_id" class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+          <select name="vendor_id" id="vendor_id" class="form-select" required>
+            <option value="">-- Select vendor --</option>
+            {% for v in vendors %}
+            <option value="{{ v.id }}">{{ v.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="purchase_order_id" class="form-label fw-semibold">Purchase Order</label>
+          <select name="purchase_order_id" id="purchase_order_id" class="form-select">
+            <option value="">-- None --</option>
+            {% for po in purchase_orders %}
+            <option value="{{ po.id }}">{{ po.po_number }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Optional. Link to an existing PO for matching.</div>
+        </div>
+        <div class="col-md-4">
+          <label for="grn_id" class="form-label fw-semibold">GRN</label>
+          <select name="grn_id" id="grn_id" class="form-select">
+            <option value="">-- None --</option>
+            {% for g in grns %}
+            <option value="{{ g.id }}">{{ g.grn_number }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Optional. Link to a Goods Received Note.</div>
+        </div>
+      </div>
+      <div class="row g-3 mt-1">
+        <div class="col-md-4">
+          <label for="invoice_number" class="form-label fw-semibold">Invoice Number <span class="text-danger">*</span></label>
+          <input type="text" name="invoice_number" id="invoice_number" class="form-control" required
+                 placeholder="e.g. INV-2026-0045">
+        </div>
+        <div class="col-md-4">
+          <label for="invoice_date" class="form-label fw-semibold">Invoice Date <span class="text-danger">*</span></label>
+          <input type="date" name="invoice_date" id="invoice_date" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label for="due_date" class="form-label fw-semibold">Due Date</label>
+          <input type="date" name="due_date" id="due_date" class="form-control">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Line items -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-list-ol me-1"></i>Line Items</h6>
+      <button type="button" class="btn btn-success btn-sm" onclick="addRow()">
+        <i class="bi bi-plus-lg me-1"></i>Add Row
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0 small" id="line-items-table">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:250px">Item <span class="text-danger">*</span></th>
+              <th style="width:130px">Quantity <span class="text-danger">*</span></th>
+              <th style="width:160px">Unit Price <span class="text-danger">*</span></th>
+              <th style="width:160px" class="text-end">Subtotal</th>
+              <th style="width:60px"></th>
+            </tr>
+          </thead>
+          <tbody id="line-items-body">
+            <tr class="line-row">
+              <td>
+                <select name="item_id[]" class="form-select form-select-sm" required>
+                  <option value="">-- Select item --</option>
+                  {% for item in items %}
+                  <option value="{{ item.id }}">{{ item.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <input type="number" name="quantity[]" class="form-control form-control-sm qty-input" min="1" step="1" value="1" required oninput="calcSubtotal(this)">
+              </td>
+              <td>
+                <input type="number" name="unit_price[]" class="form-control form-control-sm price-input" min="0" step="0.01" value="0" required oninput="calcSubtotal(this)">
+              </td>
+              <td class="text-end fw-semibold subtotal-cell">0</td>
+              <td class="text-center">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="removeRow(this)" title="Remove row">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot class="table-light">
+            <tr>
+              <td colspan="3" class="text-end fw-bold">Total</td>
+              <td class="text-end fw-bold" id="grand-total">0</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notes -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-sticky me-1"></i>Notes</h6>
+    </div>
+    <div class="card-body">
+      <textarea name="notes" id="notes" class="form-control" rows="3"
+                placeholder="Additional notes about this invoice..."></textarea>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="d-flex justify-content-end gap-2">
+    <a href="{% url 'inventory:supplier_invoice_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-check-lg me-1"></i>Record Invoice
+    </button>
+  </div>
+</form>
+
+<script>
+function addRow() {
+  var tbody = document.getElementById('line-items-body');
+  var firstRow = tbody.querySelector('.line-row');
+  var newRow = firstRow.cloneNode(true);
+  /* Reset values */
+  var selects = newRow.querySelectorAll('select');
+  selects.forEach(function(s) { s.selectedIndex = 0; });
+  var inputs = newRow.querySelectorAll('input');
+  inputs.forEach(function(inp) {
+    if (inp.name === 'quantity[]') inp.value = '1';
+    else inp.value = '0';
+  });
+  newRow.querySelector('.subtotal-cell').textContent = '0';
+  tbody.appendChild(newRow);
+}
+
+function removeRow(btn) {
+  var tbody = document.getElementById('line-items-body');
+  if (tbody.querySelectorAll('.line-row').length <= 1) return; /* keep at least one row */
+  btn.closest('tr').remove();
+  updateGrandTotal();
+}
+
+function calcSubtotal(el) {
+  var row = el.closest('tr');
+  var qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+  var price = parseFloat(row.querySelector('.price-input').value) || 0;
+  var sub = qty * price;
+  row.querySelector('.subtotal-cell').textContent = sub.toLocaleString('fr-FR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  updateGrandTotal();
+}
+
+function updateGrandTotal() {
+  var rows = document.querySelectorAll('#line-items-body .line-row');
+  var total = 0;
+  rows.forEach(function(row) {
+    var qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+    var price = parseFloat(row.querySelector('.price-input').value) || 0;
+    total += qty * price;
+  });
+  document.getElementById('grand-total').textContent = total.toLocaleString('fr-FR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+</script>
+{% endblock %}

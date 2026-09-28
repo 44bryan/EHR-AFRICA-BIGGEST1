@@ -932,12 +932,14 @@ def consultation_detail_view(request, pk):
             if _exam_result and _exam_result.result_data:
                 _refraction_data = _exam_result.result_data
 
-    # ── ALL investigation orders for this visit (nurse-ordered + doctor-ordered) ──
+    # ── Investigation orders: only those ordered FROM this consultation or triage ──
     _visit_investigations = []
     if consultation.visit:
         from apps.investigations.models import InvestigationOrder
+        from django.db.models import Q
         _visit_investigations = list(
             InvestigationOrder.objects.filter(
+                Q(consultation=consultation) | Q(consultation__isnull=True),
                 visit=consultation.visit, is_deleted=False,
             ).select_related(
                 'investigation_type', 'ordered_by', 'assigned_to',
@@ -945,7 +947,9 @@ def consultation_detail_view(request, pk):
         )
 
     # ── Optometry-specific orders (always visible to doctor even before results) ──
-    _optometry_orders = [o for o in _visit_investigations if o.investigation_type.category in ('REFRACTION', 'LOW_VISION', 'ORTHOPTICS')]
+    _OPTOM_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
+    _optometry_orders = [o for o in _visit_investigations if o.investigation_type.category in _OPTOM_CATS]
+    _lab_investigations = [o for o in _visit_investigations if o.investigation_type.category not in _OPTOM_CATS]
 
     return render(request, 'consultations/detail.html', {
         'consultation': consultation,
@@ -967,6 +971,7 @@ def consultation_detail_view(request, pk):
         'surgery_types': SurgicalRequest.SurgeryType.choices,
         'visit_stops': visit_stops,
         'visit_investigations': _visit_investigations,
+        'lab_investigations': _lab_investigations,
         'education_given': list(consultation.education_given.select_related('material', 'given_by').order_by('-created_at')),
     })
 

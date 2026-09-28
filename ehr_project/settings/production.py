@@ -61,8 +61,8 @@ CACHES = {
     }
 }
 
-# ── Session — store in cache (Redis) for speed + easy invalidation ────────────
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+# ── Session — cached_db = Redis speed + DB persistence (survives Redis restart)
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 SESSION_CACHE_ALIAS = 'default'
 
 # ── Static files — WhiteNoise with compression + long-lived caching ───────────
@@ -90,16 +90,17 @@ CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_WORKER_CONCURRENCY    = env.int('CELERY_CONCURRENCY', default=4)
 
 # ── Security ──────────────────────────────────────────────────────────────────
-SECURE_SSL_REDIRECT            = env.bool('SECURE_SSL_REDIRECT', default=True)
-SECURE_HSTS_SECONDS            = 31536000      # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD            = True
+# LAN deployment uses HTTP — SSL settings controlled via env vars
+SECURE_SSL_REDIRECT            = env.bool('SECURE_SSL_REDIRECT', default=False)
+SECURE_HSTS_SECONDS            = env.int('SECURE_HSTS_SECONDS', default=0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False)
+SECURE_HSTS_PRELOAD            = env.bool('SECURE_HSTS_PRELOAD', default=False)
 SECURE_PROXY_SSL_HEADER        = ('HTTP_X_FORWARDED_PROTO', 'https')  # behind Nginx
 
-SESSION_COOKIE_SECURE   = env.bool('SESSION_COOKIE_SECURE', default=True)
+SESSION_COOKIE_SECURE   = env.bool('SESSION_COOKIE_SECURE', default=False)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE      = env.bool('CSRF_COOKIE_SECURE', default=True)
+CSRF_COOKIE_SECURE      = env.bool('CSRF_COOKIE_SECURE', default=False)
 
 # ── Axes (brute-force login protection) ──────────────────────────────────────
 AXES_ENABLED          = env.bool('AXES_ENABLED', default=False)
