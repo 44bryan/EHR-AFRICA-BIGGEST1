@@ -43,7 +43,7 @@ def _can_manage_store(user):
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
-        UserRole.ADMIN,
+        UserRole.ADMIN, UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
     )
 
 
