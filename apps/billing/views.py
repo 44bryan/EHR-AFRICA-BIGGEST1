@@ -4642,8 +4642,17 @@ def _log_export(request, export_name):
 @login_required
 def patient_financial_history(request):
     """
-    Patient Financial Accounts — Chief Cashier and above.
-    Default: all patients listed (paginated). Click a patient → full financial history.
+    OHADA Grand Livre Auxiliaire Client — Account 411 (Clients).
+
+    Full subsidiary ledger per patient showing:
+      Date | Opération (OP) | N° Pièce | Débit | Crédit | Solde
+
+    Linked to OHADA Chart of Accounts:
+      - Classe 4 — Comptes de Tiers (Third Parties)
+      - Account 411000 — Clients (Patient Accounts Receivable)
+      - Invoice issued = Dr 411 (patient owes)
+      - Payment received = Cr 411 (patient paid)
+      - Refund = Dr 411 (we return money)
     """
     _allowed = (
         UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
@@ -4655,11 +4664,13 @@ def patient_financial_history(request):
         return redirect('dashboard:home')
 
     from apps.patients.models import Patient
+    from apps.billing.models import WalletTransaction
     from django.db.models import Sum as _Sum, Count as _Count, Max as _Max, Q as _Q
     from django.core.paginator import Paginator
+    from decimal import Decimal
 
     patient = None
-    invoices = []
+    ledger = []
     summary = {}
     patient_page = None
 
@@ -4674,22 +4685,141 @@ def patient_financial_history(request):
         invoices = list(
             Invoice.objects.filter(patient=patient, is_deleted=False)
             .select_related('created_by')
-            .prefetch_related('payments', 'items')
-            .order_by('-created_at')
+            .prefetch_related('items')
+            .order_by('created_at')
         )
-        # total / amount_paid are properties — compute in Python from prefetched data
-        total_billed = sum(inv.total for inv in invoices)
-        payment_total = Payment.objects.filter(
-            invoice__patient=patient, invoice__is_deleted=False, is_deleted=False,
-        ).aggregate(s=_Sum('amount'))['s'] or 0
+        payments = list(
+            Payment.objects.filter(
+                invoice__patient=patient, invoice__is_deleted=False, is_deleted=False,
+            ).select_related('invoice', 'received_by')
+            .order_by('payment_date')
+        )
+        refunds = list(
+            Refund.objects.filter(
+                invoice__patient=patient, invoice__is_deleted=False, is_deleted=False,
+            ).select_related('invoice', 'processed_by')
+            .order_by('refund_date')
+        )
+        wallet_txns = []
+        try:
+            wallet_txns = list(
+                WalletTransaction.objects.filter(wallet__patient=patient)
+                .select_related('processed_by', 'invoice')
+                .order_by('created_at')
+            )
+        except Exception:
+            pass
+
+        # ── Build unified ledger ────────────────────────────────────────────
+        raw = []
+
+        for inv in invoices:
+            items_list = list(inv.items.all()[:4])
+            items_desc = ', '.join(it.description for it in items_list[:3])
+            if len(items_list) > 3:
+                items_desc += f' +{inv.items.count() - 3}'
+            raw.append({
+                'date': inv.created_at,
+                'op': f'Facture — {items_desc or "Services"}',
+                'piece': inv.invoice_number,
+                'debit': inv.total or Decimal('0'),
+                'credit': Decimal('0'),
+                'ref_type': 'invoice',
+                'ref_id': str(inv.id),
+                'by': getattr(inv.created_by, 'get_full_name', lambda: '—')() if inv.created_by else '—',
+                'status': inv.get_status_display(),
+            })
+
+        for pay in payments:
+            raw.append({
+                'date': pay.payment_date,
+                'op': f'Règlement — {pay.get_payment_method_display()}',
+                'piece': pay.receipt_number or pay.reference or '—',
+                'debit': Decimal('0'),
+                'credit': pay.amount,
+                'ref_type': 'payment',
+                'ref_id': str(pay.invoice.id),
+                'by': getattr(pay.received_by, 'get_full_name', lambda: '—')() if pay.received_by else '—',
+                'status': pay.get_payment_method_display(),
+            })
+
+        for ref in refunds:
+            raw.append({
+                'date': ref.refund_date,
+                'op': f'Remboursement — {ref.reason[:60]}',
+                'piece': ref.reference or f'REF-{ref.pk}',
+                'debit': ref.amount,
+                'credit': Decimal('0'),
+                'ref_type': 'refund',
+                'ref_id': str(ref.invoice.id),
+                'by': getattr(ref.processed_by, 'get_full_name', lambda: '—')() if ref.processed_by else '—',
+                'status': 'Remboursement',
+            })
+
+        for wtx in wallet_txns:
+            if wtx.transaction_type in ('DEPOSIT', 'REFUND'):
+                raw.append({
+                    'date': wtx.created_at,
+                    'op': 'Dépôt portefeuille' if wtx.transaction_type == 'DEPOSIT' else 'Remb. portefeuille',
+                    'piece': wtx.reference or f'W-{wtx.pk}',
+                    'debit': Decimal('0'),
+                    'credit': wtx.amount,
+                    'ref_type': 'wallet',
+                    'ref_id': '',
+                    'by': getattr(wtx.processed_by, 'get_full_name', lambda: '—')() if wtx.processed_by else '—',
+                    'status': wtx.get_transaction_type_display(),
+                })
+            elif wtx.transaction_type == 'DEDUCTION':
+                raw.append({
+                    'date': wtx.created_at,
+                    'op': f'Déduction portefeuille' + (f' — {wtx.invoice.invoice_number}' if wtx.invoice else ''),
+                    'piece': wtx.reference or f'W-{wtx.pk}',
+                    'debit': Decimal('0'),
+                    'credit': wtx.amount,
+                    'ref_type': 'wallet',
+                    'ref_id': str(wtx.invoice.id) if wtx.invoice else '',
+                    'by': getattr(wtx.processed_by, 'get_full_name', lambda: '—')() if wtx.processed_by else '—',
+                    'status': 'Wallet Pay',
+                })
+            elif wtx.transaction_type == 'WITHDRAWAL':
+                raw.append({
+                    'date': wtx.created_at,
+                    'op': 'Retrait portefeuille',
+                    'piece': wtx.reference or f'W-{wtx.pk}',
+                    'debit': wtx.amount,
+                    'credit': Decimal('0'),
+                    'ref_type': 'wallet',
+                    'ref_id': '',
+                    'by': getattr(wtx.processed_by, 'get_full_name', lambda: '—')() if wtx.processed_by else '—',
+                    'status': 'Retrait',
+                })
+
+        # Sort chronologically
+        raw.sort(key=lambda e: e['date'])
+
+        # Running balance (Débit − Crédit = what patient owes us)
+        running = Decimal('0')
+        for entry in raw:
+            running += entry['debit'] - entry['credit']
+            entry['balance'] = running
+
+        ledger = raw
+
+        total_debit = sum(e['debit'] for e in raw)
+        total_credit = sum(e['credit'] for e in raw)
         summary = {
             'invoice_count': len(invoices),
-            'total_billed': total_billed,
-            'total_paid': payment_total,
-            'total_balance': total_billed - payment_total,
+            'payment_count': len(payments),
+            'refund_count': len(refunds),
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'balance': total_debit - total_credit,
+            'gl_account': '411000',
+            'gl_class': 'Class 4 — Third-Party Accounts',
+            'gl_label': 'Patient Accounts Receivable',
         }
     else:
-        # ── List: all patients (like medical records) ──────────────────────────
+        # ── List: all patients ───────────────────────────────────────────────
         patients_qs = Patient.objects.filter(is_active=True, is_deleted=False).annotate(
             invoice_count=_Count('invoices', filter=_Q(invoices__is_deleted=False)),
             last_invoice_at=_Max('invoices__created_at', filter=_Q(invoices__is_deleted=False)),
@@ -4704,7 +4834,7 @@ def patient_financial_history(request):
 
     return render(request, 'billing/patient_accounts.html', {
         'patient': patient,
-        'invoices': invoices,
+        'ledger': ledger,
         'summary': summary,
         'patient_page': patient_page,
         'q': q,

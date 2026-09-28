@@ -106,7 +106,16 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
 
 
 def _stock_code_for_item(item):
-    """Get the OHADA Class 3 stock account code for an inventory item."""
+    """
+    Get the OHADA Class 3 stock account code for an inventory item.
+    Priority:
+      1. If item is assigned to a StoreLocation with gl_account_code → use that
+      2. Fall back to category-based mapping (STOCK_ACCOUNT_MAP)
+    This ensures each store (Pharmacy 321, Optical 322, Theatre 323, General 311)
+    posts to its own sub-account under Class 3.
+    """
+    if hasattr(item, 'store_location') and item.store_location and item.store_location.gl_account_code:
+        return item.store_location.gl_account_code
     return STOCK_ACCOUNT_MAP.get(item.category, '33')
 
 

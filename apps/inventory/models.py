@@ -46,7 +46,12 @@ class InventoryItem(AuditModel):
     max_stock_level  = models.PositiveIntegerField(default=0, help_text='Maximum stock level — 0 means no limit (ISO 9001 §8.5.4)')
     current_stock    = models.PositiveIntegerField(default=0)
     unit_cost        = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    location         = models.CharField(max_length=100, blank=True, help_text='Storage location')
+    location         = models.CharField(max_length=100, blank=True, help_text='Storage location (shelf/bin)')
+    store_location   = models.ForeignKey(
+        'StoreLocation', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='items',
+        help_text='Which store this item belongs to (General, Pharmacy, Optical, Theatre)'
+    )
     is_active        = models.BooleanField(default=True)
     barcode          = models.CharField(max_length=100, blank=True, unique=True, null=True,
                                          help_text='Auto-generated barcode for scanning')
@@ -389,21 +394,53 @@ class RequisitionItem(TimeStampedModel):
 # ── Store Locations ──────────────────────────────────────────────────────────
 
 class StoreLocation(AuditModel):
-    """Physical store rooms within the facility."""
+    """
+    Physical store rooms within the facility.
+    Each store maps to an OHADA Class 3 sub-account:
+      - General Store  → 311 (Marchandises)
+      - Pharmacy Store → 321 (Matieres premieres - pharmaceutiques)
+      - Optical Store  → 322 (Marchandises - optique)
+      - Theatre Store  → 323 (Fournitures chirurgicales)
+      - Ward/Emergency → 331 (Autres approvisionnements)
+    """
     name = models.CharField(max_length=100, unique=True)
     location_type = models.CharField(max_length=20, choices=[
+        ('GENERAL', 'General Store'),
+        ('PHARMACY', 'Pharmacy Store'),
+        ('OPTICAL', 'Optical Store'),
+        ('THEATRE', 'Theatre Store'),
         ('CENTRAL', 'Central Store'),
         ('SUB', 'Sub-Store'),
         ('WARD', 'Ward Store'),
-        ('THEATRE', 'Theatre Store'),
         ('EMERGENCY', 'Emergency Store'),
     ])
+    gl_account_code = models.CharField(
+        max_length=10, blank=True,
+        help_text='OHADA Class 3 GL account code for this store (e.g. 311000, 321000)'
+    )
     address = models.TextField(blank=True, help_text='Physical location within facility')
     manager = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='managed_store_locations',
     )
     is_active = models.BooleanField(default=True)
+
+    # Auto-assign GL account based on store type
+    STORE_GL_MAP = {
+        'GENERAL':   '311000',
+        'PHARMACY':  '321000',
+        'OPTICAL':   '322000',
+        'THEATRE':   '323000',
+        'CENTRAL':   '311000',
+        'SUB':       '331000',
+        'WARD':      '331000',
+        'EMERGENCY': '331000',
+    }
+
+    def save(self, *args, **kwargs):
+        if not self.gl_account_code:
+            self.gl_account_code = self.STORE_GL_MAP.get(self.location_type, '331000')
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['name']

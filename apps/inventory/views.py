@@ -506,9 +506,12 @@ def item_create(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
     if request.method == 'POST':
         pv_id = request.POST.get('preferred_vendor') or None
         preferred_vendor = Vendor.objects.filter(id=pv_id).first() if pv_id else None
+        sl_id = request.POST.get('store_location') or None
+        store_loc = StoreLocation.objects.filter(id=sl_id).first() if sl_id else None
         item = InventoryItem.objects.create(
             name=request.POST.get('name', '').strip(),
             item_code=request.POST.get('item_code', '').strip(),
@@ -518,6 +521,7 @@ def item_create(request):
             reorder_level=int(request.POST.get('reorder_level', 5) or 5),
             current_stock=int(request.POST.get('current_stock', 0) or 0),
             location=request.POST.get('location', '').strip(),
+            store_location=store_loc,
             description=request.POST.get('description', '').strip(),
             requires_expiry_tracking='requires_expiry_tracking' in request.POST,
             is_consignment='is_consignment' in request.POST,
@@ -537,6 +541,7 @@ def item_create(request):
     return render(request, 'inventory/item_form.html', {
         'categories': ItemCategory.choices,
         'vendors': vendors,
+        'store_locations': store_locations,
         'action': 'Create',
     })
 
@@ -548,9 +553,12 @@ def item_edit(request, item_id):
         return HttpResponseForbidden('Access denied.')
     item    = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
     if request.method == 'POST':
         pv_id = request.POST.get('preferred_vendor') or None
         item.preferred_vendor = Vendor.objects.filter(id=pv_id).first() if pv_id else None
+        sl_id = request.POST.get('store_location') or None
+        item.store_location = StoreLocation.objects.filter(id=sl_id).first() if sl_id else None
         item.name               = request.POST.get('name', item.name).strip()
         item.category           = request.POST.get('category', item.category)
         item.unit               = request.POST.get('unit', 'unit').strip()
@@ -567,7 +575,8 @@ def item_edit(request, item_id):
         return redirect('inventory:item_detail', item_id=item.id)
     return render(request, 'inventory/item_form.html', {
         'item': item, 'categories': ItemCategory.choices,
-        'vendors': vendors, 'action': 'Edit',
+        'vendors': vendors, 'store_locations': store_locations,
+        'action': 'Edit',
     })
 
 

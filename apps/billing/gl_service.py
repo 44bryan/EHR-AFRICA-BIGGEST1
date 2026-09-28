@@ -116,55 +116,100 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
     return entry
 
 
-def post_payment(payment):
+def post_invoice_issued(invoice, user=None):
     """
-    Auto-post a patient payment to the GL.
+    OHADA-compliant invoice recognition.
+    When an invoice is issued to a patient, recognise the receivable:
 
-    Cash/Card/Transfer/Mobile:
-        Dr  Cash/Bank  |  Cr  Revenue (by service category)
+        Dr  411 (Patient Accounts Receivable)
+        Cr  7xx (Revenue — split by service category)
 
-    Insurance/NHIS:
-        Dr  AR Insurance  |  Cr  Revenue
+    If the invoice has insurance_amount > 0, delegates to
+    post_insurance_invoice_split() to split AR between 411 and 412.
 
-    Waiver:  no GL entry (no cash movement)
+    This creates the patient's subsidiary ledger (Grand Livre Auxiliaire Client).
+    Account 411 is the OHADA Class 4 third-party account for clients.
     """
     try:
+        # Auto-delegate to insurance split if invoice has insurance portion
+        ins_amount = getattr(invoice, 'insurance_amount', None)
+        if ins_amount and Decimal(str(ins_amount)) > 0:
+            return post_insurance_invoice_split(invoice, user)
         from apps.billing.models import ServiceCategory
-        debit_code = PAYMENT_METHOD_ACCOUNT.get(payment.payment_method)
-        if debit_code is None:
-            return  # Waiver — skip
-
-        # Determine revenue breakdown from invoice items
-        invoice = payment.invoice
         items = invoice.items.filter(is_deleted=False)
-        total_inv = invoice.total or Decimal('0')
-        if total_inv == 0:
-            return
+        total = invoice.total or Decimal('0')
+        if total <= 0:
+            return None
 
-        amount = Decimal(str(payment.amount))
+        amount = Decimal(str(total))
         lines = []
 
-        # Debit side: one line for the cash/bank/AR account
-        lines.append((debit_code, amount, 0, f"Receipt {payment.receipt_number}"))
+        # Debit: Patient AR (411)
+        lines.append((AR_PATIENT, amount, 0,
+                       f"Invoice {invoice.invoice_number} — {invoice.patient.full_name}"))
 
-        # Credit side: split by service category proportionally
+        # Credit: Revenue split by service category
         total_allocated = Decimal('0')
         item_list = list(items)
         for i, item in enumerate(item_list):
             rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
-            # Proportional share of this payment
             if i == len(item_list) - 1:
-                item_amount = amount - total_allocated  # remainder to last item
+                item_amount = amount - total_allocated
             else:
-                proportion = (item.line_total / total_inv) if total_inv else Decimal('1')
+                proportion = (item.line_total / total) if total else Decimal('1')
                 item_amount = (amount * proportion).quantize(Decimal('0.01'))
                 total_allocated += item_amount
             if item_amount > 0:
                 lines.append((rev_code, 0, item_amount, item.description))
 
         if not item_list:
-            # No items — credit generic revenue
-            lines.append((REVENUE_MAP['OTHER'], 0, amount, f"Invoice {invoice.invoice_number}"))
+            lines.append((REVENUE_MAP['OTHER'], 0, amount,
+                           f"Invoice {invoice.invoice_number}"))
+
+        return _create_entry(
+            date=invoice.issue_date,
+            description=f"Invoice issued — {invoice.invoice_number} — {invoice.patient.full_name}",
+            reference=invoice.invoice_number,
+            source_type='invoice',
+            source_id=invoice.pk,
+            lines=lines,
+            user=user or getattr(invoice, 'created_by', None),
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for invoice {invoice.pk}: {e}")
+        return None
+
+
+def post_payment(payment):
+    """
+    OHADA-compliant patient payment posting.
+    When cash/bank payment is received, settle the receivable:
+
+        Dr  Cash/Bank (572/521)   — money in
+        Cr  411 (Patient AR)      — receivable reduced
+
+    Insurance/NHIS:
+        Dr  412 (Insurance AR)    — insurer now owes us
+        Cr  411 (Patient AR)      — patient's debt transferred
+
+    Waiver:  no GL entry (no cash movement)
+    """
+    try:
+        debit_code = PAYMENT_METHOD_ACCOUNT.get(payment.payment_method)
+        if debit_code is None:
+            return  # Waiver — skip
+
+        invoice = payment.invoice
+        amount = Decimal(str(payment.amount))
+        if amount <= 0:
+            return
+
+        lines = [
+            (debit_code,  amount, 0,
+             f"Receipt {payment.receipt_number} — {payment.get_payment_method_display()}"),
+            (AR_PATIENT,  0,      amount,
+             f"Settlement — Inv {invoice.invoice_number} — {invoice.patient.full_name}"),
+        ]
 
         _create_entry(
             date=payment.payment_date.date() if hasattr(payment.payment_date, 'date') else payment.payment_date,
@@ -746,6 +791,188 @@ def post_cash_transfer(transfer, user=None):
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash transfer {transfer.pk}: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INSURANCE / HMO GL POSTINGS — OHADA Account 412 (Insurance Receivables)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+INSURANCE_BAD_DEBT = '658200'   # Insurance Bad Debt / Write-off
+
+
+def post_insurance_invoice_split(invoice, user=None):
+    """
+    OHADA-compliant invoice recognition with insurance split.
+    When an invoice has insurance_amount > 0, split the receivable:
+
+        Dr  411 (Patient AR)     — patient's copay portion
+        Dr  412 (Insurance AR)   — insurer's portion
+        Cr  7xx (Revenue)        — by service category
+
+    Called instead of post_invoice_issued() when invoice.insurance_amount > 0.
+    """
+    try:
+        from apps.billing.models import ServiceCategory
+        items = invoice.items.filter(is_deleted=False)
+        total = invoice.total or Decimal('0')
+        if total <= 0:
+            return None
+
+        ins_amount = Decimal(str(invoice.insurance_amount or 0))
+        patient_amount = total - ins_amount
+
+        lines = []
+
+        # Debit: Patient AR (411) for patient's copay share
+        if patient_amount > 0:
+            lines.append((AR_PATIENT, patient_amount, 0,
+                          f"Patient copay — Inv {invoice.invoice_number} — {invoice.patient.full_name}"))
+
+        # Debit: Insurance AR (412) for insurer's share
+        if ins_amount > 0:
+            lines.append((AR_INSURANCE, ins_amount, 0,
+                          f"Insurance claim — Inv {invoice.invoice_number} — {invoice.patient.full_name}"))
+
+        # Credit: Revenue split by service category
+        amount = Decimal(str(total))
+        total_allocated = Decimal('0')
+        item_list = list(items)
+        for i, item in enumerate(item_list):
+            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            if i == len(item_list) - 1:
+                item_amount = amount - total_allocated
+            else:
+                proportion = (item.line_total / total) if total else Decimal('1')
+                item_amount = (amount * proportion).quantize(Decimal('0.01'))
+                total_allocated += item_amount
+            if item_amount > 0:
+                lines.append((rev_code, 0, item_amount, item.description))
+
+        if not item_list:
+            lines.append((REVENUE_MAP['OTHER'], 0, amount,
+                          f"Invoice {invoice.invoice_number}"))
+
+        return _create_entry(
+            date=invoice.issue_date,
+            description=f"Invoice issued (insurance split) — {invoice.invoice_number} — {invoice.patient.full_name}",
+            reference=invoice.invoice_number,
+            source_type='invoice',
+            source_id=invoice.pk,
+            lines=lines,
+            user=user or getattr(invoice, 'created_by', None),
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for insurance invoice split {invoice.pk}: {e}")
+        return None
+
+
+def post_insurance_batch_payment(batch, user=None):
+    """
+    GL posting when insurance scheme pays a claim batch.
+    Settles the Insurance AR (412):
+
+        Dr  Bank/Cash (521/572)  — money received from insurer
+        Cr  412 (Insurance AR)   — receivable settled
+
+    If partial payment, only post the amount actually received.
+    """
+    try:
+        amount = Decimal(str(batch.total_paid or 0))
+        if amount <= 0:
+            return None
+
+        # Determine payment method from payment_ref
+        debit_code = BANK_ACCOUNT  # Insurance usually pays via bank transfer
+
+        lines = [
+            (debit_code, amount, 0,
+             f"Insurance payment — {batch.scheme.name} — Batch {batch.batch_number}"),
+            (AR_INSURANCE, 0, amount,
+             f"Settlement — Batch {batch.batch_number} — Ref: {batch.payment_ref or 'N/A'}"),
+        ]
+
+        return _create_entry(
+            date=batch.payment_date or batch.updated_at.date(),
+            description=f"Insurance payment received — {batch.scheme.name} — Batch {batch.batch_number}",
+            reference=batch.payment_ref or batch.batch_number,
+            source_type='insurance_payment',
+            source_id=batch.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for insurance batch payment {batch.pk}: {e}")
+        return None
+
+
+def post_insurance_claim_rejection(claim, user=None):
+    """
+    GL posting when an insurance claim is rejected.
+    The insurance AR must be reversed — either written off as bad debt
+    or transferred back to patient AR:
+
+        Dr  Patient AR (411)         — patient now owes the full amount
+        Cr  Insurance AR (412)       — insurer no longer owes us
+
+    If the claim is linked to an invoice, use the claimed_amount.
+    """
+    try:
+        amount = Decimal(str(claim.claimed_amount or 0))
+        if amount <= 0:
+            return None
+
+        lines = [
+            (AR_PATIENT, amount, 0,
+             f"Claim rejected — {claim.claim_number} — transferred to patient"),
+            (AR_INSURANCE, 0, amount,
+             f"Claim rejection reversal — {claim.claim_number} — {claim.member.scheme.name}"),
+        ]
+
+        return _create_entry(
+            date=claim.rejection_date or claim.updated_at.date(),
+            description=f"Insurance claim rejected — {claim.claim_number} — {claim.member.patient.full_name}",
+            reference=claim.claim_number,
+            source_type='insurance_rejection',
+            source_id=claim.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for claim rejection {claim.pk}: {e}")
+        return None
+
+
+def post_insurance_write_off(claim, user=None):
+    """
+    Write off an insurance claim as bad debt (scheme won't pay, patient not liable).
+
+        Dr  Bad Debt Expense (658200)  — loss recognized
+        Cr  Insurance AR (412)         — receivable cleared
+    """
+    try:
+        amount = Decimal(str(claim.claimed_amount or 0))
+        if amount <= 0:
+            return None
+
+        lines = [
+            (INSURANCE_BAD_DEBT, amount, 0,
+             f"Insurance write-off — {claim.claim_number} — {claim.member.scheme.name}"),
+            (AR_INSURANCE, 0, amount,
+             f"AR cleared — {claim.claim_number}"),
+        ]
+
+        return _create_entry(
+            date=claim.updated_at.date() if hasattr(claim.updated_at, 'date') else claim.updated_at,
+            description=f"Insurance claim write-off — {claim.claim_number} — {claim.member.patient.full_name}",
+            reference=f"WO-{claim.claim_number}",
+            source_type='insurance_write_off',
+            source_id=claim.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for insurance write-off {claim.pk}: {e}")
+        return None
 
 
 def post_cash_variance(variance, user=None):

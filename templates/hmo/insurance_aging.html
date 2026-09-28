@@ -1,0 +1,117 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Insurance AR Aging Report{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold">Insurance AR Aging Report</h5>
+    <div class="text-muted small">OHADA Account 412 &mdash; Outstanding Receivables by Age Bucket</div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'hmo:insurance_ledger' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-journal-text me-1"></i>Ledger
+    </a>
+    <a href="{% url 'hmo:dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ====== Grand Total ====== #}
+<div class="row g-2 mb-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center py-3">
+        <div class="text-uppercase fw-semibold text-muted" style="font-size:.62rem;letter-spacing:1px;">Total Insurance AR Outstanding</div>
+        <div class="fw-bold fs-2 font-monospace {% if grand_total > 0 %}text-warning{% else %}text-success{% endif %}">
+          {{ grand_total|floatformat:0|intcomma }} <small class="text-muted" style="font-size:.5em;">FCFA</small>
+        </div>
+        <div class="text-muted small">GL Account 412000</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ====== Aging Table ====== #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-clock-history text-primary"></i>
+      <span class="fw-semibold small">AGING BREAKDOWN BY SCHEME</span>
+    </div>
+    <span class="text-muted" style="font-size:.72rem;">{{ aging_data|length }} scheme{{ aging_data|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle mb-0" style="font-size:.82rem;">
+      <thead>
+        <tr style="background:#1e293b;color:#fff;font-size:.74rem;" class="text-center">
+          <th class="text-start">INSURANCE SCHEME</th>
+          <th style="width:110px;">CURRENT<br><span style="font-weight:400;font-size:.65rem;">(0-30 days)</span></th>
+          <th style="width:110px;">31-60<br><span style="font-weight:400;font-size:.65rem;">DAYS</span></th>
+          <th style="width:110px;">61-90<br><span style="font-weight:400;font-size:.65rem;">DAYS</span></th>
+          <th style="width:110px;">90+<br><span style="font-weight:400;font-size:.65rem;">DAYS</span></th>
+          <th style="width:130px;">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in aging_data %}
+        <tr>
+          <td>
+            <a href="{% url 'hmo:insurance_ledger' %}?scheme={{ row.scheme.pk }}" class="text-decoration-none fw-semibold">
+              {{ row.scheme.name }}
+            </a>
+            <div class="text-muted" style="font-size:.7rem;">{{ row.scheme.code }} &bull; {{ row.scheme.get_scheme_type_display }}</div>
+          </td>
+          <td class="text-end font-monospace {% if row.current > 0 %}text-success{% endif %}">
+            {% if row.current > 0 %}{{ row.current|floatformat:0|intcomma }}{% else %}<span class="text-muted">--</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace {% if row.over_30 > 0 %}text-warning{% endif %}">
+            {% if row.over_30 > 0 %}{{ row.over_30|floatformat:0|intcomma }}{% else %}<span class="text-muted">--</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace {% if row.over_60 > 0 %}text-orange{% endif %}" {% if row.over_60 > 0 %}style="color:#e67e22;"{% endif %}>
+            {% if row.over_60 > 0 %}{{ row.over_60|floatformat:0|intcomma }}{% else %}<span class="text-muted">--</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace {% if row.over_90 > 0 %}text-danger fw-bold{% endif %}">
+            {% if row.over_90 > 0 %}{{ row.over_90|floatformat:0|intcomma }}{% else %}<span class="text-muted">--</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace fw-bold">
+            {{ row.total|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-5">
+            <i class="bi bi-check-circle fs-2 d-block mb-2 text-success" style="opacity:.4;"></i>
+            No outstanding insurance receivables. All claims are settled.
+          </td>
+        </tr>
+        {% endfor %}
+
+        {% if aging_data %}
+        <tr style="background:#1e293b;color:#fff;" class="fw-bold">
+          <td class="text-end text-uppercase" style="letter-spacing:.5px;font-size:.8rem;">Grand Total</td>
+          <td class="text-end font-monospace">{% widthratio 0 1 1 as zero %}{% for row in aging_data %}{% endfor %}</td>
+          <td class="text-end font-monospace"></td>
+          <td class="text-end font-monospace"></td>
+          <td class="text-end font-monospace"></td>
+          <td class="text-end font-monospace" style="font-size:.85rem;">{{ grand_total|floatformat:0|intcomma }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="mt-3 text-muted px-1" style="font-size:.62rem;">
+  OHADA SYSCEBNL &mdash; Class 4 (Third-Party Accounts) &mdash; Account 412 (Insurance Receivables)
+  &bull; Amounts in FCFA &bull; Aging based on batch submission date
+</div>
+
+{% endblock %}

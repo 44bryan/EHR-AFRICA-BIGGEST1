@@ -425,6 +425,13 @@ def batch_submit(request, batch_id):
         status=ClaimStatus.SUBMITTED
     )
     batch.recalculate_totals()
+
+    # GL: Post Insurance AR (412) for each claim in the batch
+    from apps.billing.gl_service import post_insurance_invoice_split
+    for claim in batch.claims.filter(is_deleted=False).select_related('invoice'):
+        if claim.invoice and claim.invoice.insurance_amount and claim.invoice.insurance_amount > 0:
+            post_insurance_invoice_split(claim.invoice, user=request.user)
+
     messages.success(request, f'Batch {batch.batch_number} submitted to {batch.scheme.name}.')
     return redirect('hmo:batch_detail', batch_id=batch_id)
 
@@ -452,6 +459,10 @@ def batch_record_payment(request, batch_id):
         batch.status = ClaimBatchStatus.PARTIAL
     batch.updated_by = request.user
     batch.save()
+    # GL: Post insurance payment — Dr Bank / Cr Insurance AR (412)
+    from apps.billing.gl_service import post_insurance_batch_payment
+    post_insurance_batch_payment(batch, user=request.user)
+
     messages.success(request, f'Payment of {batch.total_paid:,.0f} FCFA recorded for batch {batch.batch_number}.')
     return redirect('hmo:batch_detail', batch_id=batch_id)
 
@@ -603,8 +614,223 @@ def claim_reject(request, claim_id):
     claim.rejection_date = date.today()
     claim.updated_by = request.user
     claim.save()
+    # GL: Reverse Insurance AR → transfer to Patient AR (411)
+    from apps.billing.gl_service import post_insurance_claim_rejection
+    post_insurance_claim_rejection(claim, user=request.user)
+
     messages.warning(request, f'Claim {claim.claim_number} marked as rejected.')
     return redirect('hmo:claim_detail', claim_id=claim_id)
+
+
+# ── Insurance Financial Ledger (OHADA Account 412) ───────────────────────────
+
+@login_required
+def insurance_ledger(request):
+    """
+    OHADA Grand Livre Auxiliaire — Account 412 (Insurance Receivables).
+
+    Full subsidiary ledger per insurance scheme showing:
+      Date | Description | Doc Ref | Debit | Credit | Balance
+
+    OHADA Chart of Accounts:
+      - Class 4 — Third-Party Accounts
+      - Account 412000 — Insurance Receivables (Assurances)
+      - Batch submitted = Dr 412 (insurer owes)
+      - Payment received = Cr 412 (insurer paid)
+      - Claim rejected = Cr 412 (AR reversed)
+    """
+    _allowed = (
+        UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+    )
+    if not (request.user.is_superuser or request.user.role in _allowed):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    from decimal import Decimal
+    from django.core.paginator import Paginator
+    from apps.billing.models import JournalEntry, JournalLine
+
+    scheme_id = request.GET.get('scheme', '')
+    schemes = InsuranceScheme.objects.filter(is_deleted=False).order_by('name')
+    scheme = None
+    ledger = []
+    summary = {}
+
+    if scheme_id:
+        scheme = InsuranceScheme.objects.filter(pk=scheme_id, is_deleted=False).first()
+
+    if scheme:
+        # Build ledger from JournalLines on account 412000
+        from apps.billing.models import GLAccount
+        ar_acct = GLAccount.objects.filter(code='412000', is_active=True).first()
+
+        if ar_acct:
+            # Get all journal lines for this account that reference this scheme
+            jlines = JournalLine.objects.filter(
+                account=ar_acct,
+                entry__is_posted=True,
+            ).select_related('entry').order_by('entry__entry_date', 'entry__created_at')
+
+            # Also build from claims/batches directly for richer data
+            pass
+
+        # Build ledger from claim batches (more useful data)
+        raw = []
+
+        # Batches submitted = AR recognized (Debit 412)
+        batches = ClaimBatch.objects.filter(
+            scheme=scheme, is_deleted=False,
+            status__in=[ClaimBatchStatus.SUBMITTED, ClaimBatchStatus.PROCESSING,
+                        ClaimBatchStatus.PAID, ClaimBatchStatus.PARTIAL],
+        ).order_by('submission_date')
+
+        for b in batches:
+            if b.total_claimed and b.total_claimed > 0:
+                raw.append({
+                    'date': b.submission_date or b.created_at.date(),
+                    'ref_type': 'batch_submit',
+                    'op': f'Claim Batch Submitted — {b.batch_number} ({b.claims.count()} claims)',
+                    'piece': b.batch_number,
+                    'debit': Decimal(str(b.total_claimed)),
+                    'credit': Decimal('0'),
+                    'by': str(b.submitted_by or 'System'),
+                    'ref_id': str(b.pk),
+                })
+
+            # Payment received = AR settled (Credit 412)
+            if b.total_paid and b.total_paid > 0:
+                raw.append({
+                    'date': b.payment_date or b.updated_at.date(),
+                    'ref_type': 'batch_payment',
+                    'op': f'Payment Received — {b.batch_number} — Ref: {b.payment_ref or "N/A"}',
+                    'piece': b.payment_ref or b.batch_number,
+                    'debit': Decimal('0'),
+                    'credit': Decimal(str(b.total_paid)),
+                    'by': str(b.updated_by or 'System'),
+                    'ref_id': str(b.pk),
+                })
+
+        # Rejected claims = AR reversal (Credit 412)
+        rejected_claims = Claim.objects.filter(
+            member__scheme=scheme, is_deleted=False,
+            status=ClaimStatus.REJECTED,
+        ).select_related('member__patient')
+
+        for c in rejected_claims:
+            if c.claimed_amount and c.claimed_amount > 0:
+                raw.append({
+                    'date': c.rejection_date or c.updated_at.date(),
+                    'ref_type': 'claim_reject',
+                    'op': f'Claim Rejected — {c.claim_number} — {c.member.patient.full_name}',
+                    'piece': c.claim_number,
+                    'debit': Decimal('0'),
+                    'credit': Decimal(str(c.claimed_amount)),
+                    'by': str(c.updated_by or 'System'),
+                    'ref_id': str(c.pk),
+                })
+
+        # Sort chronologically
+        raw.sort(key=lambda x: x['date'])
+
+        # Compute running balance
+        balance = Decimal('0')
+        for entry in raw:
+            balance += entry['debit'] - entry['credit']
+            entry['balance'] = balance
+
+        ledger = raw
+
+        total_debit = sum(e['debit'] for e in raw)
+        total_credit = sum(e['credit'] for e in raw)
+
+        summary = {
+            'gl_account': '412000',
+            'gl_label': 'Insurance Receivables',
+            'gl_class': 'Class 4 — Third-Party Accounts',
+            'scheme_name': scheme.name,
+            'scheme_code': scheme.code,
+            'scheme_type': scheme.get_scheme_type_display(),
+            'coverage_pct': scheme.coverage_pct,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'balance': total_debit - total_credit,
+            'batch_count': batches.count(),
+            'rejected_count': rejected_claims.count(),
+        }
+
+    return render(request, 'hmo/insurance_ledger.html', {
+        'scheme': scheme,
+        'schemes': schemes,
+        'ledger': ledger,
+        'summary': summary,
+        'scheme_id': scheme_id,
+    })
+
+
+@login_required
+def insurance_aging(request):
+    """Insurance AR Aging Report — Account 412."""
+    _allowed = (
+        UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+    )
+    if not (request.user.is_superuser or request.user.role in _allowed):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    from decimal import Decimal
+    from datetime import timedelta
+    today = date.today()
+
+    schemes = InsuranceScheme.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    aging_data = []
+
+    for scheme in schemes:
+        # Get all submitted but unpaid batches
+        batches = ClaimBatch.objects.filter(
+            scheme=scheme, is_deleted=False,
+            status__in=[ClaimBatchStatus.SUBMITTED, ClaimBatchStatus.PROCESSING, ClaimBatchStatus.PARTIAL],
+        )
+
+        current = Decimal('0')     # 0-30 days
+        over_30 = Decimal('0')     # 31-60 days
+        over_60 = Decimal('0')     # 61-90 days
+        over_90 = Decimal('0')     # 90+ days
+
+        for b in batches:
+            outstanding = Decimal(str(b.total_claimed or 0)) - Decimal(str(b.total_paid or 0))
+            if outstanding <= 0:
+                continue
+            sub_date = b.submission_date or b.created_at.date()
+            days = (today - sub_date).days
+
+            if days <= 30:
+                current += outstanding
+            elif days <= 60:
+                over_30 += outstanding
+            elif days <= 90:
+                over_60 += outstanding
+            else:
+                over_90 += outstanding
+
+        total = current + over_30 + over_60 + over_90
+        if total > 0:
+            aging_data.append({
+                'scheme': scheme,
+                'current': current,
+                'over_30': over_30,
+                'over_60': over_60,
+                'over_90': over_90,
+                'total': total,
+            })
+
+    grand_total = sum(d['total'] for d in aging_data)
+
+    return render(request, 'hmo/insurance_aging.html', {
+        'aging_data': aging_data,
+        'grand_total': grand_total,
+    })
 
 
 # ── AJAX: patient search for member enrolment form ────────────────────────────

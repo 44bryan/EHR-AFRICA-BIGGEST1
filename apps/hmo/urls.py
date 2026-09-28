@@ -38,6 +38,10 @@ urlpatterns = [
     path('claims/<uuid:claim_id>/', views.claim_detail, name='claim_detail'),
     path('claims/<uuid:claim_id>/reject/', views.claim_reject, name='claim_reject'),
 
+    # Accounting / Ledger
+    path('ledger/', views.insurance_ledger, name='insurance_ledger'),
+    path('aging/', views.insurance_aging, name='insurance_aging'),
+
     # AJAX
     path('ajax/patient-search/', views.patient_search_ajax, name='patient_search_ajax'),
 ]
