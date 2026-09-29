@@ -128,7 +128,36 @@
 </div>
 {% endif %}
 
-{% if not deleted_vendors and not deleted_quotations and not deleted_items and not deleted_pos %}
+{% if deleted_invoices %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white fw-semibold small"><i class="bi bi-receipt me-1"></i>Deleted Supplier Invoices ({{ deleted_invoices|length }})</div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+      <thead class="table-light"><tr><th>Invoice #</th><th>Vendor</th><th class="text-end">Amount</th><th>Status</th><th>Deleted</th><th></th></tr></thead>
+      <tbody>
+      {% for inv in deleted_invoices %}
+      <tr>
+        <td>{{ inv.invoice_number }}</td>
+        <td>{{ inv.vendor.name }}</td>
+        <td class="text-end">{{ inv.total_amount|intcomma }} F</td>
+        <td><span class="badge bg-secondary">{{ inv.get_status_display }}</span></td>
+        <td class="text-muted small">{{ inv.deleted_at|date:"d/m/Y H:i" }}</td>
+        <td>
+          <form method="post" action="{% url 'inventory:recycle_restore' model_type='invoice' obj_id=inv.pk %}" class="d-inline"
+                onsubmit="return confirm('Restore invoice {{ inv.invoice_number }}?')">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-success py-0"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not deleted_vendors and not deleted_quotations and not deleted_items and not deleted_pos and not deleted_invoices %}
 <div class="text-center text-muted py-5">
   <i class="bi bi-recycle fs-1 d-block mb-2"></i>
   Recycle bin is empty — no deleted records.

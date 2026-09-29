@@ -25,6 +25,8 @@ urlpatterns = [
     path('purchase-orders/', views.purchase_order_list, name='po_list'),
     path('purchase-orders/create/', views.po_create, name='po_create'),
     path('purchase-orders/<uuid:po_id>/', views.po_detail, name='po_detail'),
+    path('purchase-orders/<uuid:po_id>/edit/', views.po_edit, name='po_edit'),
+    path('purchase-orders/<uuid:po_id>/delete/', views.po_delete, name='po_delete'),
     path('purchase-orders/<uuid:po_id>/receive/', views.po_receive, name='po_receive'),
 
     # Department Requisitions
@@ -154,6 +156,8 @@ urlpatterns = [
     path('supplier-invoices/', views.supplier_invoice_list, name='supplier_invoice_list'),
     path('supplier-invoices/create/', views.supplier_invoice_create, name='supplier_invoice_create'),
     path('supplier-invoices/<uuid:invoice_id>/', views.supplier_invoice_detail, name='supplier_invoice_detail'),
+    path('supplier-invoices/<uuid:invoice_id>/edit/', views.supplier_invoice_edit, name='supplier_invoice_edit'),
+    path('supplier-invoices/<uuid:invoice_id>/delete/', views.supplier_invoice_delete, name='supplier_invoice_delete'),
 
     # ── 3-Way Match ────────────────────────────────────────────
     path('three-way-match/', views.three_way_match_list, name='three_way_match_list'),

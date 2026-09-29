@@ -1,13 +1,13 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Record Supplier Invoice{% endblock %}
+{% block title %}{% if action == 'Edit' %}Edit Invoice {{ si.invoice_number }}{% else %}Record Supplier Invoice{% endif %}{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
     <div>
-      <h5 class="mb-0 fw-bold">Record Supplier Invoice</h5>
-      <div class="text-muted small">Enter vendor invoice details and line items for three-way matching</div>
+      <h5 class="mb-0 fw-bold">{% if action == 'Edit' %}Edit Supplier Invoice {{ si.invoice_number }}{% else %}Record Supplier Invoice{% endif %}</h5>
+      <div class="text-muted small">{% if action == 'Edit' %}Modify invoice details and line items{% else %}Enter vendor invoice details and line items for three-way matching{% endif %}</div>
     </div>
   </div>
   <a href="{% url 'inventory:supplier_invoice_list' %}" class="btn btn-outline-secondary btn-sm">
@@ -17,7 +17,7 @@
 {% endblock %}
 
 {% block content %}
-<form method="post" action="{% url 'inventory:supplier_invoice_create' %}">
+<form method="post">
   {% csrf_token %}
 
   <!-- Invoice header -->
@@ -32,7 +32,7 @@
           <select name="vendor_id" id="vendor_id" class="form-select ts-select" required>
             <option value="">-- Select vendor --</option>
             {% for v in vendors %}
-            <option value="{{ v.id }}">{{ v.name }}</option>
+            <option value="{{ v.id }}" {% if si and si.vendor_id == v.id %}selected{% endif %}>{{ v.name }}</option>
             {% endfor %}
           </select>
         </div>
@@ -41,7 +41,7 @@
           <select name="purchase_order_id" id="purchase_order_id" class="form-select ts-select">
             <option value="">-- None --</option>
             {% for po in purchase_orders %}
-            <option value="{{ po.id }}">{{ po.po_number }}</option>
+            <option value="{{ po.id }}" {% if si and si.purchase_order_id == po.id %}selected{% endif %}>{{ po.po_number }}</option>
             {% endfor %}
           </select>
           <div class="form-text">Optional. Link to an existing PO for matching.</div>
@@ -51,7 +51,7 @@
           <select name="grn_id" id="grn_id" class="form-select ts-select">
             <option value="">-- None --</option>
             {% for g in grns %}
-            <option value="{{ g.id }}">{{ g.grn_number }}</option>
+            <option value="{{ g.id }}" {% if si and si.grn_id == g.id %}selected{% endif %}>{{ g.grn_number }}</option>
             {% endfor %}
           </select>
           <div class="form-text">Optional. Link to a Goods Received Note.</div>
@@ -61,15 +61,17 @@
         <div class="col-md-4">
           <label for="invoice_number" class="form-label fw-semibold">Invoice Number <span class="text-danger">*</span></label>
           <input type="text" name="invoice_number" id="invoice_number" class="form-control" required
-                 placeholder="e.g. INV-2026-0045">
+                 placeholder="e.g. INV-2026-0045" value="{{ si.invoice_number|default:'' }}">
         </div>
         <div class="col-md-4">
           <label for="invoice_date" class="form-label fw-semibold">Invoice Date <span class="text-danger">*</span></label>
-          <input type="date" name="invoice_date" id="invoice_date" class="form-control" required>
+          <input type="date" name="invoice_date" id="invoice_date" class="form-control" required
+                 value="{% if si and si.invoice_date %}{{ si.invoice_date|date:'Y-m-d' }}{% endif %}">
         </div>
         <div class="col-md-4">
           <label for="due_date" class="form-label fw-semibold">Due Date</label>
-          <input type="date" name="due_date" id="due_date" class="form-control">
+          <input type="date" name="due_date" id="due_date" class="form-control"
+                 value="{% if si and si.due_date %}{{ si.due_date|date:'Y-m-d' }}{% endif %}">
         </div>
       </div>
     </div>
@@ -96,6 +98,32 @@
             </tr>
           </thead>
           <tbody id="line-items-body">
+            {% if si_items %}
+              {% for line in si_items %}
+              <tr class="line-row">
+                <td>
+                  <select name="item_id[]" class="form-select form-select-sm" required>
+                    <option value="">-- Select item --</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}" {% if item.id == line.item_id %}selected{% endif %}>{{ item.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <input type="number" name="quantity[]" class="form-control form-control-sm qty-input" min="1" step="1" value="{{ line.quantity }}" required oninput="calcSubtotal(this)">
+                </td>
+                <td>
+                  <input type="number" name="unit_price[]" class="form-control form-control-sm price-input" min="0" step="0.01" value="{{ line.unit_price }}" required oninput="calcSubtotal(this)">
+                </td>
+                <td class="text-end fw-semibold subtotal-cell">{{ line.line_total|intcomma }}</td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="removeRow(this)" title="Remove row">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
             <tr class="line-row">
               <td>
                 <select name="item_id[]" class="form-select form-select-sm" required>
@@ -118,11 +146,12 @@
                 </button>
               </td>
             </tr>
+            {% endif %}
           </tbody>
           <tfoot class="table-light">
             <tr>
               <td colspan="3" class="text-end fw-bold">Total</td>
-              <td class="text-end fw-bold" id="grand-total">0</td>
+              <td class="text-end fw-bold" id="grand-total">{% if si %}{{ si.total_amount|intcomma }}{% else %}0{% endif %}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -138,7 +167,7 @@
     </div>
     <div class="card-body">
       <textarea name="notes" id="notes" class="form-control" rows="3"
-                placeholder="Additional notes about this invoice..."></textarea>
+                placeholder="Additional notes about this invoice...">{{ si.notes|default:'' }}</textarea>
     </div>
   </div>
 
@@ -146,7 +175,7 @@
   <div class="d-flex justify-content-end gap-2">
     <a href="{% url 'inventory:supplier_invoice_list' %}" class="btn btn-outline-secondary">Cancel</a>
     <button type="submit" class="btn btn-primary">
-      <i class="bi bi-check-lg me-1"></i>Record Invoice
+      <i class="bi bi-{% if action == 'Edit' %}save{% else %}check-lg{% endif %} me-1"></i>{% if action == 'Edit' %}Save Changes{% else %}Record Invoice{% endif %}
     </button>
   </div>
 </form>
@@ -156,7 +185,6 @@ function addRow() {
   var tbody = document.getElementById('line-items-body');
   var firstRow = tbody.querySelector('.line-row');
   var newRow = firstRow.cloneNode(true);
-  /* Reset values */
   var selects = newRow.querySelectorAll('select');
   selects.forEach(function(s) { s.selectedIndex = 0; });
   var inputs = newRow.querySelectorAll('input');
@@ -170,7 +198,7 @@ function addRow() {
 
 function removeRow(btn) {
   var tbody = document.getElementById('line-items-body');
-  if (tbody.querySelectorAll('.line-row').length <= 1) return; /* keep at least one row */
+  if (tbody.querySelectorAll('.line-row').length <= 1) return;
   btn.closest('tr').remove();
   updateGrandTotal();
 }

@@ -1,10 +1,10 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Create Purchase Order{% endblock %}
+{% block title %}{% if action == 'Edit' %}Edit PO {{ po.po_number }}{% else %}Create Purchase Order{% endif %}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">New Purchase Order</h1>
+  <h1 class="h3 mb-0">{% if action == 'Edit' %}Edit Purchase Order {{ po.po_number }}{% else %}New Purchase Order{% endif %}</h1>
   <a href="{% url 'inventory:po_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
 </div>
 
@@ -20,17 +20,18 @@
             <select name="vendor_id" class="form-select ts-select" required>
               <option value="">— select vendor —</option>
               {% for v in vendors %}
-              <option value="{{ v.id }}">{{ v.name }}</option>
+              <option value="{{ v.id }}" {% if po and po.vendor_id == v.id %}selected{% endif %}>{{ v.name }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Expected Delivery</label>
-            <input type="date" name="expected_date" class="form-control" />
+            <input type="date" name="expected_date" class="form-control"
+                   value="{% if po and po.expected_date %}{{ po.expected_date|date:'Y-m-d' }}{% endif %}" />
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Notes</label>
-            <textarea name="notes" class="form-control" rows="3"></textarea>
+            <textarea name="notes" class="form-control" rows="3">{{ po.notes|default:'' }}</textarea>
           </div>
         </div>
       </div>
@@ -49,7 +50,7 @@
         </div>
         <div class="card-footer bg-white">
           <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-send me-1"></i>Submit PO
+            <i class="bi bi-{% if action == 'Edit' %}save{% else %}send{% endif %} me-1"></i>{% if action == 'Edit' %}Save Changes{% else %}Submit PO{% endif %}
           </button>
         </div>
       </div>
@@ -75,11 +76,29 @@
               </tr>
             </thead>
             <tbody id="lineBody">
+              {% if po_items %}
+                {% for line in po_items %}
+                <tr>
+                  <td>
+                    <select name="item_id[]" class="form-select form-select-sm" onchange="fillCost(this)" required>
+                      {% for i in items %}
+                      <option value="{{ i.id }}" data-cost="{{ i.unit_cost|default:0 }}" {% if i.id == line.item_id %}selected{% endif %}>{{ i.item_code }} — {{ i.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="{{ line.quantity_ordered }}" onchange="recalc()" required /></td>
+                  <td><input type="number" name="unit_price[]" class="form-control form-control-sm" step="0.01" min="0" value="{{ line.unit_price }}" onchange="recalc()" required /></td>
+                  <td class="text-end fw-semibold subtotal-cell">{{ line.subtotal|floatformat:0|intcomma }}</td>
+                  <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove();recalc()"><i class="bi bi-trash"></i></button></td>
+                </tr>
+                {% endfor %}
+              {% else %}
               <tr id="emptyRow">
                 <td colspan="5" class="text-center text-muted py-3">
                   Click "Add Item" to build your order.
                 </td>
               </tr>
+              {% endif %}
             </tbody>
           </table>
         </div>
@@ -98,7 +117,6 @@ const ITEMS = [
 function addLine() {
   document.getElementById('emptyRow')?.remove();
   const tbody = document.getElementById('lineBody');
-  const idx = tbody.rows.length;
   const opts = ITEMS.map(i => `<option value="${i.id}" data-cost="${i.cost}">${i.code} — ${i.name}</option>`).join('');
   const row = document.createElement('tr');
   row.innerHTML = `
@@ -133,6 +151,8 @@ function recalc() {
   document.getElementById('grandTotal').textContent = total.toLocaleString() + ' FCFA';
   document.getElementById('lineCount').textContent = count;
 }
+
+{% if po_items %}document.addEventListener('DOMContentLoaded', recalc);{% endif %}
 </script>
 {% endblock %}
 

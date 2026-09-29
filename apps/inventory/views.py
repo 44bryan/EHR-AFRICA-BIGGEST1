@@ -466,6 +466,74 @@ def po_detail(request, po_id):
 
 
 @login_required
+def po_edit(request, po_id):
+    """Edit PO — only SUBMITTED status (before finance approval)."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    if po.status not in ('DRAFT', 'SUBMITTED'):
+        messages.error(request, f'Cannot edit PO {po.po_number} — status is {po.get_status_display()}.')
+        return redirect('inventory:po_detail', po_id=po.pk)
+
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        vendor_id = request.POST.get('vendor_id')
+        if vendor_id:
+            po.vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
+        po.expected_date = request.POST.get('expected_date') or None
+        po.notes = request.POST.get('notes', '').strip()
+        po.save(update_fields=['vendor', 'expected_date', 'notes'])
+
+        # Replace line items
+        po.items.all().delete()
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        unit_prices = request.POST.getlist('unit_price[]')
+        total = Decimal('0')
+        for item_id, qty_str, price_str in zip(item_ids, quantities, unit_prices):
+            if not item_id or not qty_str:
+                continue
+            try:
+                qty = int(qty_str)
+                price = Decimal(price_str or '0')
+                PurchaseOrderItem.objects.create(
+                    purchase_order=po, item_id=item_id,
+                    quantity_ordered=qty, unit_price=price, subtotal=qty * price,
+                )
+                total += qty * price
+            except (ValueError, InventoryItem.DoesNotExist):
+                continue
+        po.total_amount = total
+        po.save(update_fields=['total_amount'])
+        messages.success(request, f'PO {po.po_number} updated.')
+        return redirect('inventory:po_detail', po_id=po.pk)
+
+    return render(request, 'inventory/po_create.html', {
+        'vendors': vendors, 'items': items, 'today': timezone.localdate(),
+        'po': po, 'po_items': po.items.select_related('item').all(),
+        'action': 'Edit',
+    })
+
+
+@login_required
+def po_delete(request, po_id):
+    """Soft-delete PO — only before receiving."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    po = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
+    if request.method == 'POST':
+        if po.status == 'RECEIVED':
+            messages.error(request, f'Cannot delete PO {po.po_number} — already received.')
+            return redirect('inventory:po_detail', po_id=po.pk)
+        po.soft_delete()
+        messages.success(request, f'PO {po.po_number} moved to recycle bin.')
+        return redirect('inventory:po_list')
+    return redirect('inventory:po_list')
+
+
+@login_required
 def po_receive(request, po_id):
     if not _can_manage_store(request.user):
         from django.http import HttpResponseForbidden
@@ -2620,11 +2688,13 @@ def recycle_bin(request):
     deleted_quotations = SupplierQuotation.objects.filter(is_deleted=True).select_related('vendor').order_by('-deleted_at')[:50]
     deleted_items = InventoryItem.objects.filter(is_deleted=True).order_by('-deleted_at')[:50]
     deleted_pos = PurchaseOrder.objects.filter(is_deleted=True).select_related('vendor').order_by('-deleted_at')[:50]
+    deleted_invoices = SupplierInvoice.objects.filter(is_deleted=True).select_related('vendor').order_by('-deleted_at')[:50]
     return render(request, 'inventory/recycle_bin.html', {
         'deleted_vendors': deleted_vendors,
         'deleted_quotations': deleted_quotations,
         'deleted_items': deleted_items,
         'deleted_pos': deleted_pos,
+        'deleted_invoices': deleted_invoices,
     })
 
 
@@ -2640,6 +2710,7 @@ def recycle_restore(request, model_type, obj_id):
         'quotation': SupplierQuotation,
         'item': InventoryItem,
         'po': PurchaseOrder,
+        'invoice': SupplierInvoice,
     }
     model_cls = model_map.get(model_type)
     if not model_cls:
@@ -3571,6 +3642,82 @@ def supplier_invoice_detail(request, invoice_id):
     return render(request, 'inventory/supplier_invoice_detail.html', {
         'si': si, 'si_items': si_items, 'matches': matches,
     })
+
+
+@login_required
+def supplier_invoice_edit(request, invoice_id):
+    """Edit supplier invoice — only RECEIVED status (before matching)."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    si = get_object_or_404(SupplierInvoice, id=invoice_id, is_deleted=False)
+    if si.status != 'RECEIVED':
+        messages.error(request, f'Cannot edit invoice {si.invoice_number} — status is {si.get_status_display()}.')
+        return redirect('inventory:supplier_invoice_detail', invoice_id=si.pk)
+
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    pos = PurchaseOrder.objects.filter(is_deleted=False, status__in=['APPROVED', 'RECEIVED']).order_by('-ordered_date')
+    grns = GoodsReceivedNote.objects.filter(is_deleted=False, status__in=['ACCEPTED', 'AWAITING_VALIDATION', 'VALIDATED']).order_by('-received_date')
+    items_qs = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        vendor_id = request.POST.get('vendor_id')
+        if vendor_id:
+            si.vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
+        si.purchase_order_id = request.POST.get('purchase_order_id', '').strip() or None
+        si.grn_id = request.POST.get('grn_id', '').strip() or None
+        si.invoice_number = request.POST.get('invoice_number', '').strip() or si.invoice_number
+        si.invoice_date = request.POST.get('invoice_date', '') or si.invoice_date
+        si.due_date = request.POST.get('due_date', '') or None
+        si.notes = request.POST.get('notes', '').strip()
+        si.updated_by = request.user
+        si.save(update_fields=['vendor', 'purchase_order', 'grn', 'invoice_number', 'invoice_date',
+                               'due_date', 'notes', 'updated_by'])
+
+        # Replace line items
+        si.items.all().delete()
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        unit_prices = request.POST.getlist('unit_price[]')
+        total = Decimal('0')
+        for item_id, qty_str, price_str in zip(item_ids, quantities, unit_prices):
+            if not item_id or not qty_str:
+                continue
+            try:
+                qty = int(qty_str)
+                price = Decimal(price_str or '0')
+                SupplierInvoiceItem.objects.create(
+                    supplier_invoice=si, item_id=item_id,
+                    quantity=qty, unit_price=price,
+                )
+                total += qty * price
+            except (ValueError, Exception):
+                continue
+        si.total_amount = total
+        si.save(update_fields=['total_amount'])
+        messages.success(request, f'Invoice {si.invoice_number} updated.')
+        return redirect('inventory:supplier_invoice_detail', invoice_id=si.pk)
+
+    return render(request, 'inventory/supplier_invoice_form.html', {
+        'vendors': vendors, 'purchase_orders': pos, 'grns': grns, 'items': items_qs,
+        'si': si, 'si_items': si.items.select_related('item').all(),
+        'action': 'Edit',
+    })
+
+
+@login_required
+def supplier_invoice_delete(request, invoice_id):
+    """Soft-delete supplier invoice — only before matching/payment."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    si = get_object_or_404(SupplierInvoice, id=invoice_id, is_deleted=False)
+    if request.method == 'POST':
+        if si.status in ('MATCHED', 'PAID'):
+            messages.error(request, f'Cannot delete invoice {si.invoice_number} — status is {si.get_status_display()}.')
+            return redirect('inventory:supplier_invoice_detail', invoice_id=si.pk)
+        si.soft_delete()
+        messages.success(request, f'Invoice {si.invoice_number} moved to recycle bin.')
+        return redirect('inventory:supplier_invoice_list')
+    return redirect('inventory:supplier_invoice_list')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
