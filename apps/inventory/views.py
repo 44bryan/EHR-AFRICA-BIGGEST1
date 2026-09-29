@@ -2542,6 +2542,117 @@ def quotation_update(request, rfq_id):
 
 
 @login_required
+def quotation_edit(request, rfq_id):
+    """Edit quotation header + line items (only REQUESTED/RECEIVED)."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
+    if q.status not in ('REQUESTED', 'RECEIVED'):
+        messages.error(request, f'Cannot edit quotation {q.rfq_number} — status is {q.get_status_display()}.')
+        return redirect('inventory:quotation_detail', rfq_id=q.pk)
+
+    vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        # Update header
+        vendor_id = request.POST.get('vendor_id')
+        if vendor_id:
+            q.vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
+        q.valid_until = request.POST.get('valid_until') or None
+        q.notes = request.POST.get('notes', '').strip()
+        q.updated_by = request.user
+        q.save(update_fields=['vendor', 'valid_until', 'notes', 'updated_by'])
+
+        # Replace line items
+        q.items.all().delete()
+        item_ids = request.POST.getlist('item_id[]')
+        quantities = request.POST.getlist('quantity[]')
+        prices = request.POST.getlist('price[]')
+        total = Decimal('0')
+        for item_id, qty_str, price_str in zip(item_ids, quantities, prices):
+            if not item_id or not qty_str:
+                continue
+            try:
+                qty = int(qty_str)
+                price = Decimal(price_str or '0')
+                QuotationItem.objects.create(
+                    quotation=q, item_id=item_id,
+                    quantity=qty, quoted_price=price,
+                )
+                total += qty * price
+            except (ValueError, InventoryItem.DoesNotExist):
+                continue
+        q.total_amount = total
+        q.save(update_fields=['total_amount'])
+        messages.success(request, f'Quotation {q.rfq_number} updated.')
+        return redirect('inventory:quotation_detail', rfq_id=q.pk)
+
+    return render(request, 'inventory/quotation_form.html', {
+        'vendors': vendors, 'items': items, 'action': 'Edit',
+        'quotation': q,
+        'quotation_items': q.items.select_related('item').all(),
+    })
+
+
+@login_required
+def quotation_delete(request, rfq_id):
+    """Soft-delete quotation — preserved in recycle bin for audit."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
+    if request.method == 'POST':
+        if q.linked_po:
+            messages.error(request, f'Cannot delete {q.rfq_number} — linked to PO {q.linked_po.po_number}.')
+            return redirect('inventory:quotation_detail', rfq_id=q.pk)
+        q.soft_delete()
+        messages.success(request, f'Quotation {q.rfq_number} moved to recycle bin.')
+        return redirect('inventory:quotation_list')
+    return redirect('inventory:quotation_list')
+
+
+@login_required
+def recycle_bin(request):
+    """Super Admin audit: view all soft-deleted inventory records."""
+    if not request.user.is_super_admin and not request.user.is_admin_director:
+        return HttpResponseForbidden('Access denied.')
+    deleted_vendors = Vendor.objects.filter(is_deleted=True).order_by('-deleted_at')[:50]
+    deleted_quotations = SupplierQuotation.objects.filter(is_deleted=True).select_related('vendor').order_by('-deleted_at')[:50]
+    deleted_items = InventoryItem.objects.filter(is_deleted=True).order_by('-deleted_at')[:50]
+    deleted_pos = PurchaseOrder.objects.filter(is_deleted=True).select_related('vendor').order_by('-deleted_at')[:50]
+    return render(request, 'inventory/recycle_bin.html', {
+        'deleted_vendors': deleted_vendors,
+        'deleted_quotations': deleted_quotations,
+        'deleted_items': deleted_items,
+        'deleted_pos': deleted_pos,
+    })
+
+
+@login_required
+def recycle_restore(request, model_type, obj_id):
+    """Restore a soft-deleted record from recycle bin."""
+    if not request.user.is_super_admin and not request.user.is_admin_director:
+        return HttpResponseForbidden('Access denied.')
+    if request.method != 'POST':
+        return redirect('inventory:recycle_bin')
+    model_map = {
+        'vendor': Vendor,
+        'quotation': SupplierQuotation,
+        'item': InventoryItem,
+        'po': PurchaseOrder,
+    }
+    model_cls = model_map.get(model_type)
+    if not model_cls:
+        return HttpResponseForbidden('Invalid type.')
+    obj = get_object_or_404(model_cls, pk=obj_id, is_deleted=True)
+    obj.is_deleted = False
+    obj.deleted_at = None
+    obj.save(update_fields=['is_deleted', 'deleted_at'])
+    messages.success(request, f'{model_type.title()} "{obj}" restored.')
+    return redirect('inventory:recycle_bin')
+
+
+@login_required
 def quotation_compare(request):
     """Compare quotations for the same items side-by-side."""
     if not _can_access_store(request.user) and not _can_manage_procurement(request.user):

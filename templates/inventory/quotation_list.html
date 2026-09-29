@@ -40,7 +40,19 @@
           {% else %}<span class="badge bg-secondary">{{ q.get_status_display }}</span>{% endif %}
         </td>
         <td>{% if q.linked_po %}<a href="{% url 'inventory:po_detail' po_id=q.linked_po_id %}">{{ q.linked_po.po_number }}</a>{% else %}—{% endif %}</td>
-        <td><a href="{% url 'inventory:quotation_detail' rfq_id=q.pk %}" class="btn btn-sm btn-outline-primary py-0">View</a></td>
+        <td class="text-nowrap">
+          <a href="{% url 'inventory:quotation_detail' rfq_id=q.pk %}" class="btn btn-sm btn-outline-primary py-0" title="View"><i class="bi bi-eye"></i></a>
+          {% if q.status == 'REQUESTED' or q.status == 'RECEIVED' %}
+          <a href="{% url 'inventory:quotation_edit' rfq_id=q.pk %}" class="btn btn-sm btn-outline-secondary py-0" title="Edit"><i class="bi bi-pencil"></i></a>
+          {% endif %}
+          {% if not q.linked_po %}
+          <form method="post" action="{% url 'inventory:quotation_delete' rfq_id=q.pk %}" class="d-inline"
+                onsubmit="return confirm('Delete quotation {{ q.rfq_number }}? It will be moved to the recycle bin.')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Delete"><i class="bi bi-trash"></i></button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
       <tr><td colspan="8" class="text-center text-muted py-3">No quotations yet</td></tr>

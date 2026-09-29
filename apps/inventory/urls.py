@@ -114,6 +114,12 @@ urlpatterns = [
     path('quotations/compare/', views.quotation_compare, name='quotation_compare'),
     path('quotations/<uuid:rfq_id>/', views.quotation_detail, name='quotation_detail'),
     path('quotations/<uuid:rfq_id>/update/', views.quotation_update, name='quotation_update'),
+    path('quotations/<uuid:rfq_id>/edit/', views.quotation_edit, name='quotation_edit'),
+    path('quotations/<uuid:rfq_id>/delete/', views.quotation_delete, name='quotation_delete'),
+
+    # ── Recycle Bin (Super Admin audit) ─────────────────────────────
+    path('recycle-bin/', views.recycle_bin, name='recycle_bin'),
+    path('recycle-bin/<str:model_type>/<uuid:obj_id>/restore/', views.recycle_restore, name='recycle_restore'),
 
     # ── NEW: Budget ──────────────────────────────────────────────────
     path('budget/', views.budget_list, name='budget_list'),
