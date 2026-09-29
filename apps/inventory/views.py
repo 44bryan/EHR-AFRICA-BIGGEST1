@@ -527,7 +527,11 @@ def po_delete(request, po_id):
         if po.status == 'RECEIVED':
             messages.error(request, f'Cannot delete PO {po.po_number} — already received.')
             return redirect('inventory:po_detail', po_id=po.pk)
-        po.soft_delete()
+        reason = request.POST.get('deletion_reason', '').strip()
+        if not reason:
+            messages.error(request, 'A deletion reason is required.')
+            return redirect('inventory:po_detail', po_id=po.pk)
+        po.soft_delete(user=request.user, reason=reason)
         messages.success(request, f'PO {po.po_number} moved to recycle bin.')
         return redirect('inventory:po_list')
     return redirect('inventory:po_list')
@@ -692,7 +696,11 @@ def vendor_delete(request, vendor_id):
         if active_pos:
             messages.error(request, f'Cannot delete "{vendor.name}" — {active_pos} active purchase order(s) linked.')
             return redirect('inventory:vendor_list')
-        vendor.soft_delete()
+        reason = request.POST.get('deletion_reason', '').strip()
+        if not reason:
+            messages.error(request, 'A deletion reason is required.')
+            return redirect('inventory:vendor_list')
+        vendor.soft_delete(user=request.user, reason=reason)
         messages.success(request, f'Vendor "{vendor.name}" deleted.')
         return redirect('inventory:vendor_list')
     return redirect('inventory:vendor_list')
@@ -2698,7 +2706,11 @@ def quotation_delete(request, rfq_id):
         if q.linked_po:
             messages.error(request, f'Cannot delete {q.rfq_number} — linked to PO {q.linked_po.po_number}.')
             return redirect('inventory:quotation_detail', rfq_id=q.pk)
-        q.soft_delete()
+        reason = request.POST.get('deletion_reason', '').strip()
+        if not reason:
+            messages.error(request, 'A deletion reason is required.')
+            return redirect('inventory:quotation_detail', rfq_id=q.pk)
+        q.soft_delete(user=request.user, reason=reason)
         messages.success(request, f'Quotation {q.rfq_number} moved to recycle bin.')
         return redirect('inventory:quotation_list')
     return redirect('inventory:quotation_list')
@@ -3856,7 +3868,11 @@ def supplier_invoice_delete(request, invoice_id):
         if si.status in ('MATCHED', 'PAID'):
             messages.error(request, f'Cannot delete invoice {si.invoice_number} — status is {si.get_status_display()}.')
             return redirect('inventory:supplier_invoice_detail', invoice_id=si.pk)
-        si.soft_delete()
+        reason = request.POST.get('deletion_reason', '').strip()
+        if not reason:
+            messages.error(request, 'A deletion reason is required.')
+            return redirect('inventory:supplier_invoice_detail', invoice_id=si.pk)
+        si.soft_delete(user=request.user, reason=reason)
         messages.success(request, f'Invoice {si.invoice_number} moved to recycle bin.')
         return redirect('inventory:supplier_invoice_list')
     return redirect('inventory:supplier_invoice_list')

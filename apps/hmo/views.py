@@ -65,12 +65,26 @@ def hmo_dashboard(request):
     schemes = InsuranceScheme.objects.filter(is_deleted=False, is_active=True)
     today = timezone.localdate()
 
+    from django.db.models import Sum as _S
+
+    # Financial totals YTD
+    ytd_start = today.replace(month=1, day=1)
+    ytd_claims = Claim.objects.filter(is_deleted=False, service_date__gte=ytd_start)
+    ytd_agg = ytd_claims.aggregate(
+        total_claimed=_S('claimed_amount'),
+        total_approved=_S('approved_amount'),
+        total_paid=_S('paid_amount'),
+    )
+
     stats = {
         'active_schemes': schemes.count(),
         'active_members': InsuredMember.objects.filter(is_deleted=False, is_active=True).count(),
         'pending_preauths': PreAuthorization.objects.filter(is_deleted=False, status=PreAuthStatus.PENDING).count(),
         'open_claims': Claim.objects.filter(is_deleted=False, status__in=[ClaimStatus.DRAFT, ClaimStatus.SUBMITTED]).count(),
         'batches_draft': ClaimBatch.objects.filter(is_deleted=False, status=ClaimBatchStatus.DRAFT).count(),
+        'total_claimed': ytd_agg['total_claimed'] or 0,
+        'total_approved': ytd_agg['total_approved'] or 0,
+        'total_paid': ytd_agg['total_paid'] or 0,
     }
 
     recent_claims = Claim.objects.filter(
@@ -81,11 +95,16 @@ def hmo_dashboard(request):
         is_deleted=False, status=PreAuthStatus.PENDING
     ).select_related('member__patient', 'member__scheme').order_by('-requested_at')[:8]
 
+    draft_batches = ClaimBatch.objects.filter(
+        is_deleted=False, status=ClaimBatchStatus.DRAFT
+    ).select_related('scheme').order_by('-created_at')[:5]
+
     return render(request, 'hmo/dashboard.html', {
         'stats': stats,
         'recent_claims': recent_claims,
         'pending_auths': pending_auths,
         'schemes': schemes,
+        'draft_batches': draft_batches,
     })
 
 

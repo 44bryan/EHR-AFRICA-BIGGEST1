@@ -1,0 +1,56 @@
+{% comment %}
+Reusable delete-with-reason confirmation modal.
+Include this once per page, then trigger with:
+  ehrConfirmDelete(formAction, itemName)
+
+The modal enforces a mandatory deletion reason before submitting.
+{% endcomment %}
+
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" id="deleteConfirmForm">
+        {% csrf_token %}
+        <div class="modal-header bg-danger-subtle border-0 py-2">
+          <h6 class="modal-title fw-bold text-danger">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion
+          </h6>
+          <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-3">
+            You are about to delete: <strong id="deleteItemName"></strong>
+          </p>
+          <p class="text-muted small mb-2">
+            This action moves the record to the recycle bin. A reason is <strong>required</strong> for the audit trail.
+          </p>
+          <div class="mb-0">
+            <label for="deletionReasonInput" class="form-label fw-semibold small">Reason for deletion <span class="text-danger">*</span></label>
+            <textarea name="deletion_reason" id="deletionReasonInput" class="form-control" rows="3"
+                      required minlength="5" maxlength="500"
+                      placeholder="e.g. Duplicate entry, Created in error, Replaced by..."></textarea>
+            <div class="form-text">Minimum 5 characters. This will be recorded in the audit log.</div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-danger" id="deleteConfirmBtn">
+            <i class="bi bi-trash3 me-1"></i>Delete
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function ehrConfirmDelete(formAction, itemName) {
+  var modal = document.getElementById('deleteConfirmModal');
+  document.getElementById('deleteConfirmForm').action = formAction;
+  document.getElementById('deleteItemName').textContent = itemName || 'this record';
+  document.getElementById('deletionReasonInput').value = '';
+  var bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+  bsModal.show();
+  setTimeout(function(){ document.getElementById('deletionReasonInput').focus(); }, 300);
+}
+</script>

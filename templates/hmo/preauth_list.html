@@ -1,50 +1,97 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Pre-Authorisations{% endblock %}
+
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center">
-  <h5 class="mb-0 fw-bold">Pre-Authorisations</h5>
-  <a href="{% url 'hmo:preauth_create' %}" class="btn btn-warning btn-sm text-dark">New Request</a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0 fw-bold">Pre-Authorisations</h4>
+    <small class="text-muted">Review and approve insurance pre-authorisation requests</small>
+  </div>
+  <a href="{% url 'hmo:preauth_create' %}" class="btn btn-warning btn-sm text-dark"><i class="bi bi-plus-lg me-1"></i>New Request</a>
 </div>
 {% endblock %}
+
 {% block content %}
+<!-- Status Filter Pills -->
 <div class="d-flex gap-2 mb-3 flex-wrap">
-  <a href="?status=" class="btn btn-sm {% if not status_filter %}btn-secondary{% else %}btn-outline-secondary{% endif %}">All</a>
+  <a href="?status=" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3">
+    <i class="bi bi-grid me-1"></i>All
+  </a>
   {% for val, label in status_choices %}
-  <a href="?status={{ val }}" class="btn btn-sm {% if status_filter == val %}btn-secondary{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+  <a href="?status={{ val }}" class="btn btn-sm {% if status_filter == val %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3">
+    {% if val == 'PENDING' %}<i class="bi bi-hourglass-split me-1"></i>
+    {% elif val == 'APPROVED' %}<i class="bi bi-check-circle me-1"></i>
+    {% elif val == 'REJECTED' %}<i class="bi bi-x-circle me-1"></i>
+    {% elif val == 'EXPIRED' %}<i class="bi bi-clock-history me-1"></i>
+    {% endif %}{{ label }}
+  </a>
   {% endfor %}
 </div>
+
+<!-- Pre-Auth Table -->
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
-        <thead class="table-light">
-          <tr><th>Patient</th><th>Scheme</th><th>Service</th><th>Estimated</th><th>Requested</th><th>Status</th><th></th></tr>
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr class="small text-muted text-uppercase" style="font-size:0.75rem;letter-spacing:0.05em">
+            <th class="border-0 ps-3 py-3">Patient</th>
+            <th class="border-0 py-3">Scheme</th>
+            <th class="border-0 py-3">Service Description</th>
+            <th class="border-0 text-end py-3">Estimated Cost</th>
+            <th class="border-0 py-3">Requested</th>
+            <th class="border-0 text-center py-3">Status</th>
+            <th class="border-0 py-3"></th>
+          </tr>
         </thead>
         <tbody>
           {% for auth in preauths %}
           <tr>
-            <td class="fw-semibold">{{ auth.member.patient.full_name }}</td>
-            <td><span class="badge bg-primary">{{ auth.member.scheme.code }}</span></td>
-            <td>{{ auth.service_description|truncatechars:50 }}</td>
-            <td>{{ auth.estimated_cost|floatformat:0 }} FCFA</td>
-            <td>{{ auth.requested_at|date:"d M Y" }}</td>
-            <td>
-              {% if auth.status == 'APPROVED' %}<span class="badge bg-success">Approved</span>
-              {% elif auth.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
-              {% elif auth.status == 'EXPIRED' %}<span class="badge bg-secondary">Expired</span>
-              {% elif auth.status == 'WAIVED' %}<span class="badge bg-info">Waived</span>
-              {% else %}<span class="badge bg-warning text-dark">Pending</span>{% endif %}
+            <td class="ps-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center" style="width:36px;height:36px;min-width:36px">
+                  <i class="bi bi-shield-check text-warning"></i>
+                </div>
+                <div>
+                  <div class="fw-semibold">{{ auth.member.patient.full_name }}</div>
+                  <div class="text-muted" style="font-size:0.78rem">{{ auth.member.member_number }}</div>
+                </div>
+              </div>
             </td>
             <td>
+              <span class="badge bg-primary bg-opacity-10 text-primary border">{{ auth.member.scheme.code }}</span>
+            </td>
+            <td>
+              <span class="small">{{ auth.service_description|truncatechars:60 }}</span>
+            </td>
+            <td class="text-end fw-semibold">{{ auth.estimated_cost|floatformat:0|intcomma }} <small class="text-muted fw-normal">FCFA</small></td>
+            <td class="small text-muted">{{ auth.requested_at|date:"d M Y" }}</td>
+            <td class="text-center">
+              {% if auth.status == 'APPROVED' %}<span class="badge bg-success-subtle text-success px-3 py-1"><i class="bi bi-check-circle me-1"></i>Approved</span>
+              {% elif auth.status == 'REJECTED' %}<span class="badge bg-danger-subtle text-danger px-3 py-1"><i class="bi bi-x-circle me-1"></i>Rejected</span>
+              {% elif auth.status == 'EXPIRED' %}<span class="badge bg-secondary-subtle text-secondary px-3 py-1"><i class="bi bi-clock me-1"></i>Expired</span>
+              {% elif auth.status == 'WAIVED' %}<span class="badge bg-info-subtle text-info px-3 py-1">Waived</span>
+              {% else %}<span class="badge bg-warning-subtle text-warning px-3 py-1"><i class="bi bi-hourglass-split me-1"></i>Pending</span>{% endif %}
+            </td>
+            <td class="pe-3">
               {% if auth.status == 'PENDING' %}
-              <a href="{% url 'hmo:preauth_respond' auth.pk %}" class="btn btn-sm btn-outline-primary">Respond</a>
+              <a href="{% url 'hmo:preauth_respond' auth.pk %}" class="btn btn-sm btn-primary">
+                <i class="bi bi-check2-circle me-1"></i>Respond
+              </a>
               {% else %}
-              <span class="text-muted small">{{ auth.auth_code|default:"—" }}</span>
+              <span class="text-muted small">{{ auth.auth_code|default:"&mdash;" }}</span>
               {% endif %}
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="text-center text-muted py-4">No pre-auth records found.</td></tr>
+          <tr>
+            <td colspan="7" class="text-center py-5">
+              <i class="bi bi-shield-check text-muted" style="font-size:2.5rem"></i>
+              <p class="text-muted mt-2 mb-1">No pre-authorisation records found</p>
+              <a href="{% url 'hmo:preauth_create' %}" class="btn btn-sm btn-warning text-dark">New Pre-Auth Request</a>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

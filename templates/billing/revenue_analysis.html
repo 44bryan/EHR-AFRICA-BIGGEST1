@@ -1,0 +1,215 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Revenue Analysis{% endblock %}
+
+{% block page_header %}
+<div class="mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-graph-up-arrow me-2 text-success"></i>Revenue Analysis</h4>
+  <p class="text-muted small mb-0">Revenue breakdown by service category, sub-category, GL account & payment method</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Period filter -->
+<form method="get" class="row g-2 mb-4 align-items-end">
+  <div class="col-md-3">
+    <label class="form-label fw-semibold small">From</label>
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label fw-semibold small">To</label>
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel me-1"></i>Filter</button>
+  </div>
+  <div class="col-md-2">
+    <a href="{% url 'billing:revenue_analysis' %}" class="btn btn-sm btn-outline-secondary w-100">Reset</a>
+  </div>
+  <div class="col-auto ms-auto">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</form>
+
+<!-- Grand totals -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm bg-success bg-opacity-10">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Total Billed (Invoices)</div>
+        <div class="fs-4 fw-bold text-success">{{ grand_total|floatformat:0|intcomma }} <small class="fw-normal">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm bg-primary bg-opacity-10">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Total Posted Revenue (GL)</div>
+        <div class="fs-4 fw-bold text-primary">{{ gl_total|floatformat:0|intcomma }} <small class="fw-normal">XAF</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm bg-info bg-opacity-10">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Service Categories</div>
+        <div class="fs-4 fw-bold text-info">{{ by_category|length }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Revenue by Category -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header py-2 bg-white">
+        <span class="fw-bold"><i class="bi bi-pie-chart me-2"></i>Revenue by Service Category</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Category</th>
+              <th class="text-end">Items</th>
+              <th class="text-end">Revenue (XAF)</th>
+              <th class="text-end">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in by_category %}
+            <tr>
+              <td class="fw-semibold">{{ row.label }}</td>
+              <td class="text-end text-muted">{{ row.count }}</td>
+              <td class="text-end fw-semibold text-success">{{ row.total|floatformat:0|intcomma }}</td>
+              <td class="text-end small text-muted">
+                {% if grand_total %}{% widthratio row.total grand_total 100 %}%{% else %}0%{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No invoice data for this period</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if by_category %}
+          <tfoot class="table-success fw-bold">
+            <tr>
+              <td>Total</td>
+              <td></td>
+              <td class="text-end">{{ grand_total|floatformat:0|intcomma }}</td>
+              <td class="text-end">100%</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue by GL Account -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header py-2 bg-white">
+        <span class="fw-bold"><i class="bi bi-journal-bookmark me-2"></i>Revenue by GL Account (Posted)</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>GL Code</th>
+              <th>Account Name</th>
+              <th class="text-end">Net Revenue (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in by_gl_account %}
+            <tr>
+              <td class="font-monospace text-primary fw-semibold">{{ row.account__code }}</td>
+              <td>{{ row.account__name }}</td>
+              <td class="text-end fw-semibold {% if row.net > 0 %}text-success{% elif row.net < 0 %}text-danger{% endif %}">
+                {{ row.net|floatformat:0|intcomma }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No GL postings for this period</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if by_gl_account %}
+          <tfoot class="table-primary fw-bold">
+            <tr>
+              <td colspan="2">Total Posted Revenue</td>
+              <td class="text-end">{{ gl_total|floatformat:0|intcomma }}</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue by Sub-Category -->
+  {% if by_sub %}
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 bg-white">
+        <span class="fw-bold"><i class="bi bi-folder me-2"></i>Revenue by Sub-Category</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Sub-Category</th>
+              <th>GL Code</th>
+              <th class="text-end">Items</th>
+              <th class="text-end">Revenue (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in by_sub %}
+            <tr>
+              <td class="fw-semibold">{{ row.service_price__sub_category__name }}</td>
+              <td class="font-monospace text-muted small">{{ row.service_price__sub_category__gl_account__code|default:"-" }}</td>
+              <td class="text-end text-muted">{{ row.count }}</td>
+              <td class="text-end fw-semibold text-success">{{ row.total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Collections by Payment Method -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 bg-white">
+        <span class="fw-bold"><i class="bi bi-cash-coin me-2"></i>Collections by Payment Method</span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Payment Method</th>
+              <th class="text-end">Transactions</th>
+              <th class="text-end">Amount (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in by_method %}
+            <tr>
+              <td class="fw-semibold">{{ row.label }}</td>
+              <td class="text-end text-muted">{{ row.count }}</td>
+              <td class="text-end fw-semibold text-primary">{{ row.total|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No payments for this period</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -42,14 +42,16 @@
   <div class="d-none d-md-block table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient ID</th><th>Full Name</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+        <tr><th>Patient ID</th><th>Full Name</th><th>Deleted By</th><th>Reason</th><th>Deleted</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for p in deleted_patients %}
         <tr>
           <td class="font-monospace text-muted">{{ p.patient_id }}</td>
           <td class="fw-semibold">{{ p.full_name }}</td>
-          <td class="text-muted">{{ p.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-muted">{{ p.deleted_by|default:"—" }}</td>
+          <td class="text-muted" style="max-width:200px">{{ p.deletion_reason|default:"No reason given"|truncatechars:80 }}</td>
+          <td class="text-muted">{{ p.deleted_at|date:"d M Y H:i" }}</td>
           <td class="text-end">
             <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Patient' p.pk %}" class="d-inline">
               {% csrf_token %}
@@ -113,7 +115,7 @@
   <div class="d-none d-md-block table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+        <tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Deleted By</th><th>Reason</th><th>Deleted</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for c in deleted_consultations %}
@@ -121,7 +123,9 @@
           <td class="fw-semibold">{{ c.patient.full_name|default:"—" }}</td>
           <td class="text-muted">{{ c.doctor.get_full_name|default:"—" }}</td>
           <td>{{ c.created_at|date:"d M Y" }}</td>
-          <td class="text-muted">{{ c.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-muted">{{ c.deleted_by|default:"—" }}</td>
+          <td class="text-muted" style="max-width:200px">{{ c.deletion_reason|default:"—"|truncatechars:80 }}</td>
+          <td class="text-muted">{{ c.deleted_at|date:"d M Y H:i" }}</td>
           <td class="text-end">
             <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Consultation' c.pk %}" class="d-inline">
               {% csrf_token %}
@@ -175,7 +179,7 @@
   <div class="d-none d-md-block table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Patient</th><th>Doctor</th><th>Appt Date</th><th>Deleted</th><th class="text-end">Actions</th></tr>
+        <tr><th>Patient</th><th>Doctor</th><th>Appt Date</th><th>Deleted By</th><th>Reason</th><th>Deleted</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for a in deleted_appointments %}
@@ -183,7 +187,9 @@
           <td class="fw-semibold">{{ a.patient.full_name|default:"—" }}</td>
           <td class="text-muted">{{ a.doctor.get_full_name|default:"—" }}</td>
           <td>{{ a.appointment_date|date:"d M Y" }}</td>
-          <td class="text-muted">{{ a.updated_at|date:"d M Y H:i" }}</td>
+          <td class="text-muted">{{ a.deleted_by|default:"—" }}</td>
+          <td class="text-muted" style="max-width:200px">{{ a.deletion_reason|default:"—"|truncatechars:80 }}</td>
+          <td class="text-muted">{{ a.deleted_at|date:"d M Y H:i" }}</td>
           <td class="text-end">
             <form method="post" action="{% url 'dashboard:recycle_bin_restore' 'Appointment' a.pk %}" class="d-inline">
               {% csrf_token %}
@@ -304,6 +310,53 @@
   </div>
   {% else %}
   <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deactivated staff.</div>
+  {% endif %}
+</div>
+
+{# ── DELETION AUDIT LOG ───────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center gap-2 py-2">
+    <i class="bi bi-journal-text text-primary"></i>
+    <span class="fw-semibold">Deletion Audit Log</span>
+    <span class="badge bg-primary ms-1">{{ deletion_log|length }}</span>
+    <span class="text-muted small ms-auto">Last 100 entries</span>
+  </div>
+
+  {% if deletion_log %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th style="width:140px">Date</th>
+          <th>Record Type</th>
+          <th>Record</th>
+          <th>Deleted By</th>
+          <th>Reason</th>
+          <th style="width:90px">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in deletion_log %}
+        <tr class="{% if log.is_restored %}table-success{% endif %}">
+          <td class="text-muted">{{ log.deleted_at|date:"d M Y H:i" }}</td>
+          <td><span class="badge bg-light text-dark border">{{ log.content_type }}</span></td>
+          <td class="fw-semibold" style="max-width:200px">{{ log.object_repr|truncatechars:60 }}</td>
+          <td class="text-muted">{{ log.deleted_by|default:"System" }}</td>
+          <td style="max-width:250px">{{ log.reason|default:"No reason given"|truncatechars:100 }}</td>
+          <td>
+            {% if log.is_restored %}
+            <span class="badge bg-success-subtle text-success">Restored</span>
+            {% else %}
+            <span class="badge bg-danger-subtle text-danger">Deleted</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-4 small"><i class="bi bi-check-circle me-1 text-success"></i>No deletion records yet.</div>
   {% endif %}
 </div>
 

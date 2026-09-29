@@ -45,27 +45,77 @@ class BackupLog(models.Model):
 class TimeStampedModel(models.Model):
     """
     Abstract base model providing self-managed created_at/updated_at
-    timestamps and soft-delete support.
+    timestamps and soft-delete support with mandatory deletion reason.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+    )
+    deletion_reason = models.TextField(blank=True, default='')
 
     class Meta:
         abstract = True
         ordering = ['-created_at']
 
-    def soft_delete(self):
+    def soft_delete(self, user=None, reason=''):
+        """Soft-delete with mandatory audit trail: who deleted and why."""
         self.is_deleted = True
         self.deleted_at = timezone.now()
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by = user
+        self.deletion_reason = reason or ''
+        fields = ['is_deleted', 'deleted_at', 'deleted_by', 'deletion_reason']
+        self.save(update_fields=fields)
+        # Log to DeletionLog for central audit
+        DeletionLog.objects.create(
+            content_type=f'{self._meta.app_label}.{self._meta.model_name}',
+            object_id=str(self.pk),
+            object_repr=str(self)[:200],
+            deleted_by=user,
+            reason=reason or '',
+        )
 
-    def restore(self):
+    def restore(self, user=None):
         self.is_deleted = False
         self.deleted_at = None
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by = None
+        self.deletion_reason = ''
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'deletion_reason'])
+
+
+class DeletionLog(models.Model):
+    """
+    Central audit log for ALL soft-deletes system-wide.
+    Immutable — no edits or deletes allowed by any role.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    content_type = models.CharField(max_length=100)  # e.g. 'patients.patient'
+    object_id = models.CharField(max_length=50)
+    object_repr = models.CharField(max_length=200, blank=True)
+    deleted_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+    )
+    reason = models.TextField()
+    deleted_at = models.DateTimeField(auto_now_add=True)
+    is_restored = models.BooleanField(default=False)
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+    )
+
+    class Meta:
+        ordering = ['-deleted_at']
+        verbose_name = 'Deletion Log'
+        verbose_name_plural = 'Deletion Logs'
+
+    def __str__(self):
+        return f'{self.content_type} #{self.object_id} — {self.reason[:60]}'
 
 
 class ActiveManager(models.Manager):

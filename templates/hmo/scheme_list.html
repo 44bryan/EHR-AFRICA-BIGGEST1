@@ -1,35 +1,87 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Insurance Schemes{% endblock %}
+
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center">
-  <h5 class="mb-0 fw-bold">Insurance Schemes</h5>
-  <a href="{% url 'hmo:scheme_create' %}" class="btn btn-primary btn-sm">Add Scheme</a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0 fw-bold">Insurance Schemes</h4>
+    <small class="text-muted">Manage payer contracts, coverage rates, and pre-auth rules</small>
+  </div>
+  <a href="{% url 'hmo:scheme_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Scheme</a>
 </div>
 {% endblock %}
+
 {% block content %}
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
-        <thead class="table-light">
-          <tr><th>Name</th><th>Code</th><th>Type</th><th>Coverage</th><th>Pre-Auth</th><th>Members</th><th>Status</th><th></th></tr>
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr class="small text-muted text-uppercase" style="font-size:0.75rem;letter-spacing:0.05em">
+            <th class="border-0 ps-3 py-3">Scheme Name</th>
+            <th class="border-0 py-3">Code</th>
+            <th class="border-0 py-3">Type</th>
+            <th class="border-0 text-center py-3">Coverage</th>
+            <th class="border-0 text-center py-3">Pre-Auth</th>
+            <th class="border-0 text-center py-3">Members</th>
+            <th class="border-0 text-center py-3">Status</th>
+            <th class="border-0 py-3"></th>
+          </tr>
         </thead>
         <tbody>
           {% for s in schemes %}
           <tr>
-            <td class="fw-semibold">{{ s.name }}</td>
-            <td><code>{{ s.code }}</code></td>
-            <td>{{ s.get_scheme_type_display }}</td>
-            <td>{{ s.coverage_pct }}%</td>
-            <td>{% if s.pre_auth_required %}<span class="badge bg-warning text-dark">Required</span>{% else %}No{% endif %}</td>
-            <td>{{ s.members.count }}</td>
-            <td>{% if s.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
+            <td class="ps-3">
+              <div class="fw-semibold">{{ s.name }}</div>
+              {% if s.contact_person %}<div class="text-muted small">{{ s.contact_person }}</div>{% endif %}
+            </td>
+            <td><code class="bg-light px-2 py-1 rounded text-dark">{{ s.code }}</code></td>
             <td>
-              <a href="{% url 'hmo:scheme_edit' s.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+              {% if s.scheme_type == 'CNPS' %}<span class="badge bg-success-subtle text-success"><i class="bi bi-building me-1"></i>CNPS</span>
+              {% elif s.scheme_type == 'MUTUAL' %}<span class="badge bg-info-subtle text-info"><i class="bi bi-people me-1"></i>Mutual</span>
+              {% elif s.scheme_type == 'CORPORATE' %}<span class="badge bg-warning-subtle text-warning"><i class="bi bi-briefcase me-1"></i>Corporate</span>
+              {% elif s.scheme_type == 'NHIS' %}<span class="badge bg-primary-subtle text-primary"><i class="bi bi-heart-pulse me-1"></i>NHIS</span>
+              {% else %}<span class="badge bg-secondary-subtle text-secondary">{{ s.get_scheme_type_display }}</span>{% endif %}
+            </td>
+            <td class="text-center">
+              <div class="d-flex align-items-center justify-content-center gap-2">
+                <div class="progress" style="height:8px;width:70px">
+                  <div class="progress-bar {% if s.coverage_pct >= 80 %}bg-success{% elif s.coverage_pct >= 50 %}bg-warning{% else %}bg-danger{% endif %}" style="width:{{ s.coverage_pct }}%"></div>
+                </div>
+                <span class="small fw-semibold">{{ s.coverage_pct }}%</span>
+              </div>
+            </td>
+            <td class="text-center">
+              {% if s.pre_auth_required %}
+              <span class="badge bg-warning-subtle text-warning"><i class="bi bi-lock-fill me-1"></i>Required</span>
+              {% else %}
+              <span class="text-muted small">No</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="fw-bold">{{ s.members.count }}</span>
+            </td>
+            <td class="text-center">
+              {% if s.is_active %}
+              <span class="badge bg-success-subtle text-success px-3"><i class="bi bi-check-circle me-1"></i>Active</span>
+              {% else %}
+              <span class="badge bg-secondary-subtle text-secondary px-3">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="pe-3 text-end">
+              <a href="{% url 'hmo:scheme_edit' s.pk %}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil me-1"></i>Edit
+              </a>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="8" class="text-center text-muted py-4">No schemes found. <a href="{% url 'hmo:scheme_create' %}">Add the first scheme</a>.</td></tr>
+          <tr>
+            <td colspan="8" class="text-center py-5">
+              <i class="bi bi-shield-exclamation text-muted" style="font-size:2.5rem"></i>
+              <p class="text-muted mt-2 mb-1">No insurance schemes configured</p>
+              <a href="{% url 'hmo:scheme_create' %}" class="btn btn-sm btn-primary">Add First Scheme</a>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

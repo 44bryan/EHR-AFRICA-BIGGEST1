@@ -265,11 +265,16 @@ def post_invoice_issued(invoice, user=None):
         lines.append((AR_PATIENT, amount, 0,
                        f"Invoice {invoice.invoice_number} — {invoice.patient.full_name}"))
 
-        # Credit: Revenue split by service category
+        # Credit: Revenue split by service category (item-level GL when available)
         total_allocated = Decimal('0')
         item_list = list(items)
         for i, item in enumerate(item_list):
-            rev_code = get_revenue_code(item.category)
+            # Prefer item-level GL → sub-category GL → category default
+            rev_code = getattr(item, 'gl_account_code', '') or ''
+            if not rev_code and hasattr(item, 'resolve_gl_code'):
+                rev_code = item.resolve_gl_code()
+            if not rev_code:
+                rev_code = get_revenue_code(item.category)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:

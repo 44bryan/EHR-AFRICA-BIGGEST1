@@ -2903,21 +2903,28 @@ def service_price_list(request):
     if not _can_view_financial_reports(request.user):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
-    from .models import ServiceTierFilter
+    from .models import ServiceTierFilter, ServiceSubCategory, GLAccount
     q = request.GET.get('q', '')
     cat = request.GET.get('cat', '')
+    sub = request.GET.get('sub', '')
     tier = request.GET.get('tier', '')
-    prices = ServicePrice.objects.filter(is_deleted=False)
+    prices = ServicePrice.objects.select_related('sub_category', 'gl_account').filter(is_deleted=False)
     if q:
         prices = prices.filter(Q(name__icontains=q) | Q(code__icontains=q))
     if cat:
         prices = prices.filter(category=cat)
+    if sub:
+        prices = prices.filter(sub_category_id=sub)
     if tier != '':
         prices = prices.filter(tier=tier)
-    prices = prices.order_by('category', 'tier', 'name')
+    prices = prices.order_by('category', 'sub_category__sort_order', 'name')
+    sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).select_related('gl_account').order_by('category', 'sort_order')
+    gl_accounts = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
     return render(request, 'billing/service_prices.html', {
         'prices': prices,
         'categories': ServiceCategory.choices,
+        'sub_categories': sub_categories,
+        'gl_accounts': gl_accounts,
         'tiers': [('', 'All Tiers')] + [(k, v) for k, v in [
             ('STANDARD', 'Standard Desk'),
             ('EXPRESS', 'Express Desk'),
@@ -2926,6 +2933,7 @@ def service_price_list(request):
         ]],
         'search': q,
         'filter_cat': cat,
+        'filter_sub': sub,
         'filter_tier': tier,
     })
 
@@ -2951,14 +2959,24 @@ def service_price_create(request):
 
     nhis = request.POST.get('nhis_price', '').strip()
     ins  = request.POST.get('insurance_price', '').strip()
+    price_ht_str = request.POST.get('price_ht', '').strip()
+    tax_rate_str = request.POST.get('tax_rate', '').strip()
+    sub_cat_id = request.POST.get('sub_category', '').strip()
+    gl_acct_id = request.POST.get('gl_account', '').strip()
     ServicePrice.objects.create(
         name=name,
         code=request.POST.get('code', '').strip(),
         category=category,
+        sub_category_id=sub_cat_id or None,
         tier=request.POST.get('tier', '').strip(),
+        gl_account_id=gl_acct_id or None,
+        price_ht=Decimal(price_ht_str) if price_ht_str else Decimal('0'),
+        tax_rate=Decimal(tax_rate_str) if tax_rate_str else Decimal('0'),
         price=price,
         nhis_price=Decimal(nhis) if nhis else None,
         insurance_price=Decimal(ins) if ins else None,
+        is_stockable=bool(request.POST.get('is_stockable')),
+        is_taxable=bool(request.POST.get('is_taxable')),
         requires_price_entry=bool(request.POST.get('requires_price_entry')),
         is_active=True,
         created_by=request.user,
@@ -2985,6 +3003,17 @@ def service_price_edit(request, price_id):
         sp.insurance_price = Decimal(ins) if ins else None
         sp.code            = request.POST.get('code', sp.code).strip()
         sp.requires_price_entry = bool(request.POST.get('requires_price_entry'))
+        # New fields
+        price_ht = request.POST.get('price_ht', '').strip()
+        tax_rate = request.POST.get('tax_rate', '').strip()
+        sub_cat  = request.POST.get('sub_category', '').strip()
+        gl_acct  = request.POST.get('gl_account', '').strip()
+        sp.price_ht = Decimal(price_ht) if price_ht else Decimal('0')
+        sp.tax_rate = Decimal(tax_rate) if tax_rate else Decimal('0')
+        sp.sub_category_id = sub_cat or None
+        sp.gl_account_id = gl_acct or None
+        sp.is_stockable = bool(request.POST.get('is_stockable'))
+        sp.is_taxable   = bool(request.POST.get('is_taxable'))
         sp.save()
         return JsonResponse({'success': True})
     except (InvalidOperation, Exception) as e:
@@ -3002,6 +3031,206 @@ def service_price_toggle(request, price_id):
     sp.is_active = not sp.is_active
     sp.save(update_fields=['is_active', 'updated_at'])
     return JsonResponse({'success': True, 'is_active': sp.is_active})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUB-CATEGORY MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from .models import ServiceSubCategory
+
+
+@login_required
+def sub_category_list(request):
+    """Dedicated page to manage service sub-categories (families)."""
+    if not _can_authorize_billing(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from .models import GLAccount
+    subs = (ServiceSubCategory.objects.filter(is_deleted=False)
+            .select_related('gl_account')
+            .order_by('category', 'sort_order', 'name'))
+    # count services per sub-category
+    from django.db.models import Count
+    counts = dict(
+        ServicePrice.objects.filter(is_deleted=False, sub_category__isnull=False)
+        .values_list('sub_category_id')
+        .annotate(c=Count('id'))
+        .values_list('sub_category_id', 'c')
+    )
+    for s in subs:
+        s.service_count = counts.get(s.id, 0)
+    gl_accounts = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
+    return render(request, 'billing/sub_category_list.html', {
+        'sub_categories': subs,
+        'categories': ServiceCategory.choices,
+        'gl_accounts': gl_accounts,
+    })
+
+
+@login_required
+@require_POST
+def sub_category_create(request):
+    """Create a service sub-category."""
+    if not _can_authorize_billing(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:sub_category_list')
+    from .models import GLAccount
+    name = request.POST.get('name', '').strip()
+    category = request.POST.get('category', '').strip()
+    if not name or not category:
+        messages.error(request, 'Name and category are required.')
+        return redirect('billing:sub_category_list')
+    code = request.POST.get('code', '').strip()
+    gl_id = request.POST.get('gl_account', '').strip()
+    ServiceSubCategory.objects.create(
+        category=category, name=name, code=code,
+        gl_account_id=gl_id or None,
+        created_by=request.user,
+    )
+    messages.success(request, f'Sub-category "{name}" created.')
+    return redirect('billing:sub_category_list')
+
+
+@login_required
+@require_POST
+def sub_category_edit(request, sub_id):
+    """Edit a service sub-category."""
+    if not _can_authorize_billing(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+    from .models import GLAccount
+    sc = get_object_or_404(ServiceSubCategory, id=sub_id, is_deleted=False)
+    try:
+        sc.name = request.POST.get('name', sc.name).strip()
+        sc.category = request.POST.get('category', sc.category).strip()
+        sc.code = request.POST.get('code', sc.code).strip()
+        gl_id = request.POST.get('gl_account', '').strip()
+        sc.gl_account_id = gl_id or None
+        sort_str = request.POST.get('sort_order', '').strip()
+        if sort_str:
+            sc.sort_order = int(sort_str)
+        sc.save()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def sub_category_delete(request, sub_id):
+    """Soft-delete a service sub-category."""
+    if not _can_authorize_billing(request.user):
+        return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
+    sc = get_object_or_404(ServiceSubCategory, id=sub_id, is_deleted=False)
+    sc.is_deleted = True
+    sc.save(update_fields=['is_deleted', 'updated_at'])
+    return JsonResponse({'success': True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REVENUE ANALYSIS REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def revenue_analysis(request):
+    """Revenue breakdown by category → sub-category → GL account."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import InvoiceItem, JournalLine, GLAccount
+    from django.db.models import Sum, Count, F
+
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+
+    # Revenue from invoices (by category)
+    items_qs = InvoiceItem.objects.filter(
+        invoice__is_deleted=False, is_deleted=False,
+        invoice__status__in=['ISSUED', 'PARTIAL', 'PAID'],
+    )
+    if date_from:
+        items_qs = items_qs.filter(invoice__issue_date__gte=date_from)
+    if date_to:
+        items_qs = items_qs.filter(invoice__issue_date__lte=date_to)
+
+    # By category
+    by_category = list(
+        items_qs.values('category')
+        .annotate(
+            total=Sum(F('quantity') * F('unit_price')),
+            count=Count('id'),
+        )
+        .order_by('-total')
+    )
+    for row in by_category:
+        row['label'] = dict(ServiceCategory.choices).get(row['category'], row['category'])
+
+    grand_total = sum(r['total'] or 0 for r in by_category)
+
+    # By sub-category (where available)
+    by_sub = list(
+        items_qs.filter(service_price__sub_category__isnull=False)
+        .values(
+            'service_price__sub_category__name',
+            'service_price__sub_category__gl_account__code',
+            'category',
+        )
+        .annotate(total=Sum(F('quantity') * F('unit_price')), count=Count('id'))
+        .order_by('category', '-total')
+    )
+
+    # Revenue from GL (posted journal lines on revenue accounts)
+    gl_qs = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        account__account_type='REVENUE',
+    )
+    if date_from:
+        gl_qs = gl_qs.filter(entry__entry_date__gte=date_from)
+    if date_to:
+        gl_qs = gl_qs.filter(entry__entry_date__lte=date_to)
+
+    by_gl_account = list(
+        gl_qs.values('account__code', 'account__name')
+        .annotate(
+            total_cr=Sum('credit_amount'),
+            total_dr=Sum('debit_amount'),
+        )
+        .order_by('account__code')
+    )
+    for row in by_gl_account:
+        row['net'] = (row['total_cr'] or 0) - (row['total_dr'] or 0)
+
+    gl_total = sum(r['net'] for r in by_gl_account)
+
+    # Payment methods breakdown
+    from .models import Payment
+    pmts_qs = Payment.objects.filter(
+        is_deleted=False,
+        invoice__is_deleted=False,
+    )
+    if date_from:
+        pmts_qs = pmts_qs.filter(payment_date__date__gte=date_from)
+    if date_to:
+        pmts_qs = pmts_qs.filter(payment_date__date__lte=date_to)
+
+    by_method = list(
+        pmts_qs.values('payment_method')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('-total')
+    )
+    for row in by_method:
+        row['label'] = dict(PaymentMethod.choices).get(row['payment_method'], row['payment_method'])
+
+    return render(request, 'billing/revenue_analysis.html', {
+        'by_category': by_category,
+        'by_sub': by_sub,
+        'by_gl_account': by_gl_account,
+        'by_method': by_method,
+        'grand_total': grand_total,
+        'gl_total': gl_total,
+        'date_from': date_from,
+        'date_to': date_to,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5878,38 +6107,75 @@ def general_ledger(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    account_id = request.GET.get('account_id', '')
+    all_accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    account_id = request.GET.get('account') or request.GET.get('account_id') or ''
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
-    selected_account = None
-    lines = []
-    running_balance = Decimal('0')
+
+    ledger_data = []
+
+    # Determine which accounts to show
     if account_id:
-        selected_account = get_object_or_404(GLAccount, pk=account_id)
+        target_accounts = all_accounts.filter(pk=account_id)
+    else:
+        # Show all accounts that have activity
+        active_ids = JournalLine.objects.filter(
+            entry__is_deleted=False,
+        ).values_list('account_id', flat=True).distinct()
+        target_accounts = all_accounts.filter(pk__in=active_ids)
+
+    for acct in target_accounts:
         qs = JournalLine.objects.filter(
-            account=selected_account,
-            entry__is_posted=True,
+            account=acct,
             entry__is_deleted=False,
         ).select_related('entry').order_by('entry__entry_date', 'entry__created_at')
         if date_from:
             qs = qs.filter(entry__entry_date__gte=date_from)
         if date_to:
             qs = qs.filter(entry__entry_date__lte=date_to)
+
+        is_debit_normal = acct.account_type in ('ASSET', 'EXPENSE')
+
+        # Compute opening balance (lines before date_from)
+        opening_balance = Decimal('0')
+        if date_from:
+            prior = JournalLine.objects.filter(
+                account=acct, entry__is_deleted=False,
+                entry__entry_date__lt=date_from,
+            ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+            dr = prior['dr'] or Decimal('0')
+            cr = prior['cr'] or Decimal('0')
+            opening_balance = (dr - cr) if is_debit_normal else (cr - dr)
+
+        running = opening_balance
+        total_dr = Decimal('0')
+        total_cr = Decimal('0')
+        annotated_lines = []
         for line in qs:
-            if selected_account.account_type in ('ASSET', 'EXPENSE'):
-                running_balance += line.debit_amount - line.credit_amount
+            if is_debit_normal:
+                running += line.debit_amount - line.credit_amount
             else:
-                running_balance += line.credit_amount - line.debit_amount
-            lines.append({'line': line, 'running_balance': running_balance})
+                running += line.credit_amount - line.debit_amount
+            line.running_balance = running
+            annotated_lines.append(line)
+            total_dr += line.debit_amount
+            total_cr += line.credit_amount
+
+        if annotated_lines or opening_balance:
+            ledger_data.append({
+                'account': acct,
+                'opening_balance': opening_balance,
+                'lines': annotated_lines,
+                'total_debits': total_dr,
+                'total_credits': total_cr,
+                'closing_balance': running,
+            })
+
     return render(request, 'billing/general_ledger.html', {
-        'accounts': accounts,
-        'selected_account': selected_account,
-        'lines': lines,
-        'closing_balance': running_balance,
+        'all_accounts': all_accounts,
+        'ledger_data': ledger_data,
         'date_from': date_from,
         'date_to': date_to,
-        'account_id': account_id,
     })
 
 
@@ -5920,29 +6186,56 @@ def trial_balance(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    date_to = request.GET.get('date_to', str(timezone.localdate()))
-    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    rows = []
-    total_dr = Decimal('0')
-    total_cr = Decimal('0')
-    for acct in accounts:
-        lines = JournalLine.objects.filter(
-            account=acct,
-            entry__is_posted=True,
-            entry__is_deleted=False,
-            entry__entry_date__lte=date_to,
+    date_to = request.GET.get('as_at') or request.GET.get('date_to') or str(timezone.localdate())
+
+    # Bulk aggregate — one query for all accounts
+    bulk = (
+        JournalLine.objects.filter(
+            entry__is_deleted=False, entry__entry_date__lte=date_to,
+        ).values('account_id').annotate(
+            total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
-        dr = lines.aggregate(t=Sum('debit_amount'))['t'] or Decimal('0')
-        cr = lines.aggregate(t=Sum('credit_amount'))['t'] or Decimal('0')
-        if dr or cr:
-            rows.append({'account': acct, 'debit': dr, 'credit': cr})
-            total_dr += dr
-            total_cr += cr
+    )
+    bal_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in bulk}
+
+    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    type_order = [
+        (AccountType.ASSET, 'Assets'),
+        (AccountType.LIABILITY, 'Liabilities'),
+        (AccountType.EQUITY, 'Equity'),
+        (AccountType.REVENUE, 'Revenue'),
+        (AccountType.EXPENSE, 'Expenses'),
+    ]
+    sections = []
+    grand_dr = Decimal('0')
+    grand_cr = Decimal('0')
+    for acct_type, label in type_order:
+        rows = []
+        sub_dr = Decimal('0')
+        sub_cr = Decimal('0')
+        for acct in accounts.filter(account_type=acct_type):
+            dr, cr = bal_map.get(acct.id, (Decimal('0'), Decimal('0')))
+            if dr or cr:
+                rows.append({
+                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                    'type_display': acct.get_account_type_display(),
+                    'debit': dr, 'credit': cr,
+                })
+                sub_dr += dr
+                sub_cr += cr
+        if rows:
+            sections.append({'label': label, 'rows': rows, 'subtotal_dr': sub_dr, 'subtotal_cr': sub_cr})
+        grand_dr += sub_dr
+        grand_cr += sub_cr
+
+    diff = grand_dr - grand_cr
     return render(request, 'billing/trial_balance.html', {
-        'rows': rows,
-        'total_dr': total_dr,
-        'total_cr': total_cr,
-        'balanced': abs(total_dr - total_cr) < Decimal('0.01'),
+        'sections': sections,
+        'grand_dr': grand_dr,
+        'grand_cr': grand_cr,
+        'is_balanced': abs(diff) < Decimal('0.01'),
+        'balance_diff': diff,
+        'as_at_label': date_to,
         'date_to': date_to,
     })
 
@@ -5954,12 +6247,12 @@ def balance_sheet(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    date_to = request.GET.get('date_to', str(timezone.localdate()))
+    date_to = request.GET.get('as_at') or request.GET.get('date_to') or str(timezone.localdate())
 
-    # Single bulk aggregate across all GL accounts — avoids 2 queries per account
+    # Bulk aggregate — one query
     bulk_agg = (
         JournalLine.objects.filter(
-            entry__is_posted=True, entry__is_deleted=False, entry__entry_date__lte=date_to,
+            entry__is_deleted=False, entry__entry_date__lte=date_to,
         ).values('account_id').annotate(
             total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
@@ -5975,21 +6268,82 @@ def balance_sheet(request):
             return dr - cr
         return cr - dr
 
-    assets      = [{'account': a, 'balance': get_balance(a)} for a in GLAccount.objects.filter(is_deleted=False, is_active=True, account_type=AccountType.ASSET)]
-    liabilities = [{'account': a, 'balance': get_balance(a)} for a in GLAccount.objects.filter(is_deleted=False, is_active=True, account_type=AccountType.LIABILITY)]
-    equity      = [{'account': a, 'balance': get_balance(a)} for a in GLAccount.objects.filter(is_deleted=False, is_active=True, account_type=AccountType.EQUITY)]
+    def build_groups(acct_type):
+        """Group accounts by first 2 digits of code → gives OHADA sub-classes."""
+        accts = GLAccount.objects.filter(
+            is_deleted=False, is_active=True, account_type=acct_type,
+        ).order_by('code')
+        groups_map = {}
+        for a in accts:
+            bal = get_balance(a)
+            if bal == 0:
+                continue
+            prefix = a.code[:2] if len(a.code) >= 2 else a.code[:1]
+            grp = groups_map.setdefault(prefix, {'label': '', 'rows': [], 'total': Decimal('0')})
+            grp['rows'].append({'code': a.code, 'name': a.name, 'balance': bal})
+            grp['total'] += bal
+        # Build sorted list
+        result = []
+        ohada_labels = {
+            '10': 'Capital', '11': 'Reserves', '12': 'Retained Earnings', '13': 'Net Result',
+            '20': 'Intangible Assets', '21': 'Tangible Assets', '22': 'Land & Buildings',
+            '23': 'Plant & Equipment', '24': 'Financial Assets', '28': 'Accumulated Depreciation',
+            '30': 'Goods & Supplies', '31': 'Raw Materials', '32': 'Packaging',
+            '38': 'Stock Provisions', '39': 'Inventory Provisions',
+            '40': 'Accounts Payable', '41': 'Accounts Receivable', '42': 'Staff Payable',
+            '43': 'Social Security', '44': 'Tax Payable', '46': 'Inter-company',
+            '47': 'Deferred Revenue', '48': 'Other Liabilities', '49': 'Provisions',
+            '50': 'Securities', '51': 'Bank Accounts', '52': 'Bank Accounts (Other)',
+            '53': 'Treasury', '56': 'Bank Transfers', '57': 'Cash in Hand', '58': 'Internal Transfers',
+            '60': 'Purchases', '61': 'External Services', '62': 'Other Services',
+            '63': 'Taxes & Duties', '64': 'Staff Costs', '65': 'Other Expenses',
+            '66': 'Financial Charges', '67': 'Extraordinary Charges', '68': 'Depreciation',
+            '69': 'Income Tax',
+            '70': 'Sales Revenue', '71': 'Production Stored', '72': 'Production Capitalized',
+            '73': 'Variation in Stocks', '75': 'Other Revenue', '76': 'Financial Income',
+            '77': 'Extraordinary Income', '78': 'Provisions Reversed', '79': 'Transfers',
+        }
+        for prefix in sorted(groups_map.keys()):
+            grp = groups_map[prefix]
+            grp['label'] = ohada_labels.get(prefix, f'Class {prefix}')
+            result.append(grp)
+        return result
 
-    total_assets      = sum(r['balance'] for r in assets)
-    total_liabilities = sum(r['balance'] for r in liabilities)
-    total_equity      = sum(r['balance'] for r in equity)
+    # Build grouped sections
+    asset_groups = build_groups(AccountType.ASSET)
+    liab_groups = build_groups(AccountType.LIABILITY)
+
+    # Equity rows (flat)
+    equity_accts = GLAccount.objects.filter(
+        is_deleted=False, is_active=True, account_type=AccountType.EQUITY,
+    ).order_by('code')
+    equity_rows = [{'code': a.code, 'name': a.name, 'balance': get_balance(a)}
+                   for a in equity_accts if get_balance(a) != 0]
+
+    # Revenue & Expense for net income
+    rev_accts = GLAccount.objects.filter(is_deleted=False, is_active=True, account_type=AccountType.REVENUE)
+    exp_accts = GLAccount.objects.filter(is_deleted=False, is_active=True, account_type=AccountType.EXPENSE)
+    total_revenue = sum(get_balance(a) for a in rev_accts)
+    total_expense = sum(get_balance(a) for a in exp_accts)
+    net_income = total_revenue - total_expense  # revenue balance is positive (cr - dr)
+
+    total_assets = sum(g['total'] for g in asset_groups)
+    total_liabilities = sum(g['total'] for g in liab_groups)
+    total_equity_val = sum(r['balance'] for r in equity_rows) + net_income
+    total_liab_equity = total_liabilities + total_equity_val
+    diff = total_assets - total_liab_equity
 
     return render(request, 'billing/balance_sheet.html', {
-        'assets': assets, 'liabilities': liabilities, 'equity': equity,
+        'assets': asset_groups,
+        'liabilities': liab_groups,
+        'equity_rows': equity_rows,
+        'net_income': net_income,
         'total_assets': total_assets,
         'total_liabilities': total_liabilities,
-        'total_equity': total_equity,
-        'total_liabilities_equity': total_liabilities + total_equity,
-        'balanced': abs(total_assets - (total_liabilities + total_equity)) < Decimal('0.01'),
+        'total_equity': total_equity_val,
+        'total_liab_equity': total_liab_equity,
+        'is_balanced': abs(diff) < Decimal('0.01'),
+        'balance_diff': diff,
         'date_to': date_to,
     })
 
@@ -6001,44 +6355,162 @@ def cash_flow_statement(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    from apps.billing.models import Payment, Expense, APPayment
+    from apps.billing.models import (
+        Payment, Expense, APPayment, CashToBank,
+        StaffAdvance, AssetRegister, CashTransfer, BankAccount,
+    )
     today = timezone.localdate()
     first_of_month = today.replace(day=1)
     date_from = request.GET.get('date_from', str(first_of_month))
     date_to   = request.GET.get('date_to',   str(today))
 
-    # Operating inflows — patient payments
-    receipts = Payment.objects.filter(
+    # ── OPERATING INFLOWS ──
+    # Patient payments by method
+    from django.db.models import Count as _Cnt
+    pay_by_method = Payment.objects.filter(
         is_deleted=False,
-        payment_date__date__gte=date_from,
-        payment_date__date__lte=date_to,
-    ).exclude(payment_method__in=('INSURANCE', 'NHIS', 'WAIVER'))
-    cash_receipts = receipts.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        payment_date__date__gte=date_from, payment_date__date__lte=date_to,
+    ).exclude(payment_method__in=('INSURANCE', 'NHIS', 'WAIVER')
+    ).values('payment_method').annotate(total=Sum('amount')).order_by('-total')
 
-    # Operating outflows — expenses
-    expenses_total = Expense.objects.filter(
+    operating_inflows = []
+    total_op_inflows = Decimal('0')
+    method_labels = dict(PaymentMethod.choices) if hasattr(PaymentMethod, 'choices') else {}
+    for pm in pay_by_method:
+        amt = pm['total'] or Decimal('0')
+        if amt > 0:
+            label = method_labels.get(pm['payment_method'], pm['payment_method'])
+            operating_inflows.append({'label': f'Patient Payments — {label}', 'amount': amt})
+            total_op_inflows += amt
+
+    # Insurance receipts
+    insurance_receipts = Payment.objects.filter(
+        is_deleted=False,
+        payment_date__date__gte=date_from, payment_date__date__lte=date_to,
+        payment_method__in=('INSURANCE', 'NHIS'),
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    if insurance_receipts > 0:
+        operating_inflows.append({'label': 'Insurance Reimbursements', 'amount': insurance_receipts})
+        total_op_inflows += insurance_receipts
+
+    # ── OPERATING OUTFLOWS ──
+    operating_outflows = []
+    total_op_outflows = Decimal('0')
+
+    # Expenses by category
+    exp_by_cat = Expense.objects.filter(
         is_deleted=False, approved_by__isnull=False,
         date__gte=date_from, date__lte=date_to,
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    ).values('category').annotate(total=Sum('amount')).order_by('-total')
+    exp_cat_labels = dict(ExpenseCategory.choices) if hasattr(ExpenseCategory, 'choices') else {}
+    for ec in exp_by_cat:
+        amt = ec['total'] or Decimal('0')
+        if amt > 0:
+            label = exp_cat_labels.get(ec['category'], ec['category'])
+            operating_outflows.append({'label': f'{label}', 'amount': amt})
+            total_op_outflows += amt
 
-    # AP payments outflow
-    ap_payments_total = APPayment.objects.filter(
+    # AP vendor payments
+    ap_total = APPayment.objects.filter(
         is_deleted=False, payment_date__gte=date_from, payment_date__lte=date_to,
     ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    if ap_total > 0:
+        operating_outflows.append({'label': 'Supplier / Vendor Payments', 'amount': ap_total})
+        total_op_outflows += ap_total
 
-    operating_inflow  = cash_receipts
-    operating_outflow = expenses_total + ap_payments_total
-    net_operating     = operating_inflow - operating_outflow
+    net_operating = total_op_inflows - total_op_outflows
+
+    # ── INVESTING ACTIVITIES ──
+    investing_rows = []
+    net_investing = Decimal('0')
+
+    # Asset purchases (from GL class 2 debits in the period)
+    asset_purchases = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='2', debit_amount__gt=0,
+    ).aggregate(t=Sum('debit_amount'))['t'] or Decimal('0')
+    if asset_purchases > 0:
+        investing_rows.append({'label': 'Purchase of Fixed Assets', 'amount': -asset_purchases})
+        net_investing -= asset_purchases
+
+    # Asset disposal proceeds (class 2 credits)
+    asset_proceeds = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='2', credit_amount__gt=0,
+    ).aggregate(t=Sum('credit_amount'))['t'] or Decimal('0')
+    if asset_proceeds > 0:
+        investing_rows.append({'label': 'Proceeds from Asset Disposal', 'amount': asset_proceeds})
+        net_investing += asset_proceeds
+
+    # ── FINANCING ACTIVITIES ──
+    financing_rows = []
+    net_financing = Decimal('0')
+
+    # Staff advances issued
+    advances_issued = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='42', debit_amount__gt=0,
+    ).aggregate(t=Sum('debit_amount'))['t'] or Decimal('0')
+    if advances_issued > 0:
+        financing_rows.append({'label': 'Staff Advances Issued', 'amount': -advances_issued})
+        net_financing -= advances_issued
+
+    # Staff advances recovered
+    advances_recovered = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='42', credit_amount__gt=0,
+    ).aggregate(t=Sum('credit_amount'))['t'] or Decimal('0')
+    if advances_recovered > 0:
+        financing_rows.append({'label': 'Staff Advances Recovered', 'amount': advances_recovered})
+        net_financing += advances_recovered
+
+    # Capital / equity movements (class 1)
+    equity_dr = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='1', debit_amount__gt=0,
+    ).aggregate(t=Sum('debit_amount'))['t'] or Decimal('0')
+    equity_cr = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+        account__code__startswith='1', credit_amount__gt=0,
+    ).aggregate(t=Sum('credit_amount'))['t'] or Decimal('0')
+    equity_net = equity_cr - equity_dr
+    if equity_net != 0:
+        financing_rows.append({'label': 'Capital / Equity Movements', 'amount': equity_net})
+        net_financing += equity_net
+
+    # ── OPENING / CLOSING CASH ──
+    # Cash accounts = class 5 (Bank + Cash)
+    cash_opening_lines = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__lt=date_from,
+        account__code__startswith='5',
+    ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+    opening_cash = (cash_opening_lines['dr'] or Decimal('0')) - (cash_opening_lines['cr'] or Decimal('0'))
+
+    net_change = net_operating + net_investing + net_financing
+    closing_cash = opening_cash + net_change
 
     return render(request, 'billing/cash_flow.html', {
         'date_from': date_from,
         'date_to': date_to,
-        'cash_receipts': cash_receipts,
-        'expenses_total': expenses_total,
-        'ap_payments_total': ap_payments_total,
-        'operating_inflow': operating_inflow,
-        'operating_outflow': operating_outflow,
+        'operating_inflows': operating_inflows,
+        'operating_outflows': operating_outflows,
+        'total_op_inflows': total_op_inflows,
+        'total_op_outflows': total_op_outflows,
         'net_operating': net_operating,
+        'investing_rows': investing_rows,
+        'net_investing': net_investing,
+        'financing_rows': financing_rows,
+        'net_financing': net_financing,
+        'opening_cash': opening_cash,
+        'net_change': net_change,
+        'closing_cash': closing_cash,
     })
 
 

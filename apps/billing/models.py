@@ -77,6 +77,31 @@ class DiscountApprovalStatus(models.TextChoices):
     REJECTED = 'REJECTED', 'Rejected'
 
 
+class ServiceSubCategory(AuditModel):
+    """
+    Sub-category within a ServiceCategory — e.g. "Frames" under OPTICAL.
+    Each sub-category links to a specific GL revenue account for precise posting.
+    """
+    category = models.CharField(max_length=20, choices=ServiceCategory.choices)
+    name = models.CharField(max_length=100, help_text='e.g. Frames, Lenses, Prescription Drugs')
+    code = models.CharField(max_length=20, blank=True, help_text='Short code e.g. FRM, LNS')
+    gl_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='service_sub_categories',
+        help_text='GL revenue account for this sub-category (overrides category default)'
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['category', 'sort_order', 'name']
+        unique_together = [('category', 'name')]
+        verbose_name = 'Service Sub-Category'
+        verbose_name_plural = 'Service Sub-Categories'
+
+    def __str__(self):
+        return f"{self.get_category_display()} > {self.name}"
+
+
 class ServicePrice(AuditModel):
     """
     Charge Description Master (CDM) — DB-driven price list.
@@ -89,15 +114,35 @@ class ServicePrice(AuditModel):
         help_text='Internal billing code (e.g. CONS-STD, OPT-REFRAC)'
     )
     category = models.CharField(max_length=20, choices=ServiceCategory.choices)
+    sub_category = models.ForeignKey(
+        ServiceSubCategory, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='services',
+        help_text='Sub-category within the family (e.g. Frames under Optical)'
+    )
     tier = models.CharField(
         max_length=20, blank=True, default='',
         help_text='Leave blank = visible to ALL cashier desks. '
                   'Set to restrict this service to a specific desk tier only '
                   '(e.g. VIP consultation at a higher price for VIP desk).',
     )
+    gl_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='service_prices',
+        help_text='GL revenue account for this specific item (overrides sub-category and category defaults)'
+    )
+
+    # ── Pricing ──
+    price_ht = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text='Price Hors Taxe (before tax) in FCFA'
+    )
+    tax_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text='Tax rate % (e.g. 19.25 for Cameroon TVA). 0 = exempt.'
+    )
     price = models.DecimalField(
         max_digits=10, decimal_places=2,
-        help_text='Standard selling price in FCFA'
+        help_text='Price TTC (tax-inclusive) in FCFA — the amount the patient pays'
     )
     nhis_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
@@ -106,6 +151,16 @@ class ServicePrice(AuditModel):
     insurance_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text='Insurance-negotiated rate (leave blank to use standard price)'
+    )
+
+    # ── Item properties ──
+    is_stockable = models.BooleanField(
+        default=False,
+        help_text='Tracks physical inventory (stock > 0). E.g. frames, lenses, drugs.'
+    )
+    is_taxable = models.BooleanField(
+        default=False,
+        help_text='Subject to TVA/VAT. If True, tax_rate applies.'
     )
     is_active = models.BooleanField(default=True)
     requires_price_entry = models.BooleanField(
@@ -128,6 +183,22 @@ class ServicePrice(AuditModel):
         if payment_method == PaymentMethod.INSURANCE and self.insurance_price is not None:
             return self.insurance_price
         return self.price
+
+    def get_gl_code(self):
+        """Resolve GL account: item → sub-category → category default."""
+        if self.gl_account_id:
+            return self.gl_account.code
+        if self.sub_category_id and self.sub_category.gl_account_id:
+            return self.sub_category.gl_account.code
+        from apps.billing.gl_service import get_revenue_code
+        return get_revenue_code(self.category)
+
+    @property
+    def tax_amount(self):
+        """Computed tax amount."""
+        if self.tax_rate and self.price_ht:
+            return (self.price_ht * self.tax_rate / 100).quantize(self.price_ht.__class__('0.01'))
+        return self.price_ht.__class__('0')
 
 
 class InvoiceVoidReason(AuditModel):
@@ -274,10 +345,19 @@ class Invoice(AuditModel):
 
 class InvoiceItem(AuditModel):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
+    service_price = models.ForeignKey(
+        ServicePrice, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invoice_items',
+        help_text='Link to catalog item (for GL account resolution and reporting)'
+    )
     category = models.CharField(max_length=20, choices=ServiceCategory.choices)
     description = models.CharField(max_length=255)
     quantity = models.PositiveSmallIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+        help_text='Tax portion of the line total (TVA)')
+    gl_account_code = models.CharField(max_length=20, blank=True,
+        help_text='GL revenue account code resolved at billing time')
     notes = models.CharField(max_length=200, blank=True)
 
     def __str__(self):
@@ -286,6 +366,15 @@ class InvoiceItem(AuditModel):
     @property
     def line_total(self):
         return self.quantity * self.unit_price
+
+    def resolve_gl_code(self):
+        """Get the GL account code for this line item."""
+        if self.gl_account_code:
+            return self.gl_account_code
+        if self.service_price_id:
+            return self.service_price.get_gl_code()
+        from apps.billing.gl_service import get_revenue_code
+        return get_revenue_code(self.category)
 
 
 class Payment(AuditModel):
@@ -320,10 +409,17 @@ class Payment(AuditModel):
     def save(self, *args, **kwargs):
         if not self.receipt_number:
             from django.db import IntegrityError, transaction as _tx
-            year = timezone.now().year
-            for _retry in range(20):
-                count = Payment.objects.filter(created_at__year=year).count() + 1 + _retry
-                self.receipt_number = f"RCT-{year}-{count:05d}"
+            # Derive receipt number from invoice number for traceability
+            # INV-2026-00470 → RCT-2026-00470, RCT-2026-00470-2, etc.
+            inv_num = self.invoice.invoice_number  # e.g. INV-2026-00470
+            base = inv_num.replace('INV-', 'RCT-', 1)
+            existing = Payment.objects.filter(
+                invoice=self.invoice, is_deleted=False
+            ).exclude(pk=self.pk).count()
+            suffix = f"-{existing + 1}" if existing > 0 else ""
+            candidate = f"{base}{suffix}"
+            for _retry in range(10):
+                self.receipt_number = candidate if _retry == 0 else f"{base}-{existing + 1 + _retry}"
                 try:
                     with _tx.atomic():
                         super().save(*args, **kwargs)
@@ -331,7 +427,7 @@ class Payment(AuditModel):
                 except IntegrityError:
                     self.receipt_number = ''
             else:
-                raise RuntimeError('Unable to generate unique receipt number after 20 retries')
+                raise RuntimeError('Unable to generate unique receipt number after 10 retries')
         else:
             super().save(*args, **kwargs)
         self.invoice.update_status()
@@ -1160,7 +1256,7 @@ class GLAccount(AuditModel):
     def balance(self):
         """Running balance: sum of debits minus credits (for assets/expenses) or reverse."""
         from django.db.models import Sum as _S
-        lines = self.journal_lines.filter(entry__is_posted=True, entry__is_deleted=False)
+        lines = self.journal_lines.filter(entry__is_deleted=False)
         debits  = lines.aggregate(t=_S('debit_amount'))['t']  or 0
         credits = lines.aggregate(t=_S('credit_amount'))['t'] or 0
         if self.account_type in (AccountType.ASSET, AccountType.EXPENSE):

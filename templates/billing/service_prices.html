@@ -4,21 +4,19 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">Service Price Catalog</h5>
-      <div class="text-muted small">Charge Description Master — all billable services & prices</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Service Price Catalog</h5>
+    <div class="text-muted small">Charge Description Master — all billable services, categories & GL accounts</div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'billing:export_service_prices' %}?q={{ search }}&cat={{ filter_cat }}" class="btn btn-success btn-sm">
-      Download CSV
+      <i class="bi bi-download me-1"></i>Download CSV
     </a>
-    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-      Print
-    </button>
+    <a href="{% url 'billing:sub_category_list' %}" class="btn btn-outline-info btn-sm">
+      <i class="bi bi-folder me-1"></i>Manage Families ({{ sub_categories|length }})
+    </a>
     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPriceModal">
-      Add Service
+      <i class="bi bi-plus-circle me-1"></i>Add Service
     </button>
   </div>
 </div>
@@ -30,13 +28,13 @@
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
     <form method="get" class="row g-2 align-items-center">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-          <input type="text" name="q" class="form-control" placeholder="Search name or code…" value="{{ search }}">
+          <input type="text" name="q" class="form-control" placeholder="Search name or code..." value="{{ search }}">
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <select name="cat" class="form-select form-select-sm">
           <option value="">All Categories</option>
           {% for val, label in categories %}
@@ -44,7 +42,15 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
+        <select name="sub" class="form-select form-select-sm">
+          <option value="">All Sub-Categories</option>
+          {% for sc in sub_categories %}
+          <option value="{{ sc.id }}" {% if filter_sub == sc.id|slugify %}selected{% endif %}>{{ sc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
         <select name="tier" class="form-select form-select-sm">
           {% for val, label in tiers %}
           <option value="{{ val }}" {% if filter_tier == val %}selected{% endif %}>{{ label }}</option>
@@ -70,10 +76,13 @@
             <th>Service Name</th>
             <th>Code</th>
             <th>Category</th>
-            <th>Desk Tier</th>
-            <th class="text-end">Standard (FCFA)</th>
-            <th class="text-end">NHIS Rate</th>
-            <th class="text-end">Insurance Rate</th>
+            <th>Sub-Category</th>
+            <th>GL Account</th>
+            <th>Tier</th>
+            <th class="text-end">HT (FCFA)</th>
+            <th class="text-center">Tax %</th>
+            <th class="text-end">TTC (FCFA)</th>
+            <th class="text-center">Props</th>
             <th class="text-center">Active</th>
             <th></th>
           </tr>
@@ -84,37 +93,52 @@
             <td class="fw-semibold">{{ sp.name }}
               {% if sp.requires_price_entry %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Manual Price</span>{% endif %}
             </td>
-            <td class="text-muted font-monospace">{{ sp.code|default:"—" }}</td>
+            <td class="text-muted font-monospace">{{ sp.code|default:"-" }}</td>
             <td><span class="badge bg-light text-dark border">{{ sp.get_category_display }}</span></td>
+            <td class="small">{{ sp.sub_category.name|default:"-" }}</td>
             <td>
-              {% if sp.tier == 'VIP' %}
-                <span class="badge bg-danger">VIP Desk</span>
-              {% elif sp.tier == 'INSURED' %}
-                <span class="badge bg-info text-dark">Insured/HMO</span>
-              {% elif sp.tier == 'STANDARD' %}
-                <span class="badge bg-secondary">Standard</span>
+              {% if sp.gl_account %}
+                <code class="text-primary">{{ sp.gl_account.code }}</code>
+              {% elif sp.sub_category.gl_account %}
+                <code class="text-muted">{{ sp.sub_category.gl_account.code }}</code>
               {% else %}
-                <span class="badge bg-light text-muted border">All Desks</span>
+                <span class="text-muted">-</span>
               {% endif %}
             </td>
+            <td>
+              {% if sp.tier == 'VIP' %}<span class="badge bg-danger">VIP</span>
+              {% elif sp.tier == 'INSURED' %}<span class="badge bg-info text-dark">HMO</span>
+              {% elif sp.tier == 'STANDARD' %}<span class="badge bg-secondary">Std</span>
+              {% else %}<span class="badge bg-light text-muted border">All</span>{% endif %}
+            </td>
+            <td class="text-end text-muted">{% if sp.price_ht %}{{ sp.price_ht|floatformat:0|intcomma }}{% else %}-{% endif %}</td>
+            <td class="text-center">{% if sp.tax_rate %}{{ sp.tax_rate|floatformat:2 }}%{% else %}-{% endif %}</td>
             <td class="text-end fw-semibold text-primary">{{ sp.price|floatformat:0|intcomma }}</td>
-            <td class="text-end text-muted">{% if sp.nhis_price %}{{ sp.nhis_price|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
-            <td class="text-end text-muted">{% if sp.insurance_price %}{{ sp.insurance_price|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-center">
+              {% if sp.is_stockable %}<span class="badge bg-info text-dark me-1" title="Stockable"><i class="bi bi-box-seam"></i></span>{% endif %}
+              {% if sp.is_taxable %}<span class="badge bg-warning text-dark" title="Taxable"><i class="bi bi-percent"></i></span>{% endif %}
+            </td>
             <td class="text-center">
               <button class="btn btn-sm py-0 px-2 {% if sp.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
                       onclick="togglePrice('{{ sp.id }}', this)" title="Toggle active">
-                {% if sp.is_active %}Active{% else %}Inactive{% endif %}
+                {% if sp.is_active %}Active{% else %}Off{% endif %}
               </button>
             </td>
             <td>
-              <button class="btn btn-sm btn-outline-primary py-0 px-2"
-                      onclick="openEdit('{{ sp.id }}','{{ sp.name|escapejs }}','{{ sp.code|escapejs }}','{{ sp.category }}','{{ sp.tier }}',{{ sp.price }},{% if sp.nhis_price %}{{ sp.nhis_price }}{% else %}''{% endif %},{% if sp.insurance_price %}{{ sp.insurance_price }}{% else %}''{% endif %},{% if sp.requires_price_entry %}true{% else %}false{% endif %})">
+              <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="openEdit('{{ sp.id }}', this)" data-sp='{{ sp.id }}'
+                data-name="{{ sp.name|escapejs }}" data-code="{{ sp.code|escapejs }}" data-category="{{ sp.category }}"
+                data-tier="{{ sp.tier }}" data-price="{{ sp.price }}" data-nhis="{% if sp.nhis_price %}{{ sp.nhis_price }}{% endif %}"
+                data-ins="{% if sp.insurance_price %}{{ sp.insurance_price }}{% endif %}" data-req="{{ sp.requires_price_entry|yesno:'1,0' }}"
+                data-price_ht="{{ sp.price_ht|default_if_none:0 }}" data-tax_rate="{{ sp.tax_rate|default_if_none:0 }}"
+                data-sub_category="{% if sp.sub_category_id %}{{ sp.sub_category_id }}{% endif %}"
+                data-gl_account="{% if sp.gl_account_id %}{{ sp.gl_account_id }}{% endif %}"
+                data-stockable="{{ sp.is_stockable|yesno:'1,0' }}" data-taxable="{{ sp.is_taxable|yesno:'1,0' }}">
                 Edit
               </button>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="9" class="text-center text-muted py-5">
+          <tr><td colspan="12" class="text-center text-muted py-5">
             No services yet. <a href="#" data-bs-toggle="modal" data-bs-target="#addPriceModal">Add the first one.</a>
           </td></tr>
           {% endfor %}
@@ -126,7 +150,7 @@
 
 <!-- Add Price Modal -->
 <div class="modal fade" id="addPriceModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form method="post" action="{% url 'billing:service_price_create' %}">
         {% csrf_token %}
@@ -136,50 +160,87 @@
         </div>
         <div class="modal-body">
           <div class="row g-3">
-            <div class="col-12">
+            <div class="col-8">
               <label class="form-label small fw-semibold">Service Name *</label>
               <input type="text" name="name" class="form-control" required placeholder="e.g. General Eye Consultation">
             </div>
-            <div class="col-6">
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Internal Code</label>
+              <input type="text" name="code" class="form-control" placeholder="e.g. CONS-STD">
+            </div>
+            <div class="col-4">
               <label class="form-label small fw-semibold">Category *</label>
-              <select name="category" class="form-select" required>
-                <option value="">— select —</option>
+              <select name="category" class="form-select" required id="addCategory">
+                <option value="">-- select --</option>
                 {% for val, label in categories %}
                 <option value="{{ val }}">{{ label }}</option>
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6">
-              <label class="form-label small fw-semibold">Desk Tier Restriction</label>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Sub-Category</label>
+              <select name="sub_category" class="form-select" id="addSubCat">
+                <option value="">-- none --</option>
+                {% for sc in sub_categories %}
+                <option value="{{ sc.id }}" data-cat="{{ sc.category }}">{{ sc.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Desk Tier</label>
               <select name="tier" class="form-select">
                 {% for val, label in tiers %}
                 <option value="{{ val }}">{{ label }}</option>
                 {% endfor %}
               </select>
-              <div class="form-text">Leave "All Tiers" if this service applies to every cashier desk.</div>
             </div>
-            <div class="col-6">
-              <label class="form-label small fw-semibold">Internal Code</label>
-              <input type="text" name="code" class="form-control" placeholder="e.g. CONS-STD">
+
+            <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Pricing</div></div>
+
+            <div class="col-3">
+              <label class="form-label small fw-semibold">Price HT (FCFA)</label>
+              <input type="number" name="price_ht" class="form-control" min="0" step="1" placeholder="Before tax" id="addHT">
             </div>
-            <div class="col-4">
-              <label class="form-label small fw-semibold">Standard Price (FCFA) *</label>
-              <input type="number" name="price" class="form-control" required min="0" step="100">
+            <div class="col-2">
+              <label class="form-label small fw-semibold">Tax Rate %</label>
+              <input type="number" name="tax_rate" class="form-control" min="0" step="0.01" value="0" id="addTaxRate">
             </div>
-            <div class="col-4">
+            <div class="col-3">
+              <label class="form-label small fw-semibold">Price TTC (FCFA) *</label>
+              <input type="number" name="price" class="form-control" required min="0" step="1" id="addTTC">
+            </div>
+            <div class="col-2">
               <label class="form-label small fw-semibold">NHIS Rate</label>
               <input type="number" name="nhis_price" class="form-control" min="0" step="100" placeholder="optional">
             </div>
-            <div class="col-4">
+            <div class="col-2">
               <label class="form-label small fw-semibold">Insurance Rate</label>
               <input type="number" name="insurance_price" class="form-control" min="0" step="100" placeholder="optional">
             </div>
-            <div class="col-12">
+
+            <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Accounting & Properties</div></div>
+
+            <div class="col-6">
+              <label class="form-label small fw-semibold">GL Revenue Account</label>
+              <select name="gl_account" class="form-select form-select-sm">
+                <option value="">-- use sub-category / category default --</option>
+                {% for a in gl_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6 d-flex align-items-end gap-4 pb-1">
               <div class="form-check">
-                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="reqPrice">
-                <label class="form-check-label small" for="reqPrice">
-                  Cashier must enter price manually (e.g. glasses frames with variable price)
-                </label>
+                <input type="checkbox" name="is_stockable" class="form-check-input" id="addStockable">
+                <label class="form-check-label small" for="addStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="is_taxable" class="form-check-input" id="addTaxable">
+                <label class="form-check-label small" for="addTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="addReqPrice">
+                <label class="form-check-label small" for="addReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
               </div>
             </div>
           </div>
@@ -195,7 +256,7 @@
 
 <!-- Edit Price Modal -->
 <div class="modal fade" id="editPriceModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
         <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-1 text-warning"></i>Edit Service Price</h6>
@@ -203,11 +264,15 @@
       </div>
       <div class="modal-body">
         <div class="row g-3">
-          <div class="col-12">
+          <div class="col-8">
             <label class="form-label small fw-semibold">Service Name *</label>
             <input type="text" id="editName" class="form-control" required>
           </div>
-          <div class="col-6">
+          <div class="col-4">
+            <label class="form-label small fw-semibold">Internal Code</label>
+            <input type="text" id="editCode" class="form-control">
+          </div>
+          <div class="col-4">
             <label class="form-label small fw-semibold">Category *</label>
             <select id="editCategory" class="form-select" required>
               {% for val, label in categories %}
@@ -215,34 +280,70 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-6">
-            <label class="form-label small fw-semibold">Desk Tier Restriction</label>
+          <div class="col-4">
+            <label class="form-label small fw-semibold">Sub-Category</label>
+            <select id="editSubCat" class="form-select">
+              <option value="">-- none --</option>
+              {% for sc in sub_categories %}
+              <option value="{{ sc.id }}" data-cat="{{ sc.category }}">{{ sc.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-semibold">Desk Tier</label>
             <select id="editTier" class="form-select">
               {% for val, label in tiers %}
               <option value="{{ val }}">{{ label }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="col-6">
-            <label class="form-label small fw-semibold">Internal Code</label>
-            <input type="text" id="editCode" class="form-control">
+
+          <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Pricing</div></div>
+
+          <div class="col-3">
+            <label class="form-label small fw-semibold">Price HT</label>
+            <input type="number" id="editHT" class="form-control" min="0" step="1">
           </div>
-          <div class="col-4">
-            <label class="form-label small fw-semibold">Standard Price (FCFA) *</label>
-            <input type="number" id="editPrice" class="form-control" required min="0" step="100">
+          <div class="col-2">
+            <label class="form-label small fw-semibold">Tax %</label>
+            <input type="number" id="editTaxRate" class="form-control" min="0" step="0.01">
           </div>
-          <div class="col-4">
+          <div class="col-3">
+            <label class="form-label small fw-semibold">Price TTC *</label>
+            <input type="number" id="editPrice" class="form-control" required min="0" step="1">
+          </div>
+          <div class="col-2">
             <label class="form-label small fw-semibold">NHIS Rate</label>
             <input type="number" id="editNhis" class="form-control" min="0" step="100">
           </div>
-          <div class="col-4">
+          <div class="col-2">
             <label class="form-label small fw-semibold">Insurance Rate</label>
             <input type="number" id="editIns" class="form-control" min="0" step="100">
           </div>
-          <div class="col-12">
+
+          <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Accounting & Properties</div></div>
+
+          <div class="col-6">
+            <label class="form-label small fw-semibold">GL Revenue Account</label>
+            <select id="editGLAccount" class="form-select form-select-sm">
+              <option value="">-- default --</option>
+              {% for a in gl_accounts %}
+              <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 d-flex align-items-end gap-4 pb-1">
+            <div class="form-check">
+              <input type="checkbox" id="editStockable" class="form-check-input">
+              <label class="form-check-label small" for="editStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" id="editTaxable" class="form-check-input">
+              <label class="form-check-label small" for="editTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
+            </div>
             <div class="form-check">
               <input type="checkbox" id="editReqPrice" class="form-check-input">
-              <label class="form-check-label small" for="editReqPrice">Cashier must enter price manually</label>
+              <label class="form-check-label small" for="editReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
             </div>
           </div>
         </div>
@@ -261,16 +362,45 @@
 <script>
 let currentEditId = null;
 
-function openEdit(id, name, code, cat, tier, price, nhis, ins, reqPrice) {
-  currentEditId = id;
-  document.getElementById('editName').value     = name;
-  document.getElementById('editCode').value     = code;
-  document.getElementById('editCategory').value = cat;
-  document.getElementById('editTier').value     = tier || '';
-  document.getElementById('editPrice').value    = price;
-  document.getElementById('editNhis').value     = nhis || '';
-  document.getElementById('editIns').value      = ins  || '';
-  document.getElementById('editReqPrice').checked = reqPrice;
+/* Auto-calc TTC from HT + tax */
+function calcTTC(htId, taxId, ttcId) {
+  const ht = parseFloat(document.getElementById(htId).value) || 0;
+  const rate = parseFloat(document.getElementById(taxId).value) || 0;
+  if (ht > 0) document.getElementById(ttcId).value = Math.round(ht * (1 + rate / 100));
+}
+document.getElementById('addHT')?.addEventListener('input', () => calcTTC('addHT','addTaxRate','addTTC'));
+document.getElementById('addTaxRate')?.addEventListener('input', () => calcTTC('addHT','addTaxRate','addTTC'));
+document.getElementById('editHT')?.addEventListener('input', () => calcTTC('editHT','editTaxRate','editPrice'));
+document.getElementById('editTaxRate')?.addEventListener('input', () => calcTTC('editHT','editTaxRate','editPrice'));
+
+/* Filter sub-categories by selected category */
+function filterSubs(catSelect, subSelect) {
+  const cat = catSelect.value;
+  const opts = subSelect.querySelectorAll('option[data-cat]');
+  opts.forEach(o => o.style.display = (!cat || o.dataset.cat === cat) ? '' : 'none');
+}
+document.getElementById('addCategory')?.addEventListener('change', function() {
+  filterSubs(this, document.getElementById('addSubCat'));
+});
+
+function openEdit(spId, btn) {
+  const d = btn.dataset;
+  currentEditId = spId;
+  document.getElementById('editName').value     = d.name;
+  document.getElementById('editCode').value     = d.code;
+  document.getElementById('editCategory').value = d.category;
+  document.getElementById('editSubCat').value   = d.sub_category || '';
+  document.getElementById('editTier').value     = d.tier || '';
+  document.getElementById('editPrice').value    = d.price;
+  document.getElementById('editHT').value       = d.price_ht || '';
+  document.getElementById('editTaxRate').value  = d.tax_rate || '';
+  document.getElementById('editNhis').value     = d.nhis || '';
+  document.getElementById('editIns').value      = d.ins || '';
+  document.getElementById('editGLAccount').value = d.gl_account || '';
+  document.getElementById('editReqPrice').checked  = d.req === '1';
+  document.getElementById('editStockable').checked = d.stockable === '1';
+  document.getElementById('editTaxable').checked   = d.taxable === '1';
+  filterSubs(document.getElementById('editCategory'), document.getElementById('editSubCat'));
   new bootstrap.Modal(document.getElementById('editPriceModal')).show();
 }
 
@@ -281,11 +411,17 @@ function saveEdit() {
   data.append('name',     document.getElementById('editName').value);
   data.append('code',     document.getElementById('editCode').value);
   data.append('category', document.getElementById('editCategory').value);
+  data.append('sub_category', document.getElementById('editSubCat').value);
   data.append('tier',     document.getElementById('editTier').value);
   data.append('price',    document.getElementById('editPrice').value);
+  data.append('price_ht', document.getElementById('editHT').value);
+  data.append('tax_rate', document.getElementById('editTaxRate').value);
   data.append('nhis_price',      document.getElementById('editNhis').value);
   data.append('insurance_price', document.getElementById('editIns').value);
-  if (document.getElementById('editReqPrice').checked) data.append('requires_price_entry', '1');
+  data.append('gl_account', document.getElementById('editGLAccount').value);
+  if (document.getElementById('editReqPrice').checked)  data.append('requires_price_entry', '1');
+  if (document.getElementById('editStockable').checked) data.append('is_stockable', '1');
+  if (document.getElementById('editTaxable').checked)   data.append('is_taxable', '1');
 
   fetch(`/billing/service-prices/${currentEditId}/edit/`, { method: 'POST', body: data })
     .then(r => r.json())
@@ -301,7 +437,7 @@ function togglePrice(id, btn) {
     headers: { 'X-CSRFToken': '{{ csrf_token }}' },
   }).then(r => r.json()).then(d => {
     if (d.success) {
-      btn.textContent = d.is_active ? 'Active' : 'Inactive';
+      btn.textContent = d.is_active ? 'Active' : 'Off';
       btn.className   = 'btn btn-sm py-0 px-2 ' + (d.is_active ? 'btn-success' : 'btn-outline-secondary');
     }
   });

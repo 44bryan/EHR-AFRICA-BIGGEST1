@@ -870,7 +870,7 @@
     {% endif %}{# module_pharmacy #}
 
     {% if not modules or modules.module_opticals %}
-    {% if u.is_super_admin or u.is_optical_dispenser or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'low_vision_specialist' or u.is_medical_director or u.is_ceo or u.is_cashier or u.is_chief_cashier or u.is_store_keeper %}
+    {% if u.is_super_admin or u.is_optical_dispenser or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'low_vision_specialist' or u.is_medical_director or u.is_ceo or u.is_store_keeper %}
     <div class="sidebar-label">Opticals</div>
     <a href="{% url 'opticals:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Dashboard">
@@ -1100,10 +1100,12 @@
 
     {% if u.is_super_admin or u.is_billing_officer or u.is_ceo or u.can_see_everything %}
     {% if u.role != 'cashier' and not u.is_finance_director and not u.is_admin_director and not u.is_medical_director %}
+
+    {# ── Billing Officer gets clerk-level access only — no financial reports or GL ── #}
+    {% if u.is_billing_officer %}
     <div class="sidebar-label">Billing</div>
-    {% if u.is_super_admin or u.is_billing_officer %}
     <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — revenue &amp; cost overview">
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard">
       <i class="bi bi-speedometer2"></i><span>Finance Dashboard</span>
     </a>
     <a href="{% url 'billing:pos_landing' %}" class="sidebar-link"
@@ -1114,7 +1116,6 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="New Invoice">
       <i class="bi bi-file-earmark-plus"></i><span>New Invoice / Direct Bill</span>
     </a>
-    {% endif %}
     <a href="{% url 'billing:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Billing &amp; Payments">
       <i class="bi bi-receipt"></i><span>Billing &amp; Payments</span>
@@ -1123,11 +1124,9 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
       <i class="bi bi-list-ul"></i><span>All Invoices</span>
     </a>
-    {# Billing Officer gets clerk-level access only — no financial reports or GL #}
-    {% if u.is_billing_officer %}
     <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog">
-      <i class="bi bi-tags"></i><span>Price Catalog</span>
+      <i class="bi bi-tags"></i><span>Service Price Catalog</span>
     </a>
     <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate Accounts">
@@ -1142,44 +1141,72 @@
       <i class="bi bi-people-fill"></i><span>Cashier Queue</span>
     </a>
     {% endif %}
+
+    {# ── Super Admin / CEO — Full finance module access, organized by function ── #}
     {% if u.is_super_admin or u.is_ceo %}
+
+    {# ── 1. Billing Operations ── #}
+    <div class="sidebar-label">Billing Operations</div>
+    <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — revenue &amp; cost overview">
+      <i class="bi bi-speedometer2"></i><span>Finance Dashboard</span>
+    </a>
+    {% if u.is_super_admin %}
+    <a href="{% url 'billing:pos_landing' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="POS — bill active patient">
+      <i class="bi bi-cash-coin"></i><span>POS (Active Patient)</span>
+    </a>
+    <a href="{% url 'billing:invoice_create' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="New Invoice">
+      <i class="bi bi-file-earmark-plus"></i><span>New Invoice / Direct Bill</span>
+    </a>
+    {% endif %}
+    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
+      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
+    </a>
     <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog">
-      <i class="bi bi-tags"></i><span>Price Catalog</span>
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog — fee schedule">
+      <i class="bi bi-tags"></i><span>Service Price Catalog</span>
+    </a>
+    <a href="{% url 'billing:sub_category_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Families — Sub-Category Management">
+      <i class="bi bi-folder"></i><span>Service Families</span>
     </a>
     <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate Accounts">
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
       <i class="bi bi-building"></i><span>Corporate Accounts</span>
     </a>
-    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
-      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
     </a>
-    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds">
-      <i class="bi bi-wallet2"></i><span>Petty Cash</span>
-    </a>
-    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Shifts">
-      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
-    </a>
-    {% if u.is_super_admin or u.is_billing_officer %}
+
+    {# ── 2. Cash Desk Management ── #}
+    <div class="sidebar-label">Cash Desk Management</div>
     <a href="{% url 'billing:shift_day_open' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Open Day for All Cashiers">
       <i class="bi bi-sun"></i><span>Open Cashier Day</span>
     </a>
-    {% endif %}
     <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks Overview">
-      <i class="bi bi-grid-3x3-gap"></i><span>All Cash Desks</span>
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks — live balances">
+      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
+    </a>
+    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Shifts — daily close">
+      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
     </a>
     <a href="{% url 'billing:session_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Cashier Sessions — Z-reports &amp; Verify">
       <i class="bi bi-collection"></i><span>Cashier Sessions</span>
     </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
+    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
+      <i class="bi bi-calculator"></i><span>Cashier Reconciliation</span>
     </a>
     {% if u.is_super_admin %}
     <a href="{% url 'billing:desk_list' %}" class="sidebar-link"
@@ -1187,183 +1214,234 @@
       <i class="bi bi-building-check"></i><span>Desk Configuration</span>
     </a>
     {% endif %}
-    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
-      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
-    </a>
-    <div class="sidebar-label mt-2">Financial Reports</div>
-    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal">
-      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
-    </a>
-    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
-      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
-    </a>
+
+    {# ── 3. Financial Statements ── #}
+    <div class="sidebar-label">Financial Statements</div>
     <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="P&amp;L Statement">
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Income Statement / P&amp;L">
       <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
     </a>
-    <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
-      <i class="bi bi-trophy"></i><span>Top Services</span>
+    <a href="{% url 'billing:balance_sheet' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Financial Position">
+      <i class="bi bi-bank"></i><span>Balance Sheet</span>
     </a>
-    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Reconciliation">
-      <i class="bi bi-check2-square"></i><span>Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
-      <i class="bi bi-slash-circle"></i><span>Void Register</span>
-    </a>
-    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial Records">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial Records</span>
-    </a>
-    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue breakdown by desk and tier">
-      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging">
-      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
-    </a>
-    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual">
-      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
-    </a>
-    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
-      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
-    </a>
-    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register">
-      <i class="bi bi-building-gear"></i><span>Asset Register</span>
-    </a>
-    <div class="sidebar-label">General Ledger</div>
-    <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Chart of Accounts">
-      <i class="bi bi-list-columns"></i><span>Chart of Accounts</span>
-    </a>
-    <a href="{% url 'billing:journal_entry_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Journal Entries">
-      <i class="bi bi-journal-bookmark"></i><span>Journal Entries</span>
-    </a>
-    <a href="{% url 'billing:general_ledger' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="General Ledger">
-      <i class="bi bi-book-half"></i><span>General Ledger</span>
+    <a href="{% url 'billing:cash_flow_statement' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Cash Flows">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Flow Statement</span>
     </a>
     <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
       <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
     </a>
-    <a href="{% url 'billing:balance_sheet' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Balance Sheet">
-      <i class="bi bi-bank"></i><span>Balance Sheet</span>
+    <a href="{% url 'billing:revenue_analysis' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analysis — by category, sub-category &amp; payment method">
+      <i class="bi bi-graph-up-arrow"></i><span>Revenue Analysis</span>
     </a>
-    <a href="{% url 'billing:cash_flow_statement' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Flow Statement">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Flow</span>
+
+    {# ── 4. General Ledger ── #}
+    <div class="sidebar-label">General Ledger</div>
+    <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="OHADA Chart of Accounts">
+      <i class="bi bi-list-columns"></i><span>Chart of Accounts</span>
     </a>
-    <div class="sidebar-label">Accounts Payable</div>
-    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — service providers paid via bills">
-      <i class="bi bi-building"></i><span>AP Vendors</span>
+    <a href="{% url 'billing:journal_entry_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Journal Entries — manual &amp; auto-posted">
+      <i class="bi bi-journal-bookmark"></i><span>Journal Entries</span>
     </a>
-    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills">
-      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
-    </a>
-    {% endif %}
-    {# ── Banking, Cheques, Cash Management — Senior Accountant, Accountant, Chief Cashier ── #}
-    {% if u.is_senior_accountant or u.is_super_admin %}
-    <div class="sidebar-label">Banking</div>
-    <a href="{% url 'billing:bank_account_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Accounts">
-      <i class="bi bi-bank"></i><span>Bank Accounts</span>
-    </a>
-    <a href="{% url 'billing:bank_reconciliation_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Reconciliation">
-      <i class="bi bi-check2-square"></i><span>Bank Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Deposits to Bank">
-      <i class="bi bi-box-arrow-up-right"></i><span>Deposits to Bank</span>
-    </a>
-    {% endif %}
-    {% if u.is_accountant or u.is_senior_accountant or u.is_super_admin %}
-    <div class="sidebar-label">Cheques</div>
-    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books">
-      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
-    </a>
-    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register">
-      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
-    </a>
-    {% endif %}
-    {% if u.is_chief_cashier or u.is_senior_accountant or u.is_accountant or u.is_super_admin %}
-    <div class="sidebar-label">Cash Management</div>
-    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
-    </a>
-    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
-      <i class="bi bi-safe"></i><span>Safe Balance</span>
-    </a>
-    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
-      <i class="bi bi-exclamation-diamond"></i><span>Variance Register</span>
-    </a>
-    {% endif %}
-    {# Staff Advances — any authenticated user can view their own #}
-    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Advances">
-      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
-    </a>
-    {% if u.is_senior_accountant or u.is_super_admin %}
-    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal Requests">
-      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
-    </a>
-    <div class="sidebar-label">Advanced Reports</div>
-    <a href="{% url 'billing:report_daily_liquidity' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Liquidity Position">
-      <i class="bi bi-droplet-half"></i><span>Liquidity Report</span>
-    </a>
-    <a href="{% url 'billing:report_surgery_revenue' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgery Revenue Analysis">
-      <i class="bi bi-heart-pulse"></i><span>Surgery Revenue</span>
-    </a>
-    <a href="{% url 'billing:report_revenue_by_department' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Department">
-      <i class="bi bi-diagram-3"></i><span>Revenue by Dept</span>
-    </a>
-    <a href="{% url 'billing:report_ap_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Payable Aging">
-      <i class="bi bi-hourglass-bottom"></i><span>AP Aging</span>
-    </a>
-    <a href="{% url 'billing:report_monthly_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Financial Summary">
-      <i class="bi bi-calendar-check"></i><span>Monthly Summary</span>
-    </a>
-    <a href="{% url 'billing:report_audit_trail' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Financial Audit Trail">
-      <i class="bi bi-shield-check"></i><span>Audit Trail</span>
-    </a>
-    <a href="{% url 'billing:budget_ytd_report' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual — YTD">
-      <i class="bi bi-graph-up-arrow"></i><span>Budget YTD</span>
-    </a>
-    <a href="{% url 'billing:fiscal_period_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Fiscal Period Management">
-      <i class="bi bi-lock"></i><span>Fiscal Periods</span>
+    <a href="{% url 'billing:general_ledger' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="General Ledger — account activity">
+      <i class="bi bi-book-half"></i><span>General Ledger</span>
     </a>
     <a href="{% url 'billing:cost_center_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cost Centers — departmental cost allocation">
       <i class="bi bi-diagram-3"></i><span>Cost Centers</span>
     </a>
+
+    {# ── 5. Payables & Expenditure ── #}
+    <div class="sidebar-label">Payables &amp; Expenditure</div>
+    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — supplier master list">
+      <i class="bi bi-building"></i><span>AP Vendors</span>
+    </a>
+    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills — invoices from suppliers">
+      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
+    </a>
+    <a href="{% url 'billing:report_ap_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Aging — outstanding payables by age">
+      <i class="bi bi-hourglass-bottom"></i><span>AP Aging Report</span>
+    </a>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
+      <i class="bi bi-receipt-cutoff"></i><span>Expense Records</span>
+    </a>
+    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds — imprest system">
+      <i class="bi bi-wallet2"></i><span>Petty Cash Funds</span>
+    </a>
+    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Salary &amp; Business Advances">
+      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
+    </a>
+
+    {# ── 6. Treasury & Banking ── #}
+    <div class="sidebar-label">Treasury &amp; Banking</div>
+    <a href="{% url 'billing:bank_account_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Accounts — master list">
+      <i class="bi bi-bank"></i><span>Bank Accounts</span>
+    </a>
+    <a href="{% url 'billing:bank_reconciliation_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Reconciliation — match book vs bank">
+      <i class="bi bi-check2-square"></i><span>Bank Reconciliation</span>
+    </a>
+    <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Deposits to Bank">
+      <i class="bi bi-box-arrow-up-right"></i><span>Cash Deposits to Bank</span>
+    </a>
+    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books — issuance tracking">
+      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
+    </a>
+    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register — all issued cheques">
+      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
+    </a>
+
+    {# ── 7. Cash Management ── #}
+    <div class="sidebar-label">Cash Management</div>
+    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
+    </a>
+    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
+      <i class="bi bi-safe"></i><span>Safe Balance Log</span>
+    </a>
+    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
+      <i class="bi bi-exclamation-diamond"></i><span>Cash Variance Register</span>
+    </a>
+
+    {# ── 8. Fixed Assets ── #}
+    <div class="sidebar-label">Fixed Assets</div>
+    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register — depreciation tracking">
+      <i class="bi bi-building-gear"></i><span>Fixed Asset Register</span>
+    </a>
+    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal — sold, scrapped, donated">
+      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
+    </a>
+
+    {# ── 9. Budgets ── #}
+    <div class="sidebar-label">Budgets &amp; Planning</div>
+    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual — variance analysis">
+      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
+    </a>
+    <a href="{% url 'billing:budget_ytd_report' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Year-to-Date Budget Performance">
+      <i class="bi bi-graph-up-arrow"></i><span>Budget YTD Report</span>
+    </a>
+    <a href="{% url 'billing:budget_annual_create' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Create Annual Budget — 12-month wizard">
+      <i class="bi bi-calendar-plus"></i><span>Annual Budget Wizard</span>
+    </a>
+
+    {# ── 10. Tax & Compliance ── #}
+    <div class="sidebar-label">Tax &amp; Compliance</div>
+    <a href="{% url 'billing:report_tva' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="TVA / VAT Return — monthly declaration">
+      <i class="bi bi-percent"></i><span>TVA Return</span>
+    </a>
+    <a href="{% url 'billing:report_dsf' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="DSF — Annual Statistical &amp; Tax Return (Cameroon)">
+      <i class="bi bi-file-earmark-ruled"></i><span>DSF Tax Return</span>
+    </a>
+    <a href="{% url 'billing:fiscal_period_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Fiscal Period Management — Open / Close / Lock">
+      <i class="bi bi-lock"></i><span>Fiscal Periods</span>
+    </a>
+    <a href="{% url 'billing:report_audit_trail' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Financial Audit Trail — all transactions">
+      <i class="bi bi-shield-check"></i><span>Financial Audit Trail</span>
+    </a>
+    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register — cancelled invoices">
+      <i class="bi bi-slash-circle"></i><span>Void &amp; Cancel Register</span>
+    </a>
+
+    {# ── 11. Revenue Analytics ── #}
+    <div class="sidebar-label">Revenue Analytics</div>
+    <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
+      <i class="bi bi-trophy"></i><span>Top Services by Revenue</span>
+    </a>
+    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
+      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
+    </a>
+    <a href="{% url 'billing:report_surgery_revenue' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgery Revenue — by type, surgeon, month">
+      <i class="bi bi-heart-pulse"></i><span>Surgery Revenue</span>
+    </a>
+    <a href="{% url 'billing:report_revenue_by_department' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Department — trends">
+      <i class="bi bi-diagram-3"></i><span>Revenue by Department</span>
+    </a>
+    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary — collections, payments, balances">
+      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
+    </a>
+    <a href="{% url 'billing:report_daily_liquidity' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Liquidity Position">
+      <i class="bi bi-droplet-half"></i><span>Daily Liquidity Report</span>
+    </a>
+    <a href="{% url 'billing:report_monthly_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Financial Summary">
+      <i class="bi bi-calendar-check"></i><span>Monthly Financial Summary</span>
+    </a>
+    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial Records">
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial Records</span>
+    </a>
+    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
+      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Receivable Aging — 30/60/90/120 days">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging Report</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
+    </a>
+    <a href="{% url 'billing:report_donor' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Donor / Grant Financial Report">
+      <i class="bi bi-gift"></i><span>Donor / Grant Report</span>
+    </a>
+
+    {# ── 12. Insurance (HMO) ── #}
+    {% if not modules or modules.module_hmo %}
+    <div class="sidebar-label">Insurance (HMO)</div>
+    <a href="{% url 'hmo:dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance Claims Dashboard">
+      <i class="bi bi-shield-plus"></i><span>Insurance Dashboard</span>
+    </a>
+    <a href="{% url 'hmo:scheme_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Manage Insurance Schemes">
+      <i class="bi bi-shield-check"></i><span>Insurance Schemes</span>
+    </a>
+    <a href="{% url 'hmo:claim_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Insurance Claims">
+      <i class="bi bi-file-earmark-medical"></i><span>All Claims</span>
+    </a>
+    <a href="{% url 'hmo:insurance_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance AR Aging — 30/60/90+ days">
+      <i class="bi bi-hourglass-split"></i><span>Insurance AR Aging</span>
+    </a>
+    {% endif %}
     {% endif %}
     {% endif %}
     {% endif %}
@@ -1373,15 +1451,15 @@
     <div class="sidebar-label">Blood Bank</div>
     <a href="{% url 'blood_bank:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Blood Bank Overview">
-      <i class="bi bi-droplet-fill text-danger"></i><span>Overview</span>
+      <i class="bi bi-droplet-fill text-danger"></i><span>Blood Bank Overview</span>
     </a>
     <a href="{% url 'blood_bank:unit_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Blood Inventory">
-      <i class="bi bi-inboxes"></i><span>Inventory</span>
+      <i class="bi bi-inboxes"></i><span>Blood Inventory</span>
     </a>
     <a href="{% url 'blood_bank:crossmatch_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cross-Match Records">
-      <i class="bi bi-intersect"></i><span>Cross-Match</span>
+      <i class="bi bi-intersect"></i><span>Cross-Match Records</span>
     </a>
     <a href="{% url 'blood_bank:issue_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Blood Issue / Transfusion Log">
@@ -1390,7 +1468,7 @@
     {% if u.is_super_admin or u.is_lab_technician or u.is_investigation_technician %}
     <a href="{% url 'blood_bank:donor_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Donor Register">
-      <i class="bi bi-people"></i><span>Donors</span>
+      <i class="bi bi-people"></i><span>Donor Register</span>
     </a>
     {% endif %}
     {% endif %}
@@ -1400,7 +1478,7 @@
     <div class="sidebar-label">Mortuary</div>
     <a href="{% url 'mortuary:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Mortuary Overview">
-      <i class="bi bi-house-door"></i><span>Overview</span>
+      <i class="bi bi-house-door"></i><span>Mortuary Overview</span>
     </a>
     <a href="{% url 'mortuary:admission_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Body Register">
@@ -1408,7 +1486,7 @@
     </a>
     <a href="{% url 'mortuary:storage_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Storage Compartments">
-      <i class="bi bi-grid-3x3"></i><span>Storage</span>
+      <i class="bi bi-grid-3x3"></i><span>Storage Compartments</span>
     </a>
     {% endif %}
 
@@ -1417,7 +1495,7 @@
     <div class="sidebar-label">Infection Control</div>
     <a href="{% url 'infection_control:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Infection Control Overview">
-      <i class="bi bi-bug"></i><span>Overview</span>
+      <i class="bi bi-bug"></i><span>Infection Control Overview</span>
     </a>
     <a href="{% url 'infection_control:hai_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="HAI Reports">
@@ -1429,7 +1507,7 @@
     </a>
     <a href="{% url 'infection_control:outbreak_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Outbreak Alerts">
-      <i class="bi bi-exclamation-triangle"></i><span>Outbreaks</span>
+      <i class="bi bi-exclamation-triangle"></i><span>Outbreak Alerts</span>
     </a>
     {% endif %}
 
@@ -1437,24 +1515,24 @@
     <div class="sidebar-label">Telemedicine</div>
     <a href="{% url 'telemedicine:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Telemedicine Dashboard">
-      <i class="bi bi-camera-video"></i><span>Overview</span>
+      <i class="bi bi-camera-video"></i><span>Telemedicine Dashboard</span>
     </a>
     <a href="{% url 'telemedicine:appointment_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Tele-Appointments">
-      <i class="bi bi-calendar2-week"></i><span>Appointments</span>
+      <i class="bi bi-calendar2-week"></i><span>Tele-Appointments</span>
     </a>
     {# Schedule link — clinicians + receptionist/admission only #}
     {% if u.is_doctor and u.role != 'orthoptist' or u.is_nurse_director or u.is_receptionist or u.is_admission_officer %}
     <a href="{% url 'telemedicine:appointment_create' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Schedule Tele-Appointment">
-      <i class="bi bi-calendar-plus"></i><span>Schedule</span>
+      <i class="bi bi-calendar-plus"></i><span>Schedule Appointment</span>
     </a>
     {% endif %}
     {% endif %}
 
-    {# HMO / Insurance Claims — Finance/Admin/Cashier roles #}
+    {# HMO / Insurance Claims — Finance & Admin roles ONLY (no cashier/chief_cashier) #}
     {% if not modules or modules.module_hmo %}
-    {% if u.is_super_admin or u.is_finance_director or u.is_senior_accountant or u.is_accountant or u.is_admin_director or u.is_ceo or u.is_cashier or u.is_chief_cashier or u.is_medical_director %}
+    {% if u.is_super_admin or u.is_finance_director or u.is_senior_accountant or u.is_accountant or u.is_admin_director or u.is_ceo or u.is_medical_director %}
     <div class="sidebar-label">HMO &amp; Insurance</div>
     <a href="{% url 'hmo:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="HMO / Insurance Claims Dashboard">
@@ -1463,7 +1541,7 @@
     {% if u.is_super_admin or u.is_finance_director or u.is_senior_accountant or u.is_admin_director %}
     <a href="{% url 'hmo:scheme_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance Schemes (CNPS, Mutual, Corporate)">
-      <i class="bi bi-shield-plus"></i><span>Schemes</span>
+      <i class="bi bi-shield-plus"></i><span>Insurance Schemes</span>
     </a>
     <a href="{% url 'hmo:batch_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Claim Submission Batches">
@@ -1472,15 +1550,15 @@
     {% endif %}
     <a href="{% url 'hmo:member_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Enrolled Members">
-      <i class="bi bi-person-badge"></i><span>Members</span>
+      <i class="bi bi-person-badge"></i><span>Insured Members</span>
     </a>
     <a href="{% url 'hmo:preauth_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Pre-Authorisation Requests">
-      <i class="bi bi-clock-history"></i><span>Pre-Auth</span>
+      <i class="bi bi-clock-history"></i><span>Pre-Authorization</span>
     </a>
     <a href="{% url 'hmo:claim_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Claims">
-      <i class="bi bi-file-earmark-medical"></i><span>Claims</span>
+      <i class="bi bi-file-earmark-medical"></i><span>All Claims</span>
     </a>
     {% if u.is_super_admin or u.is_finance_director or u.is_senior_accountant or u.is_accountant or u.is_admin_director or u.is_ceo %}
     <a href="{% url 'hmo:insurance_ledger' %}" class="sidebar-link"
@@ -1489,7 +1567,7 @@
     </a>
     <a href="{% url 'hmo:insurance_aging' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance AR Aging Report">
-      <i class="bi bi-graph-up-arrow"></i><span>AR Aging</span>
+      <i class="bi bi-graph-up-arrow"></i><span>Insurance AR Aging</span>
     </a>
     {% endif %}
     {% endif %}
@@ -1509,7 +1587,7 @@
     {% if u.is_super_admin or u.is_admin_director or u.is_medical_director %}
     <a href="{% url 'notifications:template_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Message templates">
-      <i class="bi bi-file-text"></i><span>Templates</span>
+      <i class="bi bi-file-text"></i><span>Message Templates</span>
     </a>
     {% endif %}
     {% endif %}
@@ -1520,7 +1598,7 @@
     <div class="sidebar-label">Dietary &amp; Nutrition</div>
     <a href="{% url 'dietary:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Dietary & Nutrition Dashboard">
-      <i class="bi bi-egg-fried"></i><span>Dietary</span>
+      <i class="bi bi-egg-fried"></i><span>Dietary Dashboard</span>
     </a>
     <a href="{% url 'dietary:order_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Diet Orders">
@@ -1536,7 +1614,7 @@
     {% if not modules or modules.module_outreach %}
     <a href="{% url 'outreach:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Outreach">
-      <i class="bi bi-geo-alt"></i><span>Outreach</span>
+      <i class="bi bi-geo-alt"></i><span>Outreach Dashboard</span>
     </a>
     <a href="{% url 'outreach:stats' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Outreach Annual Statistics">
@@ -1871,7 +1949,7 @@
     </a>
     <a href="{% url 'hrms:payroll_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Payroll Runs">
-      <i class="bi bi-cash-stack"></i><span>Payroll</span>
+      <i class="bi bi-cash-stack"></i><span>Payroll Runs</span>
     </a>
     <a href="{% url 'hrms:payroll_create' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Create New Payroll Run">
@@ -1909,11 +1987,35 @@
     <div class="sidebar-label">Finance Overview</div>
     <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — KPIs">
-      <i class="bi bi-cash-coin"></i><span>Finance Dashboard</span>
+      <i class="bi bi-speedometer2"></i><span>Finance Dashboard</span>
+    </a>
+    <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Income Statement / P&amp;L">
+      <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
+    </a>
+    <a href="{% url 'billing:balance_sheet' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Financial Position">
+      <i class="bi bi-bank"></i><span>Balance Sheet</span>
+    </a>
+    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
+      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
     </a>
     <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
       <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual — variance analysis">
+      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Receivable Aging">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging Report</span>
+    </a>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
+      <i class="bi bi-receipt-cutoff"></i><span>Expense Records</span>
     </a>
     <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
@@ -1921,7 +2023,7 @@
     </a>
     <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register">
-      <i class="bi bi-building-gear"></i><span>Asset Register</span>
+      <i class="bi bi-building-gear"></i><span>Fixed Asset Register</span>
     </a>
     <a href="{% url 'reports:revenue_report' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analytics">
@@ -1952,7 +2054,7 @@
     {% if not modules or modules.module_outreach %}
     <a href="{% url 'outreach:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Community Outreach">
-      <i class="bi bi-geo-alt"></i><span>Outreach</span>
+      <i class="bi bi-geo-alt"></i><span>Outreach Dashboard</span>
     </a>
     <a href="{% url 'outreach:stats' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Outreach Statistics">
@@ -2030,12 +2132,12 @@
     {% endif %}{# end admin_director dedicated section #}
 
     {% if u.is_finance_director %}
-    {% comment %}FINANCE DIRECTOR — Core finance first, operational oversight last{% endcomment %}
+    {% comment %}FINANCE DIRECTOR — Strategic financial oversight only (no cashier/POS operations){% endcomment %}
 
-    {# ── 1. Strategic Overview ── #}
-    <div class="sidebar-label">Strategic Overview</div>
-    <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance KPI Dashboard">
+    {# ── 1. My Dashboard ── #}
+    <div class="sidebar-label">My Dashboard</div>
+    <a href="{% url 'billing:finance_director_dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Director Executive Dashboard">
       <i class="bi bi-speedometer2"></i><span>Finance Dashboard</span>
     </a>
     <a href="{% url 'billing:report_daily_liquidity' %}" class="sidebar-link"
@@ -2044,35 +2146,10 @@
     </a>
     <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary — collections, payments, balances">
-      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
+      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
     </a>
 
-    {# ── 1b. Stock Validation (4-Eyes) ── #}
-    <a href="{% url 'inventory:stock_validation_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="4-Eyes Stock Validation — Review &amp; validate stock transactions for GL posting">
-      <i class="bi bi-shield-check"></i><span>Stock Validations</span>
-    </a>
-    <a href="{% url 'inventory:stock_ledger' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Stock Ledger — Stock Movement History">
-      <i class="bi bi-journal-text"></i><span>Stock Ledger</span>
-    </a>
-
-    {# ── 1c. Procurement (AP workflow) ── #}
-    <div class="sidebar-label">Procurement</div>
-    <a href="{% url 'inventory:supplier_invoice_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Supplier Invoices — Record &amp; match vendor invoices">
-      <i class="bi bi-receipt"></i><span>Supplier Invoices</span>
-    </a>
-    <a href="{% url 'inventory:three_way_match_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="3-Way Match — PO vs GRN vs Invoice verification">
-      <i class="bi bi-check2-all"></i><span>3-Way Match</span>
-    </a>
-    <a href="{% url 'inventory:po_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Purchase Orders">
-      <i class="bi bi-file-earmark-text"></i><span>Purchase Orders</span>
-    </a>
-
-    {# ── 2. Financial Statements (CFO core) ── #}
+    {# ── 2. Financial Statements ── #}
     <div class="sidebar-label">Financial Statements</div>
     <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Income Statement / P&amp;L">
@@ -2085,6 +2162,14 @@
     <a href="{% url 'billing:cash_flow_statement' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Cash Flows">
       <i class="bi bi-arrow-left-right"></i><span>Cash Flow Statement</span>
+    </a>
+    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
+      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
+    </a>
+    <a href="{% url 'billing:revenue_analysis' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analysis — by category, sub-category &amp; payment method">
+      <i class="bi bi-graph-up-arrow"></i><span>Revenue Analysis</span>
     </a>
 
     {# ── 3. General Ledger ── #}
@@ -2101,10 +2186,6 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="General Ledger — account activity">
       <i class="bi bi-book-half"></i><span>General Ledger</span>
     </a>
-    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
-      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
-    </a>
     <a href="{% url 'billing:cost_center_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cost Centers — departmental cost allocation">
       <i class="bi bi-diagram-3"></i><span>Cost Centers</span>
@@ -2118,14 +2199,116 @@
     </a>
     <a href="{% url 'billing:budget_ytd_report' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Year-to-Date Budget Performance">
-      <i class="bi bi-graph-up-arrow"></i><span>Budget YTD</span>
+      <i class="bi bi-graph-up-arrow"></i><span>Budget YTD Report</span>
     </a>
     <a href="{% url 'billing:budget_annual_create' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Create Annual Budget — 12-month wizard">
       <i class="bi bi-calendar-plus"></i><span>Annual Budget Wizard</span>
     </a>
 
-    {# ── 5. Tax & Compliance ── #}
+    {# ── 5. Revenue & Receivables ── #}
+    <div class="sidebar-label">Revenue &amp; Receivables</div>
+    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Receivable Aging — 30/60/90/120 days">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging Report</span>
+    </a>
+    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
+      <i class="bi bi-building"></i><span>Corporate Accounts</span>
+    </a>
+    <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog — fee schedule">
+      <i class="bi bi-tags"></i><span>Service Price Catalog</span>
+    </a>
+    <a href="{% url 'billing:sub_category_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Families — Sub-Category Management">
+      <i class="bi bi-folder"></i><span>Service Families</span>
+    </a>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
+    </a>
+    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets — deposits &amp; balances">
+      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
+    </a>
+
+    {# ── 6. Accounts Payable & Expenditure ── #}
+    <div class="sidebar-label">Payables &amp; Expenditure</div>
+    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — supplier master list">
+      <i class="bi bi-building"></i><span>AP Vendors</span>
+    </a>
+    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills — invoices from suppliers">
+      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
+    </a>
+    <a href="{% url 'billing:report_ap_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Aging — outstanding payables by age">
+      <i class="bi bi-hourglass-bottom"></i><span>AP Aging Report</span>
+    </a>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
+      <i class="bi bi-receipt-cutoff"></i><span>Expense Records</span>
+    </a>
+    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds — imprest system">
+      <i class="bi bi-wallet2"></i><span>Petty Cash Funds</span>
+    </a>
+    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Salary &amp; Business Advances">
+      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
+    </a>
+    {% if not modules or modules.module_hrms %}
+    <a href="{% url 'hrms:payroll_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Payroll Runs — salary processing">
+      <i class="bi bi-cash-stack"></i><span>Payroll Runs</span>
+    </a>
+    {% endif %}
+
+    {# ── 7. Treasury & Banking ── #}
+    <div class="sidebar-label">Treasury &amp; Banking</div>
+    <a href="{% url 'billing:bank_account_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Accounts — master list">
+      <i class="bi bi-bank"></i><span>Bank Accounts</span>
+    </a>
+    <a href="{% url 'billing:bank_reconciliation_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Reconciliation — match book vs bank">
+      <i class="bi bi-check2-square"></i><span>Bank Reconciliation</span>
+    </a>
+    <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Deposits to Bank">
+      <i class="bi bi-box-arrow-up-right"></i><span>Cash Deposits to Bank</span>
+    </a>
+    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books — issuance tracking">
+      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
+    </a>
+    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register — all issued cheques">
+      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
+    </a>
+
+    {# ── 8. Fixed Assets ── #}
+    <div class="sidebar-label">Fixed Assets</div>
+    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register — depreciation tracking">
+      <i class="bi bi-building-gear"></i><span>Fixed Asset Register</span>
+    </a>
+    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal — sold, scrapped, donated">
+      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
+    </a>
+
+    {# ── 9. Tax & Compliance ── #}
     <div class="sidebar-label">Tax &amp; Compliance</div>
     <a href="{% url 'billing:report_tva' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="TVA / VAT Return — monthly declaration">
@@ -2143,13 +2326,407 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Financial Audit Trail — all transactions">
       <i class="bi bi-shield-check"></i><span>Financial Audit Trail</span>
     </a>
-    <a href="{% url 'dashboard:audit_log' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="System Audit Log — all staff actions">
-      <i class="bi bi-file-earmark-lock"></i><span>System Audit Log</span>
-    </a>
     <a href="{% url 'billing:void_register' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register — cancelled invoices">
-      <i class="bi bi-slash-circle"></i><span>Void Register</span>
+      <i class="bi bi-slash-circle"></i><span>Void &amp; Cancel Register</span>
+    </a>
+
+    {# ── 10. Revenue Analytics ── #}
+    <div class="sidebar-label">Revenue Analytics</div>
+    <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
+      <i class="bi bi-trophy"></i><span>Top Services by Revenue</span>
+    </a>
+    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
+      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
+    </a>
+    <a href="{% url 'billing:report_surgery_revenue' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgery Revenue — by type, surgeon, month">
+      <i class="bi bi-heart-pulse"></i><span>Surgery Revenue</span>
+    </a>
+    <a href="{% url 'billing:report_revenue_by_department' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Department — trends">
+      <i class="bi bi-diagram-3"></i><span>Revenue by Department</span>
+    </a>
+    <a href="{% url 'billing:report_donor' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Donor / Grant Financial Report">
+      <i class="bi bi-gift"></i><span>Donor / Grant Report</span>
+    </a>
+    <a href="{% url 'reports:revenue_report' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analytics — hospital-wide">
+      <i class="bi bi-graph-up"></i><span>Revenue Report</span>
+    </a>
+
+    {# ── 11. Insurance (HMO) ── #}
+    {% if not modules or modules.module_hmo %}
+    <div class="sidebar-label">Insurance (HMO)</div>
+    <a href="{% url 'hmo:dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance Claims Dashboard">
+      <i class="bi bi-shield-plus"></i><span>Insurance Dashboard</span>
+    </a>
+    <a href="{% url 'hmo:scheme_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Manage Insurance Schemes">
+      <i class="bi bi-shield-check"></i><span>Insurance Schemes</span>
+    </a>
+    <a href="{% url 'hmo:claim_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Insurance Claims">
+      <i class="bi bi-file-earmark-medical"></i><span>All Claims</span>
+    </a>
+    <a href="{% url 'hmo:insurance_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance AR Aging — 30/60/90+ days">
+      <i class="bi bi-hourglass-split"></i><span>Insurance AR Aging</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    {% comment %}CHIEF CASHIER — Cash operations supervisor{% endcomment %}
+    {% if u.role == 'chief_cashier' %}
+
+    {# ── 1. Day Management ── #}
+    <div class="sidebar-label">Day Management</div>
+    <a href="{% url 'billing:shift_day_open' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Open Working Day for All Cashiers">
+      <i class="bi bi-sun"></i><span>Open Cashier Day</span>
+    </a>
+    <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks — live balances">
+      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
+    </a>
+
+    {# ── 2. Shifts & Sessions ── #}
+    <div class="sidebar-label">Shifts &amp; Sessions</div>
+    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cashier Shifts — daily close">
+      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
+    </a>
+    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Desk Sessions — Z-reports &amp; verify">
+      <i class="bi bi-collection"></i><span>Cashier Sessions</span>
+    </a>
+    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
+      <i class="bi bi-calculator"></i><span>Cashier Reconciliation</span>
+    </a>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
+    </a>
+
+    {# ── 3. Cash Management ── #}
+    <div class="sidebar-label">Cash Management</div>
+    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
+    </a>
+    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
+      <i class="bi bi-safe"></i><span>Safe Balance Log</span>
+    </a>
+    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
+      <i class="bi bi-exclamation-diamond"></i><span>Cash Variance Register</span>
+    </a>
+    <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Deposits to Bank">
+      <i class="bi bi-box-arrow-up-right"></i><span>Cash Deposits to Bank</span>
+    </a>
+
+    {# ── 4. Reports ── #}
+    <div class="sidebar-label">Reports</div>
+    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
+      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
+    </a>
+    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
+      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
+    </a>
+    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
+      <i class="bi bi-slash-circle"></i><span>Void &amp; Cancel Register</span>
+    </a>
+    {% if not modules or modules.module_opticals %}
+    <a href="{% url 'opticals:order_list_unpaid' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Billing — unpaid orders">
+      <i class="bi bi-eyeglasses"></i><span>Optical Billing</span>
+    </a>
+    {% endif %}
+
+    {# ── 5. Patients ── #}
+    <div class="sidebar-label">Patients</div>
+    <a href="{% url 'patients:list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Search">
+      <i class="bi bi-search"></i><span>Patient Search</span>
+    </a>
+    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
+    </a>
+    <a href="{% url 'reception:walk_in' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Walk-in / Check-in">
+      <i class="bi bi-person-walking"></i><span>Walk-in / Check-in</span>
+    </a>
+    {% endif %}
+
+    {% comment %}ACCOUNTANT — Revenue/Expense processing, GL read access, cash oversight{% endcomment %}
+    {% if u.role == 'accountant' %}
+
+    {# ── 1. General Ledger (read access) ── #}
+    <div class="sidebar-label">General Ledger</div>
+    <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="OHADA Chart of Accounts">
+      <i class="bi bi-list-columns"></i><span>Chart of Accounts</span>
+    </a>
+    <a href="{% url 'billing:journal_entry_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Journal Entries">
+      <i class="bi bi-journal-bookmark"></i><span>Journal Entries</span>
+    </a>
+    <a href="{% url 'billing:general_ledger' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="General Ledger — account activity">
+      <i class="bi bi-book-half"></i><span>General Ledger</span>
+    </a>
+    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
+      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
+    </a>
+
+    {# ── 2. Revenue & Receivables ── #}
+    <div class="sidebar-label">Revenue &amp; Receivables</div>
+    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging — outstanding receivables 30/60/90/120">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging Report</span>
+    </a>
+    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
+      <i class="bi bi-building"></i><span>Corporate Accounts</span>
+    </a>
+    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
+    </a>
+    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
+      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
+    </a>
+
+    {# ── 3. Expenditure ── #}
+    <div class="sidebar-label">Expenditure</div>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
+      <i class="bi bi-receipt-cutoff"></i><span>Expense Records</span>
+    </a>
+    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds">
+      <i class="bi bi-wallet2"></i><span>Petty Cash Funds</span>
+    </a>
+    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Salary &amp; Business Advances">
+      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
+    </a>
+    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors">
+      <i class="bi bi-building"></i><span>AP Vendors</span>
+    </a>
+    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills">
+      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
+    </a>
+
+    {# ── 4. Cheques ── #}
+    <div class="sidebar-label">Cheques</div>
+    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books">
+      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
+    </a>
+    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register">
+      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
+    </a>
+
+    {# ── 5. Reports ── #}
+    <div class="sidebar-label">Reports</div>
+    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
+      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
+    </a>
+    <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
+      <i class="bi bi-trophy"></i><span>Top Services by Revenue</span>
+    </a>
+    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
+      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
+    </a>
+    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
+      <i class="bi bi-slash-circle"></i><span>Void &amp; Cancel Register</span>
+    </a>
+    <a href="{% url 'billing:report_monthly_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Financial Summary">
+      <i class="bi bi-calendar-check"></i><span>Monthly Summary</span>
+    </a>
+
+    {# ── 6. Cash Operations (oversight) ── #}
+    <div class="sidebar-label">Cash Operations</div>
+    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Sessions — Z-reports &amp; Verify">
+      <i class="bi bi-collection"></i><span>Cashier Sessions</span>
+    </a>
+    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
+      <i class="bi bi-calculator"></i><span>Cashier Reconciliation</span>
+    </a>
+    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
+    </a>
+    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
+      <i class="bi bi-safe"></i><span>Safe Balance Log</span>
+    </a>
+    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
+      <i class="bi bi-exclamation-diamond"></i><span>Cash Variance Register</span>
+    </a>
+    {% endif %}
+
+    {% comment %}SENIOR ACCOUNTANT — Full accounting access: GL, Financial Statements, Banking, AP, AR, Assets{% endcomment %}
+    {% if u.role == 'senior_accountant' %}
+
+    {# ── 1. Financial Statements ── #}
+    <div class="sidebar-label">Financial Statements</div>
+    <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Income Statement / P&amp;L">
+      <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
+    </a>
+    <a href="{% url 'billing:balance_sheet' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Financial Position">
+      <i class="bi bi-bank"></i><span>Balance Sheet</span>
+    </a>
+    <a href="{% url 'billing:cash_flow_statement' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Statement of Cash Flows">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Flow Statement</span>
+    </a>
+    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
+      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
+    </a>
+    <a href="{% url 'billing:revenue_analysis' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analysis — by category, sub-category &amp; payment method">
+      <i class="bi bi-graph-up-arrow"></i><span>Revenue Analysis</span>
+    </a>
+
+    {# ── 2. General Ledger ── #}
+    <div class="sidebar-label">General Ledger</div>
+    <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="OHADA Chart of Accounts">
+      <i class="bi bi-list-columns"></i><span>Chart of Accounts</span>
+    </a>
+    <a href="{% url 'billing:journal_entry_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Journal Entries — manual &amp; auto-posted">
+      <i class="bi bi-journal-bookmark"></i><span>Journal Entries</span>
+    </a>
+    <a href="{% url 'billing:general_ledger' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="General Ledger — account activity">
+      <i class="bi bi-book-half"></i><span>General Ledger</span>
+    </a>
+    <a href="{% url 'billing:cost_center_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cost Centers — departmental cost allocation">
+      <i class="bi bi-diagram-3"></i><span>Cost Centers</span>
+    </a>
+
+    {# ── 3. Budgets & Planning ── #}
+    <div class="sidebar-label">Budgets &amp; Planning</div>
+    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual — variance analysis">
+      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
+    </a>
+    <a href="{% url 'billing:budget_ytd_report' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Year-to-Date Budget Performance">
+      <i class="bi bi-graph-up-arrow"></i><span>Budget YTD Report</span>
+    </a>
+    <a href="{% url 'billing:budget_annual_create' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Create Annual Budget — 12-month wizard">
+      <i class="bi bi-calendar-plus"></i><span>Annual Budget Wizard</span>
+    </a>
+
+    {# ── 4. Revenue & Receivables ── #}
+    <div class="sidebar-label">Revenue &amp; Receivables</div>
+    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
+      <i class="bi bi-list-ul"></i><span>All Invoices</span>
+    </a>
+    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
+      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
+    </a>
+    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging — 30/60/90/120 days">
+      <i class="bi bi-hourglass-split"></i><span>AR Aging Report</span>
+    </a>
+    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
+      <i class="bi bi-building"></i><span>Corporate Accounts</span>
+    </a>
+    <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog — fee schedule">
+      <i class="bi bi-tags"></i><span>Service Price Catalog</span>
+    </a>
+    <a href="{% url 'billing:sub_category_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Families — Sub-Category Management">
+      <i class="bi bi-folder"></i><span>Service Families</span>
+    </a>
+    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
+      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
+    </a>
+    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets — deposits &amp; balances">
+      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
+    </a>
+    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
+      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
+    </a>
+    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
+      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
+    </a>
+
+    {# ── 5. Payables & Expenditure ── #}
+    <div class="sidebar-label">Payables &amp; Expenditure</div>
+    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — supplier master list">
+      <i class="bi bi-building"></i><span>AP Vendors</span>
+    </a>
+    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills — invoices from suppliers">
+      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
+    </a>
+    <a href="{% url 'billing:report_ap_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Aging — outstanding payables by age">
+      <i class="bi bi-hourglass-bottom"></i><span>AP Aging Report</span>
+    </a>
+    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
+      <i class="bi bi-receipt-cutoff"></i><span>Expense Records</span>
+    </a>
+    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds — imprest system">
+      <i class="bi bi-wallet2"></i><span>Petty Cash Funds</span>
+    </a>
+    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Salary &amp; Business Advances">
+      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
     </a>
 
     {# ── 6. Treasury & Banking ── #}
@@ -2164,11 +2741,7 @@
     </a>
     <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Deposits to Bank">
-      <i class="bi bi-box-arrow-up-right"></i><span>Deposits to Bank</span>
-    </a>
-    <a href="{% url 'billing:bank_statement_import' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Import Bank Statements (CSV)">
-      <i class="bi bi-cloud-upload"></i><span>Import Statements</span>
+      <i class="bi bi-box-arrow-up-right"></i><span>Cash Deposits to Bank</span>
     </a>
     <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books — issuance tracking">
@@ -2179,11 +2752,41 @@
       <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
     </a>
 
-    {# ── 7. Revenue Analytics ── #}
+    {# ── 7. Fixed Assets ── #}
+    <div class="sidebar-label">Fixed Assets</div>
+    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register — depreciation tracking">
+      <i class="bi bi-building-gear"></i><span>Fixed Asset Register</span>
+    </a>
+    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal — sold, scrapped, donated">
+      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
+    </a>
+
+    {# ── 8. Tax & Compliance ── #}
+    <div class="sidebar-label">Tax &amp; Compliance</div>
+    <a href="{% url 'billing:report_tva' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="TVA / VAT Return — monthly declaration">
+      <i class="bi bi-percent"></i><span>TVA Return</span>
+    </a>
+    <a href="{% url 'billing:fiscal_period_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Fiscal Period Management — Open / Close / Lock">
+      <i class="bi bi-lock"></i><span>Fiscal Periods</span>
+    </a>
+    <a href="{% url 'billing:report_audit_trail' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Financial Audit Trail — all transactions">
+      <i class="bi bi-shield-check"></i><span>Financial Audit Trail</span>
+    </a>
+    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register — cancelled invoices">
+      <i class="bi bi-slash-circle"></i><span>Void &amp; Cancel Register</span>
+    </a>
+
+    {# ── 9. Revenue Analytics ── #}
     <div class="sidebar-label">Revenue Analytics</div>
     <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
-      <i class="bi bi-trophy"></i><span>Top Services</span>
+      <i class="bi bi-trophy"></i><span>Top Services by Revenue</span>
     </a>
     <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
@@ -2195,521 +2798,68 @@
     </a>
     <a href="{% url 'billing:report_revenue_by_department' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Department — trends">
-      <i class="bi bi-diagram-3"></i><span>Revenue by Dept</span>
+      <i class="bi bi-diagram-3"></i><span>Revenue by Department</span>
     </a>
-    <a href="{% url 'billing:report_monthly_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Financial Summary">
-      <i class="bi bi-calendar-check"></i><span>Monthly Summary</span>
-    </a>
-    <a href="{% url 'billing:report_donor' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Donor / Grant Financial Report">
-      <i class="bi bi-gift"></i><span>Donor Report</span>
-    </a>
-    <a href="{% url 'reports:revenue_report' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analytics — hospital-wide">
-      <i class="bi bi-graph-up"></i><span>Revenue Report</span>
-    </a>
-
-    {# ── 8. Fixed Assets ── #}
-    <div class="sidebar-label">Fixed Assets</div>
-    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register — depreciation tracking">
-      <i class="bi bi-building-gear"></i><span>Asset Register</span>
-    </a>
-    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal — sold, scrapped, donated">
-      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
-    </a>
-
-    {# ── 9. Accounts Payable ── #}
-    <div class="sidebar-label">Accounts Payable</div>
-    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors — supplier master list">
-      <i class="bi bi-building"></i><span>Vendors</span>
-    </a>
-    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills — invoices from suppliers">
-      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
-    </a>
-    <a href="{% url 'billing:report_ap_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Aging — outstanding payables by age">
-      <i class="bi bi-hourglass-bottom"></i><span>AP Aging</span>
-    </a>
-
-    {# ── 10. Expenditure ── #}
-    <div class="sidebar-label">Expenditure</div>
-    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Expense Records">
-      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
-    </a>
-    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds — imprest system">
-      <i class="bi bi-wallet2"></i><span>Petty Cash</span>
-    </a>
-    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Salary &amp; Business Advances">
-      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
-    </a>
-    {% if not modules or modules.module_hrms %}
-    <a href="{% url 'hrms:payroll_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Payroll Runs — salary processing">
-      <i class="bi bi-cash-stack"></i><span>Payroll</span>
-    </a>
-    <a href="{% url 'hrms:payroll_create' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Create New Payroll Run">
-      <i class="bi bi-file-earmark-plus"></i><span>Create Payroll</span>
-    </a>
-    <a href="{% url 'hrms:staff_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff List — for payroll reference">
-      <i class="bi bi-people-fill"></i><span>Staff List</span>
-    </a>
-    {% endif %}
-
-    {# ── 11. Revenue & Receivables (operational) ── #}
-    <div class="sidebar-label">Revenue &amp; Receivables</div>
-    <a href="{% url 'billing:dashboard' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Billing Dashboard — revenue overview">
-      <i class="bi bi-receipt"></i><span>Billing Dashboard</span>
-    </a>
-    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
-      <i class="bi bi-list-ul"></i><span>All Invoices</span>
-    </a>
-    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
-      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Accounts Receivable Aging — 30/60/90/120 days">
-      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
-    </a>
-    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
-      <i class="bi bi-building"></i><span>Corporate Accounts</span>
-    </a>
-    <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog — fee schedule">
-      <i class="bi bi-tags"></i><span>Price Catalog</span>
-    </a>
-    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices — cost estimates">
-      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
-    </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
-    </a>
-    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
-    </a>
-    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets — deposits &amp; balances">
-      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
-    </a>
-
-    {# ── 12. Cash Management (delegated to Chief Cashier) ── #}
-    <div class="sidebar-label">Cash Management</div>
-    <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks — live balances">
-      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
-    </a>
-    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
-    </a>
-    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log — daily count">
-      <i class="bi bi-safe"></i><span>Safe Balance</span>
-    </a>
-    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register — shortage / overage">
-      <i class="bi bi-exclamation-diamond"></i><span>Variance Register</span>
-    </a>
-    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Shifts — daily close">
-      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
-    </a>
-    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Sessions — Z-reports &amp; verification">
-      <i class="bi bi-collection"></i><span>Cashier Sessions</span>
-    </a>
-    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Reconciliation">
-      <i class="bi bi-calculator"></i><span>Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:desk_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Configure Cash Desks (Tier / Pharmacy / Optical)">
-      <i class="bi bi-building-check"></i><span>Desk Configuration</span>
-    </a>
-
-    {# ── 13. Dept Performance ── #}
-    <div class="sidebar-label">Dept Performance</div>
-    <a href="{% url 'leadership:analytics_dashboard' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Hospital Analytics Dashboard">
-      <i class="bi bi-bar-chart-fill"></i><span>Analytics Dashboard</span>
-    </a>
-    <a href="{% url 'leadership:monthly_stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Statistics">
-      <i class="bi bi-file-bar-graph"></i><span>Monthly Statistics</span>
-    </a>
-    <a href="{% url 'leadership:hospital_stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Hospital Stats — specialty, tier &amp; billing">
-      <i class="bi bi-hospital"></i><span>Hospital Stats</span>
-    </a>
-    <a href="{% url 'ipd:admission_stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Surgical Admissions &amp; Revenue">
-      <i class="bi bi-scissors"></i><span>Surgical Admissions</span>
-    </a>
-    <a href="{% url 'pharmacy:stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pharmacy Revenue &amp; Stats">
-      <i class="bi bi-capsule-pill"></i><span>Pharmacy Stats</span>
-    </a>
-    <a href="{% url 'opticals:stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Revenue &amp; Stats">
-      <i class="bi bi-eyeglasses"></i><span>Optical Stats</span>
-    </a>
-    <a href="{% url 'laboratory:stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Laboratory Stats">
-      <i class="bi bi-droplet-half"></i><span>Lab Stats</span>
-    </a>
-    <a href="{% url 'investigations:stats' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Investigation Stats">
-      <i class="bi bi-search-heart"></i><span>Investigation Stats</span>
-    </a>
-    {% endif %}
-
-    {% comment %}CHIEF CASHIER — Cash operations supervisor{% endcomment %}
-    {% if u.role == 'chief_cashier' %}
-
-    {# ── Day Management ── #}
-    <div class="sidebar-label">Day Management</div>
-    <a href="{% url 'billing:shift_day_open' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Open Working Day for All Cashiers">
-      <i class="bi bi-sun"></i><span>Open Cashier Day</span>
-    </a>
-    {% if not modules or modules.module_qms %}
-    <a href="{% url 'billing:cashdesks_overview' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cash Desks — live balances">
-      <i class="bi bi-grid-3x3-gap"></i><span>Cash Desks Live</span>
-    </a>
-    {% endif %}
-
-    {# ── Shifts & Sessions ── #}
-    <div class="sidebar-label">Shifts &amp; Sessions</div>
-    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Cashier Shifts — daily close">
-      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
-    </a>
-    <a href="{% url 'billing:session_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Desk Sessions — Z-reports &amp; verify">
-      <i class="bi bi-collection"></i><span>Desk Sessions</span>
-    </a>
-    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
-      <i class="bi bi-calculator"></i><span>Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Pending Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
-    </a>
-
-    {# ── Cash Management ── #}
-    <div class="sidebar-label">Cash Management</div>
-    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
-    </a>
-    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
-      <i class="bi bi-safe"></i><span>Safe Balance</span>
-    </a>
-    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
-      <i class="bi bi-exclamation-diamond"></i><span>Variance Register</span>
-    </a>
-
-    {# ── Reports ── #}
-    <div class="sidebar-label">Reports</div>
     <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
-      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
-    </a>
-    <a href="{% url 'billing:revenue_by_desk' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue by Desk &amp; Tier">
-      <i class="bi bi-bar-chart-steps"></i><span>Revenue by Desk</span>
-    </a>
-    {% if not modules or modules.module_opticals %}
-    <a href="{% url 'opticals:order_list_unpaid' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Billing — unpaid orders">
-      <i class="bi bi-eyeglasses"></i><span>Optical Billing</span>
-    </a>
-    {% endif %}
-
-    {# ── Patients ── #}
-    <div class="sidebar-label">Patients</div>
-    <a href="{% url 'patients:list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Search">
-      <i class="bi bi-search"></i><span>Patient Search</span>
-    </a>
-    <a href="{% url 'reception:walk_in' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Walk-in / Check-in">
-      <i class="bi bi-person-walking"></i><span>Walk-in / Check-in</span>
-    </a>
-    {% endif %}
-
-    {% comment %}ACCOUNTANT — Revenue/Expense processing first, cash ops last{% endcomment %}
-    {% if u.role == 'accountant' %}
-
-    {# ── 1. Revenue & Receivables (daily processing) ── #}
-    <div class="sidebar-label">Revenue &amp; Receivables</div>
-    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
-      <i class="bi bi-list-ul"></i><span>All Invoices</span>
-    </a>
-    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal">
-      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging — outstanding receivables">
-      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
-    </a>
-    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate Accounts">
-      <i class="bi bi-building"></i><span>Corporate Accounts</span>
-    </a>
-
-    {# ── 2. Expenditure ── #}
-    <div class="sidebar-label">Expenditure</div>
-    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
-      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
-    </a>
-    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Advances">
-      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
-    </a>
-
-    {# ── 3. Cheques ── #}
-    <div class="sidebar-label">Cheques</div>
-    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books">
-      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
-    </a>
-    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register">
-      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
-    </a>
-
-    {# ── 4. Reports ── #}
-    <div class="sidebar-label">Reports</div>
-    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
-      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
-    </a>
-    <a href="{% url 'billing:report_top_services' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Top Services by Revenue">
-      <i class="bi bi-trophy"></i><span>Top Services</span>
-    </a>
-    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
-      <i class="bi bi-slash-circle"></i><span>Void Register</span>
-    </a>
-
-    {# ── 5. Cash Operations (oversight) ── #}
-    <div class="sidebar-label">Cash Operations</div>
-    <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Reconciliation">
-      <i class="bi bi-calculator"></i><span>Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
-    </a>
-    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
-      <i class="bi bi-safe"></i><span>Safe Balance</span>
-    </a>
-    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
-      <i class="bi bi-exclamation-diamond"></i><span>Variance Register</span>
-    </a>
-
-    {# ── 6. Patient Accounts (reference) ── #}
-    <div class="sidebar-label">Patient Accounts</div>
-    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
-    </a>
-    {% endif %}
-
-    {% comment %}SENIOR ACCOUNTANT — GL/AP/Treasury first, operational last{% endcomment %}
-    {% if u.role == 'senior_accountant' %}
-
-    {# ── 1. General Ledger (core daily work) ── #}
-    <div class="sidebar-label">General Ledger</div>
-    <a href="{% url 'billing:chart_of_accounts' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Chart of Accounts">
-      <i class="bi bi-list-columns"></i><span>Chart of Accounts</span>
-    </a>
-    <a href="{% url 'billing:journal_entry_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Journal Entries">
-      <i class="bi bi-journal-bookmark"></i><span>Journal Entries</span>
-    </a>
-    <a href="{% url 'billing:trial_balance' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Trial Balance">
-      <i class="bi bi-clipboard-data"></i><span>Trial Balance</span>
-    </a>
-    <a href="{% url 'billing:balance_sheet' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Balance Sheet">
-      <i class="bi bi-bank"></i><span>Balance Sheet</span>
-    </a>
-    <a href="{% url 'billing:report_pl' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="P&amp;L Statement">
-      <i class="bi bi-file-earmark-bar-graph"></i><span>P&amp;L Statement</span>
-    </a>
-
-    {# ── 2. Treasury & Banking ── #}
-    <div class="sidebar-label">Treasury &amp; Banking</div>
-    <a href="{% url 'billing:bank_account_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Accounts">
-      <i class="bi bi-bank"></i><span>Bank Accounts</span>
-    </a>
-    <a href="{% url 'billing:bank_reconciliation_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Bank Reconciliation">
-      <i class="bi bi-check2-square"></i><span>Bank Reconciliation</span>
-    </a>
-    <a href="{% url 'billing:cash_to_bank_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Deposits to Bank">
-      <i class="bi bi-box-arrow-up-right"></i><span>Deposits to Bank</span>
-    </a>
-    <a href="{% url 'billing:chequebook_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Books">
-      <i class="bi bi-journal-check"></i><span>Cheque Books</span>
-    </a>
-    <a href="{% url 'billing:cheque_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cheque Register">
-      <i class="bi bi-card-checklist"></i><span>Cheque Register</span>
-    </a>
-
-    {# ── 3. Accounts Payable ── #}
-    <div class="sidebar-label">Accounts Payable</div>
-    <a href="{% url 'billing:ap_vendor_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AP Vendors">
-      <i class="bi bi-building"></i><span>Vendors</span>
-    </a>
-    <a href="{% url 'billing:ap_bill_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Vendor Bills">
-      <i class="bi bi-file-invoice"></i><span>Vendor Bills</span>
-    </a>
-
-    {# ── 4. Reports & Statements ── #}
-    <div class="sidebar-label">Reports</div>
-    <a href="{% url 'billing:report_daily_summary' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary">
-      <i class="bi bi-calendar-day"></i><span>Daily Summary</span>
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Summary — collections, payments, balances">
+      <i class="bi bi-calendar-day"></i><span>Daily Cash Summary</span>
     </a>
     <a href="{% url 'billing:report_daily_liquidity' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Liquidity Position">
-      <i class="bi bi-droplet-half"></i><span>Liquidity Report</span>
+      <i class="bi bi-droplet-half"></i><span>Daily Liquidity Report</span>
     </a>
-    <a href="{% url 'billing:budget_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Budget vs Actual">
-      <i class="bi bi-pie-chart"></i><span>Budget vs Actual</span>
-    </a>
-    <a href="{% url 'billing:void_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Void &amp; Cancel Register">
-      <i class="bi bi-slash-circle"></i><span>Void Register</span>
+    <a href="{% url 'billing:report_monthly_summary' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Monthly Financial Summary">
+      <i class="bi bi-calendar-check"></i><span>Monthly Financial Summary</span>
     </a>
 
-    {# ── 5. Fixed Assets ── #}
-    <div class="sidebar-label">Fixed Assets</div>
-    <a href="{% url 'billing:asset_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Fixed Asset Register">
-      <i class="bi bi-building-gear"></i><span>Asset Register</span>
-    </a>
-    <a href="{% url 'billing:asset_disposal_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Asset Disposal Requests">
-      <i class="bi bi-trash3"></i><span>Asset Disposals</span>
-    </a>
-
-    {# ── 6. Expenditure ── #}
-    <div class="sidebar-label">Expenditure</div>
-    <a href="{% url 'billing:expense_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Expenses">
-      <i class="bi bi-receipt-cutoff"></i><span>Expenses</span>
-    </a>
-    <a href="{% url 'billing:petty_cash_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Petty Cash Funds">
-      <i class="bi bi-wallet2"></i><span>Petty Cash</span>
-    </a>
-    <a href="{% url 'billing:advance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Staff Advances">
-      <i class="bi bi-person-plus"></i><span>Staff Advances</span>
-    </a>
-
-    {# ── 7. Revenue & Receivables (operational oversight) ── #}
-    <div class="sidebar-label">Revenue &amp; Receivables</div>
-    <a href="{% url 'billing:invoice_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="All Invoices">
-      <i class="bi bi-list-ul"></i><span>All Invoices</span>
-    </a>
-    <a href="{% url 'billing:sales_journal' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Sales Journal — daily revenue register">
-      <i class="bi bi-journal-text"></i><span>Sales Journal</span>
-    </a>
-    <a href="{% url 'billing:ar_aging' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="AR Aging — 30/60/90/120 days">
-      <i class="bi bi-hourglass-split"></i><span>AR Aging</span>
-    </a>
-    <a href="{% url 'billing:corporate_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Corporate &amp; Insurance Debtors">
-      <i class="bi bi-building"></i><span>Corporate Accounts</span>
-    </a>
-    <a href="{% url 'billing:service_price_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Service Price Catalog">
-      <i class="bi bi-tags"></i><span>Price Catalog</span>
-    </a>
-    <a href="{% url 'billing:proforma_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Proforma Invoices">
-      <i class="bi bi-file-earmark-text"></i><span>Proforma Invoices</span>
-    </a>
-    <a href="{% url 'billing:discount_approval_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Discount Approvals">
-      <i class="bi bi-patch-check"></i><span>Discount Approvals</span>
-    </a>
-    <a href="{% url 'billing:patient_financial_history' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Financial History">
-      <i class="bi bi-person-lines-fill"></i><span>Patient Financial</span>
-    </a>
-    <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Wallets">
-      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
-    </a>
-
-    {# ── 8. Cash Operations (oversight) ── #}
+    {# ── 10. Cash Operations (oversight) ── #}
     <div class="sidebar-label">Cash Operations</div>
-    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers">
-      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
-    </a>
-    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
-      <i class="bi bi-safe"></i><span>Safe Balance</span>
-    </a>
-    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
-      <i class="bi bi-exclamation-diamond"></i><span>Variance Register</span>
+    <a href="{% url 'billing:shift_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Shifts — daily close">
+      <i class="bi bi-calendar-check"></i><span>Cashier Shifts</span>
     </a>
     <a href="{% url 'billing:session_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Sessions — Z-reports &amp; Verify">
       <i class="bi bi-collection"></i><span>Cashier Sessions</span>
     </a>
     <a href="{% url 'billing:reconciliation' %}" class="sidebar-link"
-       data-bs-toggle="tooltip" data-bs-placement="right" title="Cashier Reconciliation">
-      <i class="bi bi-calculator"></i><span>Reconciliation</span>
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Daily Cash Reconciliation">
+      <i class="bi bi-calculator"></i><span>Cashier Reconciliation</span>
     </a>
+    <a href="{% url 'billing:cash_transfer_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Transfers (Desk → Safe → Bank)">
+      <i class="bi bi-arrow-left-right"></i><span>Cash Transfers</span>
+    </a>
+    <a href="{% url 'billing:safe_balance_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Safe Balance Log">
+      <i class="bi bi-safe"></i><span>Safe Balance Log</span>
+    </a>
+    <a href="{% url 'billing:variance_register' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cash Variance Register">
+      <i class="bi bi-exclamation-diamond"></i><span>Cash Variance Register</span>
+    </a>
+
+    {# ── 11. Insurance (HMO) ── #}
+    {% if not modules or modules.module_hmo %}
+    <div class="sidebar-label">Insurance (HMO)</div>
+    <a href="{% url 'hmo:dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance Claims Dashboard">
+      <i class="bi bi-shield-plus"></i><span>Insurance Dashboard</span>
+    </a>
+    <a href="{% url 'hmo:scheme_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Manage Insurance Schemes">
+      <i class="bi bi-shield-check"></i><span>Insurance Schemes</span>
+    </a>
+    <a href="{% url 'hmo:claim_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="All Insurance Claims">
+      <i class="bi bi-file-earmark-medical"></i><span>All Claims</span>
+    </a>
+    <a href="{% url 'hmo:insurance_aging' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Insurance AR Aging — 30/60/90+ days">
+      <i class="bi bi-hourglass-split"></i><span>Insurance AR Aging</span>
+    </a>
+    {% endif %}
     {% endif %}
 
     {% if not modules or modules.module_ai %}
@@ -2758,7 +2908,7 @@
     <div class="sidebar-label">Finance Overview</div>
     <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
-      <i class="bi bi-wallet-fill"></i><span>Patient Wallets</span>
+      <i class="bi bi-wallet-fill"></i><span>Patient Wallets (Pre-pay)</span>
     </a>
     <a href="{% url 'reports:revenue_report' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analytics">

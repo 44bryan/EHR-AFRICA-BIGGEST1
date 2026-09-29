@@ -69,6 +69,15 @@ urlpatterns = [
     path('service-prices/<uuid:price_id>/edit/', views.service_price_edit, name='service_price_edit'),
     path('service-prices/<uuid:price_id>/toggle/', views.service_price_toggle, name='service_price_toggle'),
 
+    # ── Service Sub-Categories ───────────────────────────────────────────────
+    path('sub-categories/', views.sub_category_list, name='sub_category_list'),
+    path('sub-categories/create/', views.sub_category_create, name='sub_category_create'),
+    path('sub-categories/<uuid:sub_id>/edit/', views.sub_category_edit, name='sub_category_edit'),
+    path('sub-categories/<uuid:sub_id>/delete/', views.sub_category_delete, name='sub_category_delete'),
+
+    # ── Revenue Analysis ─────────────────────────────────────────────────────
+    path('reports/revenue-analysis/', views.revenue_analysis, name='revenue_analysis'),
+
     # ── Expense Management ────────────────────────────────────────────────────
     path('expenses/', views.expense_list, name='expense_list'),
     path('expenses/create/', views.expense_create, name='expense_create'),

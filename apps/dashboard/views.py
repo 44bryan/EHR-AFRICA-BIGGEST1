@@ -2206,16 +2206,20 @@ def recycle_bin(request):
     from apps.appointments.models import Appointment
     from apps.accounts.models import User as StaffUser, UserAuditLog
 
-    deleted_patients      = Patient.objects.filter(is_deleted=True).order_by('-updated_at')
-    deleted_consultations = Consultation.objects.filter(is_deleted=True).order_by('-updated_at')
-    deleted_appointments  = Appointment.objects.filter(is_deleted=True).order_by('-updated_at')
+    from apps.core.models import DeletionLog
+
+    deleted_patients      = Patient.objects.filter(is_deleted=True).order_by('-deleted_at')
+    deleted_consultations = Consultation.objects.filter(is_deleted=True).order_by('-deleted_at')
+    deleted_appointments  = Appointment.objects.filter(is_deleted=True).order_by('-deleted_at')
     deleted_staff         = StaffUser.objects.filter(is_active=False).order_by('-updated_at')
+    deletion_log          = DeletionLog.objects.select_related('deleted_by', 'restored_by').order_by('-deleted_at')[:100]
 
     return render(request, 'sysadmin/recycle_bin.html', {
         'deleted_patients':      deleted_patients,
         'deleted_consultations': deleted_consultations,
         'deleted_appointments':  deleted_appointments,
         'deleted_staff':         deleted_staff,
+        'deletion_log':          deletion_log,
         'today': timezone.localdate(),
     })
 
@@ -2227,10 +2231,10 @@ def recycle_bin_restore(request, model, pk):
         return redirect('dashboard:recycle_bin')
 
     from apps.accounts.models import UserAuditLog
+    from apps.core.models import DeletionLog
     obj = _get_recyclable(model, pk)
     if obj:
-        obj.is_deleted = False
-        obj.save(update_fields=['is_deleted'])
+        obj.restore(user=request.user)
         UserAuditLog.log(
             user=request.user,
             action=UserAuditLog.Action.UPDATE_RECORD,
@@ -2239,6 +2243,10 @@ def recycle_bin_restore(request, model, pk):
             extra_data={'action': 'restored_from_recycle_bin'},
             request=request,
         )
+        # Mark DeletionLog entry as restored
+        DeletionLog.objects.filter(
+            object_id=str(pk), is_restored=False,
+        ).update(is_restored=True, restored_at=timezone.now(), restored_by=request.user)
         from django.contrib import messages
         messages.success(request, f'{model} record restored successfully.')
     return redirect('dashboard:recycle_bin')
