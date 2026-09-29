@@ -641,9 +641,9 @@ def insurance_ledger(request):
     """
     _allowed = (
         UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
     )
-    if not (request.user.is_superuser or request.user.role in _allowed):
+    if not (request.user.is_superuser or request.user.is_super_admin or request.user.role in _allowed):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
 
@@ -773,9 +773,9 @@ def insurance_aging(request):
     """Insurance AR Aging Report — Account 412."""
     _allowed = (
         UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
-        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+        UserRole.ACCOUNTANT, UserRole.CEO, UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
     )
-    if not (request.user.is_superuser or request.user.role in _allowed):
+    if not (request.user.is_superuser or request.user.is_super_admin or request.user.role in _allowed):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
 

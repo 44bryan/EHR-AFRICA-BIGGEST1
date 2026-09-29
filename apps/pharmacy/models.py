@@ -356,6 +356,7 @@ class DispensingItem(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         self.subtotal = self.quantity_dispensed * self.unit_price
+        is_new = self._state.adding
         super().save(*args, **kwargs)
         # Deduct from stock
         if self.stock_batch:
@@ -363,6 +364,13 @@ class DispensingItem(TimeStampedModel):
                 0, self.stock_batch.quantity_remaining - self.quantity_dispensed
             )
             self.stock_batch.save()
+        # Post COGS to GL (only on creation, not updates)
+        if is_new:
+            try:
+                from apps.billing.gl_service import post_pharmacy_cogs
+                post_pharmacy_cogs(self)
+            except Exception:
+                pass  # GL failure must never block dispensing
 
 
 class AdjustmentReason(models.TextChoices):
@@ -400,10 +408,18 @@ class StockAdjustment(AuditModel):
         )
 
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
         super().save(*args, **kwargs)
         # Apply the change to the batch
         self.batch.quantity_remaining = max(0, self.quantity_after)
         self.batch.save(update_fields=['quantity_remaining'])
+        # Post to GL (only on creation)
+        if is_new:
+            try:
+                from apps.billing.gl_service import post_stock_adjustment
+                post_stock_adjustment(self)
+            except Exception:
+                pass  # GL failure must never block stock adjustment
 
 
 # ── Controlled Drugs Register ────────────────────────────────────────────────

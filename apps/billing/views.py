@@ -4657,9 +4657,9 @@ def patient_financial_history(request):
     _allowed = (
         UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR, UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
-        UserRole.ADMIN_DIRECTOR, UserRole.BILLING_OFFICER,
+        UserRole.ADMIN_DIRECTOR, UserRole.BILLING_OFFICER, UserRole.SUPER_ADMIN,
     )
-    if not (request.user.is_superuser or request.user.role in _allowed):
+    if not (request.user.is_superuser or request.user.is_super_admin or request.user.role in _allowed):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
 
@@ -5159,9 +5159,9 @@ def export_patient_financial(request):
     _allowed = (
         UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT,
         UserRole.FINANCE_DIRECTOR, UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
-        UserRole.ADMIN_DIRECTOR, UserRole.BILLING_OFFICER,
+        UserRole.ADMIN_DIRECTOR, UserRole.BILLING_OFFICER, UserRole.SUPER_ADMIN,
     )
-    if not (request.user.is_superuser or request.user.role in _allowed):
+    if not (request.user.is_superuser or request.user.is_super_admin or request.user.role in _allowed):
         messages.error(request, 'Access denied.')
         return redirect('billing:patient_financial_history')
 
@@ -5822,26 +5822,30 @@ def cost_center_list(request):
 def cost_center_create(request):
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
+    from apps.accounts.models import User as _User
     if request.method == 'POST':
         code = request.POST.get('code', '').strip()
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         parent_id = request.POST.get('parent') or None
+        manager_id = request.POST.get('manager') or None
         if not code or not name:
             messages.error(request, 'Code and Name are required.')
         elif CostCenter.objects.filter(code=code).exists():
             messages.error(request, f'Cost center {code} already exists.')
         else:
             parent = CostCenter.objects.filter(pk=parent_id).first() if parent_id else None
+            manager = _User.objects.filter(pk=manager_id).first() if manager_id else None
             CostCenter.objects.create(
                 code=code, name=name, description=description,
-                parent=parent, created_by=request.user,
+                parent=parent, manager=manager, created_by=request.user,
             )
             messages.success(request, f'Cost center {code} — {name} created.')
             return redirect('billing:cost_center_list')
     centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    staff = _User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     return render(request, 'billing/cost_center_form.html', {
-        'centers': centers, 'action': 'Create Cost Center',
+        'centers': centers, 'staff': staff, 'action': 'Create Cost Center',
     })
 
 
@@ -5849,17 +5853,21 @@ def cost_center_create(request):
 def cost_center_edit(request, center_id):
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
+    from apps.accounts.models import User as _User
     cc = get_object_or_404(CostCenter, pk=center_id, is_deleted=False)
     if request.method == 'POST':
         cc.name = request.POST.get('name', cc.name).strip()
         cc.description = request.POST.get('description', '').strip()
         cc.is_active = request.POST.get('is_active') == 'on'
-        cc.save(update_fields=['name', 'description', 'is_active', 'updated_at'])
+        manager_id = request.POST.get('manager') or None
+        cc.manager = _User.objects.filter(pk=manager_id).first() if manager_id else None
+        cc.save(update_fields=['name', 'description', 'is_active', 'manager', 'updated_at'])
         messages.success(request, f'Cost center {cc.code} updated.')
         return redirect('billing:cost_center_list')
     centers = CostCenter.objects.filter(is_deleted=False, is_active=True).exclude(pk=center_id).order_by('code')
+    staff = _User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     return render(request, 'billing/cost_center_form.html', {
-        'center': cc, 'centers': centers, 'action': 'Edit Cost Center',
+        'center': cc, 'centers': centers, 'staff': staff, 'action': 'Edit Cost Center',
     })
 
 

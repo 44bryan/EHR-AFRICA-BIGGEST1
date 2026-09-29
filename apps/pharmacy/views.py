@@ -1809,7 +1809,13 @@ def complete_dispensing(request, dispensing_id):
     else:
         # Walk-in OTC — no patient account, no invoice. Payment tracked on
         # the Dispensing record itself (amount_paid field).
-        pass
+        # Post OTC revenue to GL (Dr Cash / Cr Pharmacy Revenue)
+        try:
+            from apps.billing.gl_service import post_otc_sale
+            dispensing.amount_paid = amount  # set before GL call
+            post_otc_sale(dispensing, user=request.user)
+        except Exception:
+            pass  # GL failure must never block dispensing
 
     # Step 3: Mark dispensing as DISPENSED and record amount paid
     dispensing.status = DispensingStatus.DISPENSED

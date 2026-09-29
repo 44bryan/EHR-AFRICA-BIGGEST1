@@ -866,7 +866,7 @@
     {% endif %}{# module_pharmacy #}
 
     {% if not modules or modules.module_opticals %}
-    {% if u.is_super_admin or u.is_optical_dispenser or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'low_vision_specialist' or u.is_medical_director or u.is_ceo or u.is_cashier or u.is_chief_cashier %}
+    {% if u.is_super_admin or u.is_optical_dispenser or u.role == 'optometrist' or u.role == 'pediatric_refractionist' or u.role == 'low_vision_specialist' or u.is_medical_director or u.is_ceo or u.is_cashier or u.is_chief_cashier or u.is_store_keeper %}
     <div class="sidebar-label">Opticals</div>
     <a href="{% url 'opticals:dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Dashboard">
@@ -900,7 +900,7 @@
       <i class="bi bi-cash-coin"></i><span>Optical Billing</span>
     </a>
     {% endif %}
-    {% if u.is_super_admin or u.is_optical_dispenser or u.is_medical_director or u.is_ceo or u.is_admin_director or u.is_finance_director %}
+    {% if u.is_super_admin or u.is_optical_dispenser or u.is_store_keeper or u.is_medical_director or u.is_ceo or u.is_admin_director or u.is_finance_director %}
     <a href="{% url 'opticals:stats' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Optical Statistics">
       <i class="bi bi-graph-up"></i><span>Optical Stats</span>
@@ -1092,6 +1092,10 @@
     {% if u.role != 'cashier' and not u.is_finance_director and not u.is_admin_director and not u.is_medical_director %}
     <div class="sidebar-label">Billing</div>
     {% if u.is_super_admin or u.is_billing_officer %}
+    <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — revenue &amp; cost overview">
+      <i class="bi bi-speedometer2"></i><span>Finance Dashboard</span>
+    </a>
     <a href="{% url 'billing:pos_landing' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="POS — bill active patient">
       <i class="bi bi-cash-coin"></i><span>POS (Active Patient)</span>
@@ -1345,6 +1349,10 @@
     <a href="{% url 'billing:fiscal_period_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Fiscal Period Management">
       <i class="bi bi-lock"></i><span>Fiscal Periods</span>
+    </a>
+    <a href="{% url 'billing:cost_center_list' %}" class="sidebar-link"
+       data-bs-toggle="tooltip" data-bs-placement="right" title="Cost Centers — departmental cost allocation">
+      <i class="bi bi-diagram-3"></i><span>Cost Centers</span>
     </a>
     {% endif %}
     {% endif %}
@@ -1861,7 +1869,8 @@
     </a>
     {% endif %}
 
-    {# ── 3. Patient Operations ── #}
+    {# ── 3. Patient Operations — skip for Super Admin (already in Reception/Billing sections) ── #}
+    {% if not u.is_super_admin %}
     <div class="sidebar-label">Patient Operations</div>
     <a href="{% url 'patients:list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="All Patients">
@@ -1883,8 +1892,10 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Book Appointment">
       <i class="bi bi-calendar-plus"></i><span>Book Appointment</span>
     </a>
+    {% endif %}
 
-    {# ── 4. Finance Overview ── #}
+    {# ── 4. Finance Overview — skip for Super Admin (already in Billing section) ── #}
+    {% if not u.is_super_admin %}
     <div class="sidebar-label">Finance Overview</div>
     <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — KPIs">
@@ -1906,6 +1917,7 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Revenue Analytics">
       <i class="bi bi-graph-up"></i><span>Revenue Report</span>
     </a>
+    {% endif %}
 
     {# ── 5. Operations ── #}
     {% if not modules or modules.module_leads %}
@@ -1997,15 +2009,17 @@
       <i class="bi bi-clipboard-data"></i><span>IPD Nursing Stats</span>
     </a>
 
-    {# ── 9. Audit & Compliance ── #}
+    {# ── 9. Audit & Compliance — skip for Super Admin (already in system section) ── #}
+    {% if not u.is_super_admin %}
     <div class="sidebar-label">Audit &amp; Compliance</div>
     <a href="{% url 'dashboard:audit_log' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="System Audit Log — all staff actions">
       <i class="bi bi-file-earmark-lock"></i><span>Audit Log</span>
     </a>
+    {% endif %}
     {% endif %}{# end admin_director dedicated section #}
 
-    {% if u.is_finance_director or u.is_super_admin %}
+    {% if u.is_finance_director %}
     {% comment %}FINANCE DIRECTOR — Core finance first, operational oversight last{% endcomment %}
 
     {# ── 1. Strategic Overview ── #}
@@ -2356,7 +2370,7 @@
     {% endif %}
 
     {% comment %}CHIEF CASHIER — Cash operations supervisor{% endcomment %}
-    {% if u.role == 'chief_cashier' or u.is_super_admin %}
+    {% if u.role == 'chief_cashier' %}
 
     {# ── Day Management ── #}
     <div class="sidebar-label">Day Management</div>
@@ -2718,7 +2732,7 @@
        data-bs-toggle="tooltip" data-bs-placement="right" title="Hospital Performance Hub — KPIs">
       <i class="bi bi-graph-up-arrow"></i><span>Performance Hub</span>
     </a>
-    {% if u.is_super_admin or u.is_ceo or u.is_medical_director %}
+    {% if u.is_ceo or u.is_medical_director %}
     <a href="{% url 'leadership:finance_dashboard' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Finance Dashboard — revenue &amp; cost overview">
       <i class="bi bi-cash-coin"></i><span>Finance Dashboard</span>
@@ -2729,8 +2743,8 @@
       <i class="bi bi-bar-chart-fill"></i><span>Analytics Dashboard</span>
     </a>
 
-    {# ── 2. Financial Overview ── #}
-    {% if u.is_super_admin or u.is_ceo %}
+    {# ── 2. Financial Overview — skip for Super Admin (already in Billing section) ── #}
+    {% if u.is_ceo and not u.is_super_admin %}
     <div class="sidebar-label">Finance Overview</div>
     <a href="{% url 'billing:wallet_list' %}" class="sidebar-link"
        data-bs-toggle="tooltip" data-bs-placement="right" title="Patient Pre-payment Wallets">
@@ -2778,7 +2792,7 @@
     {% endif %}
 
     {# ── 4. HR & Staff ── #}
-    {% if u.is_super_admin or u.role == 'admin' %}
+    {% if u.role == 'admin' %}
     {% if not modules or modules.module_hrms %}
     <div class="sidebar-label">HR &amp; Staff</div>
     <a href="{% url 'hrms:dashboard' %}" class="sidebar-link"
@@ -2804,7 +2818,7 @@
     {% endif %}
     {% endif %}
     {# Medical Director: clinical staff oversight — JCI GLD.3.3 #}
-    {% if u.is_medical_director or u.is_super_admin %}
+    {% if u.is_medical_director %}
     {% if not modules or modules.module_hrms %}
     <div class="sidebar-label">Clinical Staff</div>
     <a href="{% url 'hrms:staff_list' %}" class="sidebar-link"

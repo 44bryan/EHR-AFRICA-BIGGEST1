@@ -1010,3 +1010,160 @@ def post_cash_variance(variance, user=None):
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash variance {variance.pk}: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHARMACY → ACCOUNTING GL POSTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PHARMACY_STOCK   = '321000'   # OHADA Class 3 — Pharmacy Stock (Marchandises)
+COGS_PHARMACY    = '601000'   # OHADA Class 6 — Cost of Goods Sold (Achats de marchandises)
+PHARMACY_REVENUE = '704000'   # OHADA Class 7 — Pharmacy Sales Revenue
+STOCK_LOSS       = '603000'   # OHADA Class 6 — Stock Losses (damage, expiry, pilferage)
+STOCK_GAIN       = '321000'   # Surplus goes back to stock
+
+
+def post_pharmacy_cogs(dispensing_item, user=None):
+    """
+    COGS recognition when pharmacy dispenses drugs.
+    Called from DispensingItem.save() after physical stock is deducted.
+
+    OHADA standard: when goods leave stock, recognise cost:
+        Dr  601000 (COGS — Achats de marchandises vendues)
+        Cr  321000 (Pharmacy Stock — Marchandises)
+
+    Uses the drug's cost_price (purchase cost) × quantity, NOT the selling price.
+    """
+    try:
+        drug = dispensing_item.drug
+        if not drug:
+            return None
+        qty = dispensing_item.quantity_dispensed
+        cost_price = getattr(drug, 'cost_price', None) or getattr(drug, 'purchase_price', None)
+        if not cost_price or cost_price <= 0:
+            # Fallback: use unit_price (selling price) — better than nothing
+            cost_price = dispensing_item.unit_price
+        if not cost_price or cost_price <= 0:
+            return None
+
+        amount = Decimal(str(cost_price)) * Decimal(str(qty))
+        if amount <= 0:
+            return None
+
+        return _create_entry(
+            date=dispensing_item.dispensing.dispensed_at.date()
+                if hasattr(dispensing_item.dispensing, 'dispensed_at') and dispensing_item.dispensing.dispensed_at
+                else __import__('django.utils.timezone', fromlist=['localdate']).localdate(),
+            description=f"COGS — {drug.name} x{qty} — Dispensing {dispensing_item.dispensing.dispensing_number}",
+            reference=dispensing_item.dispensing.dispensing_number,
+            source_type='pharmacy_cogs',
+            source_id=dispensing_item.pk,
+            lines=[
+                (COGS_PHARMACY, amount, 0,
+                 f"Cost of {drug.name} x{qty} dispensed"),
+                (PHARMACY_STOCK, 0, amount,
+                 f"Stock reduction — {drug.name} x{qty}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for pharmacy COGS {dispensing_item.pk}: {e}")
+        return None
+
+
+def post_otc_sale(dispensing, user=None):
+    """
+    GL posting for OTC / walk-in sale (no patient account, no invoice).
+    The normal invoice pipeline is skipped for anonymous sales, so we
+    post revenue + cash directly:
+
+        Dr  572000 (Cash)          — money received
+        Cr  704000 (Pharmacy Revenue) — revenue recognised
+
+    Called from the direct-dispense view after amount_paid is set.
+    """
+    try:
+        amount = Decimal(str(dispensing.amount_paid or 0))
+        if amount <= 0:
+            return None
+
+        from django.utils import timezone as _tz
+        return _create_entry(
+            date=dispensing.dispensed_at.date() if dispensing.dispensed_at else _tz.localdate(),
+            description=f"OTC sale — {dispensing.dispensing_number} — {dispensing.customer_name or 'Walk-in'}",
+            reference=dispensing.dispensing_number,
+            source_type='otc_sale',
+            source_id=dispensing.pk,
+            lines=[
+                (CASH_ACCOUNT, amount, 0,
+                 f"Cash received — OTC sale {dispensing.dispensing_number}"),
+                (PHARMACY_REVENUE, 0, amount,
+                 f"Pharmacy revenue — {dispensing.customer_name or 'Walk-in'}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for OTC sale {dispensing.pk}: {e}")
+        return None
+
+
+def post_stock_adjustment(adjustment, user=None):
+    """
+    GL posting for manual stock adjustments.
+
+    Stock DECREASE (damage, expiry, pilferage, count-down):
+        Dr  603000 (Stock Losses)     — expense recognised
+        Cr  321000 (Pharmacy Stock)   — asset reduced
+
+    Stock INCREASE (patient return, count-up):
+        Dr  321000 (Pharmacy Stock)   — asset increased
+        Cr  603000 (Stock correction)  — reversal / gain
+
+    Uses the drug's cost_price × |quantity_change| for the GL amount.
+    """
+    try:
+        batch = adjustment.batch
+        drug = batch.drug
+        cost_price = getattr(drug, 'cost_price', None) or getattr(drug, 'purchase_price', None)
+        if not cost_price or cost_price <= 0:
+            cost_price = getattr(batch, 'unit_cost', None) or 0
+        if not cost_price or cost_price <= 0:
+            return None
+
+        qty = abs(adjustment.quantity_change)
+        amount = Decimal(str(cost_price)) * Decimal(str(qty))
+        if amount <= 0:
+            return None
+
+        reason_label = adjustment.get_reason_display()
+
+        if adjustment.quantity_change < 0:
+            # Stock decreased — expense
+            lines = [
+                (STOCK_LOSS, amount, 0,
+                 f"Stock loss — {drug.name} — {reason_label}"),
+                (PHARMACY_STOCK, 0, amount,
+                 f"Stock reduced — {drug.name} batch {batch.batch_number}"),
+            ]
+        else:
+            # Stock increased — asset gained back
+            lines = [
+                (PHARMACY_STOCK, amount, 0,
+                 f"Stock gained — {drug.name} — {reason_label}"),
+                (STOCK_LOSS, 0, amount,
+                 f"Stock correction — {drug.name} batch {batch.batch_number}"),
+            ]
+
+        from django.utils import timezone as _tz
+        return _create_entry(
+            date=adjustment.adjusted_at.date() if adjustment.adjusted_at else _tz.localdate(),
+            description=f"Stock adjustment — {drug.name} — {reason_label}",
+            reference=f"ADJ-{adjustment.pk}",
+            source_type='stock_adjustment',
+            source_id=adjustment.pk,
+            lines=lines,
+            user=user or adjustment.created_by,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for stock adjustment {adjustment.pk}: {e}")
+        return None

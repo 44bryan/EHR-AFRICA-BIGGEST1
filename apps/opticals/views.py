@@ -16,13 +16,13 @@ from .models import (
 
 
 def _can_access_optical(user):
-    """Optical shop, cashiers collecting optical payments, and admin roles."""
+    """Optical shop, cashiers collecting optical payments, store keeper, and admin roles."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.OPTICAL_DISPENSER, UserRole.OPTOMETRIST, UserRole.ORTHOPTIST,
         UserRole.LOW_VISION_SPECIALIST, UserRole.CASHIER, UserRole.CHIEF_CASHIER,
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.CEO, UserRole.ADMIN,
+        UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN,
     )
 
 
@@ -1118,7 +1118,7 @@ def lva_dispensing_create(request, patient_id=None):
 # ── Optical Lab Job Card ──────────────────────────────────────────────────────
 
 def _can_manage_optical(user):
-    return user.role in ('optical_dispenser', 'super_admin', 'admin', 'admin_director', 'medical_director')
+    return user.role in ('optical_dispenser', 'store_keeper', 'super_admin', 'admin', 'admin_director', 'medical_director')
 
 
 @login_required
