@@ -67,8 +67,9 @@ def poll_notifications(request):
 def _can_send_sms(user):
     from apps.accounts.models import UserRole
     return user.role in [
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.RECEPTIONIST, UserRole.NURSE, UserRole.WARD_NURSE,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.RECEPTIONIST, UserRole.NURSE,
+        UserRole.WARD_NURSE,
     ]
 
 

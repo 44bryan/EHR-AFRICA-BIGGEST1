@@ -1115,12 +1115,12 @@ def lva_dispensing_create(request, patient_id=None):
 
 def _can_manage_optical(user):
     """Full optical management (orders, pricing, lab, repairs) — NOT store keeper."""
-    return user.role in ('optical_dispenser', 'super_admin', 'admin', 'admin_director', 'medical_director')
+    return user.role in ('optical_dispenser', 'super_admin', 'admin', 'admin_director', 'medical_director', 'finance_director')
 
 
 def _can_manage_optical_stock(user):
     """Optical inventory management — frames, lenses, GRN, stocktake, min-stock alerts."""
-    return user.role in ('optical_dispenser', 'store_keeper', 'super_admin', 'admin', 'admin_director', 'medical_director')
+    return user.role in ('optical_dispenser', 'store_keeper', 'super_admin', 'admin', 'admin_director', 'medical_director', 'finance_director')
 
 
 @login_required

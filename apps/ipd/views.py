@@ -2465,8 +2465,8 @@ def bed_map_view(request):
 
 def _can_record_outcome(user):
     return (user.is_super_admin or user.is_medical_director or
-            user.is_admin_director or user.is_doctor or
-            user.is_admission_officer)
+            user.is_admin_director or user.is_finance_director or
+            user.is_doctor or user.is_admission_officer)
 
 
 @login_required

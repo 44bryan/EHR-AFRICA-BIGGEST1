@@ -24,6 +24,7 @@ def _can_manage(user):
     return user.role in [
         UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
         UserRole.QUALITY_OFFICER, UserRole.ADMIN_DIRECTOR,
+        UserRole.FINANCE_DIRECTOR,
     ]
 
 
@@ -31,7 +32,8 @@ def _can_report(user):
     return user.role in [
         UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.QUALITY_OFFICER,
         UserRole.NURSE, UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
-        UserRole.LAB_TECHNICIAN, UserRole.ADMIN_DIRECTOR, UserRole.CEO,
+        UserRole.LAB_TECHNICIAN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
+        UserRole.CEO,
     ]
 
 

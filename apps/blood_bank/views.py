@@ -38,7 +38,7 @@ def _can_request(user):
         UserRole.SUPER_ADMIN, UserRole.LAB_TECHNICIAN, UserRole.INVESTIGATION_TECHNICIAN,
         UserRole.MEDICAL_DIRECTOR, UserRole.OPHTHALMOLOGIST, UserRole.GENERAL_PHYSICIAN,
         UserRole.NURSE, UserRole.WARD_NURSE, UserRole.THEATRE_NURSE,
-        UserRole.CEO, UserRole.ADMIN_DIRECTOR,
+        UserRole.CEO, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
     ] or user.role == UserRole.ANAESTHETIST
 
 

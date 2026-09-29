@@ -14,17 +14,17 @@ from .models import (
 
 def _can_access(user):
     return user.role in [
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.CEO, UserRole.OPHTHALMOLOGIST, UserRole.NURSE,
-        UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.OPHTHALMOLOGIST,
+        UserRole.NURSE, UserRole.WARD_NURSE, UserRole.NURSE_DIRECTOR,
         UserRole.MEDICAL_RECORDS,
     ]
 
 
 def _can_manage(user):
     return user.role in [
-        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
-        UserRole.NURSE_DIRECTOR,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
+        UserRole.MEDICAL_DIRECTOR, UserRole.NURSE_DIRECTOR,
     ]
 
 

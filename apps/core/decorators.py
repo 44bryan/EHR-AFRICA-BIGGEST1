@@ -34,6 +34,7 @@ CAN_VIEW_PATIENT = (
     UserRole.SUPER_ADMIN,
     UserRole.CEO,
     UserRole.ADMIN_DIRECTOR,
+    UserRole.FINANCE_DIRECTOR,
     UserRole.MEDICAL_DIRECTOR,
     # Clinical — doctors
     UserRole.OPHTHALMOLOGIST,

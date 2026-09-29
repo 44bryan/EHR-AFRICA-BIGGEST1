@@ -3554,7 +3554,7 @@ def _is_head_pharmacist(user):
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.HEAD_PHARMACIST, UserRole.SUPER_ADMIN,
-        UserRole.ADMIN_DIRECTOR, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
     )
 
 

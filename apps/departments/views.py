@@ -12,6 +12,7 @@ def _can_manage_departments(user):
     return user.role in (
         UserRole.ADMIN_DIRECTOR, UserRole.MEDICAL_DIRECTOR,
         UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.CEO,
+        UserRole.FINANCE_DIRECTOR,
     ) or user.is_superuser
 
 

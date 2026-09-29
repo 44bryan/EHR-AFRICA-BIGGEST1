@@ -51,6 +51,7 @@ _SCHEDULE_ROLES = _CONDUCT_ROLES + [
 
 _VIEW_ROLES = _SCHEDULE_ROLES + [
     UserRole.ADMIN_DIRECTOR,   # oversight only
+    UserRole.FINANCE_DIRECTOR, # oversight only
     UserRole.CEO,              # oversight only
     UserRole.NURSE,            # care coordination — view schedule, no session control
     UserRole.CONSULTATION_NURSE,

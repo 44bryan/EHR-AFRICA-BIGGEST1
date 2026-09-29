@@ -40,12 +40,12 @@ def _can_access_inventory(user):
 
 
 def _can_access_store(user):
-    """Store operations access: store keeper + leadership (NOT procurement officer)."""
+    """Store operations access: store keeper + leadership + finance (NOT procurement officer)."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
-        UserRole.NURSE_DIRECTOR,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.NURSE_DIRECTOR,
     )
 
 
@@ -54,7 +54,7 @@ def _can_manage_store(user):
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
-        UserRole.ADMIN,
+        UserRole.ADMIN, UserRole.FINANCE_DIRECTOR,
     )
 
 
