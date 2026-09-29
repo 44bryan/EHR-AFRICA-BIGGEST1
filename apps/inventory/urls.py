@@ -19,6 +19,7 @@ urlpatterns = [
     path('vendors/', views.vendor_list, name='vendor_list'),
     path('vendors/create/', views.vendor_create, name='vendor_create'),
     path('vendors/<uuid:vendor_id>/edit/', views.vendor_edit, name='vendor_edit'),
+    path('vendors/<uuid:vendor_id>/delete/', views.vendor_delete, name='vendor_delete'),
 
     # Purchase Orders
     path('purchase-orders/', views.purchase_order_list, name='po_list'),

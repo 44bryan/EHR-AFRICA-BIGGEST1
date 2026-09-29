@@ -613,6 +613,23 @@ def vendor_edit(request, vendor_id):
     return render(request, 'inventory/vendor_form.html', {'vendor': vendor, 'action': 'Edit'})
 
 
+@login_required
+def vendor_delete(request, vendor_id):
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
+    vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
+    if request.method == 'POST':
+        # Check for linked POs or quotations before soft-deleting
+        active_pos = PurchaseOrder.objects.filter(vendor=vendor, is_deleted=False).exclude(status='CANCELLED').count()
+        if active_pos:
+            messages.error(request, f'Cannot delete "{vendor.name}" — {active_pos} active purchase order(s) linked.')
+            return redirect('inventory:vendor_list')
+        vendor.soft_delete()
+        messages.success(request, f'Vendor "{vendor.name}" deleted.')
+        return redirect('inventory:vendor_list')
+    return redirect('inventory:vendor_list')
+
+
 # ── Item CRUD ─────────────────────────────────────────────────────────────────
 
 @login_required
