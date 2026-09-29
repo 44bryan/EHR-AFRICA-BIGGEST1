@@ -28,19 +28,29 @@ from .models import (
 
 # ── Access Control ────────────────────────────────────────────────────────────
 
-def _can_access_store(user):
-    """View store dashboard, items, requisitions."""
+def _can_access_inventory(user):
+    """Read-only access: view items, dashboards, alerts — both store keeper + procurement + leadership."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.PROCUREMENT_OFFICER,
         UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
+        UserRole.SENIOR_ACCOUNTANT, UserRole.NURSE_DIRECTOR,
+    )
+
+
+def _can_access_store(user):
+    """Store operations access: store keeper + leadership (NOT procurement officer)."""
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
         UserRole.NURSE_DIRECTOR,
     )
 
 
 def _can_manage_store(user):
-    """Store Keeper ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal."""
+    """Store Keeper write ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
@@ -49,7 +59,7 @@ def _can_manage_store(user):
 
 
 def _can_manage_procurement(user):
-    """Procurement Officer ops: vendors, RFQs, POs, supplier invoices, 3-way match."""
+    """Procurement Officer write ops: vendors, RFQs, POs, supplier invoices, 3-way match, budget."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.PROCUREMENT_OFFICER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
@@ -136,8 +146,7 @@ def _trigger_auto_reorder(item, user):
 
 @login_required
 def dashboard(request):
-    if not _can_access_store(request.user):
-        from django.http import HttpResponseForbidden
+    if not _can_access_store(request.user) and not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied — Store Keeper or Admin role required.')
     today = timezone.localdate()
     all_items = list(InventoryItem.objects.filter(is_active=True, is_deleted=False))
@@ -306,6 +315,8 @@ def procurement_dashboard(request):
 
 @login_required
 def item_list(request):
+    if not _can_access_inventory(request.user):
+        return HttpResponseForbidden('Access denied.')
     from django.core.paginator import Paginator
     q        = request.GET.get('q', '')
     category = request.GET.get('category', '')
@@ -327,6 +338,8 @@ def item_list(request):
 
 @login_required
 def item_detail(request, item_id):
+    if not _can_access_inventory(request.user):
+        return HttpResponseForbidden('Access denied.')
     item      = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     movements = item.movements.order_by('-created_at')[:30]
     batches   = item.batches.order_by('expiry_date') if item.requires_expiry_tracking else []
@@ -378,6 +391,8 @@ def stock_adjustment(request, item_id):
 
 @login_required
 def purchase_order_list(request):
+    if not _can_manage_procurement(request.user) and not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
     status_filter = request.GET.get('status', '')
     search = request.GET.get('q', '')
     pos = PurchaseOrder.objects.filter(is_deleted=False).select_related('vendor').order_by('-ordered_date')
@@ -443,6 +458,8 @@ def po_create(request):
 
 @login_required
 def po_detail(request, po_id):
+    if not _can_manage_procurement(request.user) and not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
     po       = get_object_or_404(PurchaseOrder, id=po_id, is_deleted=False)
     po_items = po.items.select_related('item').all()
     return render(request, 'inventory/po_detail.html', {'po': po, 'po_items': po_items})
@@ -535,6 +552,8 @@ def po_receive(request, po_id):
 
 @login_required
 def vendor_list(request):
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied.')
     search = request.GET.get('q', '').strip()
     status_filter = request.GET.get('active', '')
     vendors = Vendor.objects.filter(is_deleted=False)
@@ -681,6 +700,8 @@ def item_edit(request, item_id):
 @login_required
 def item_batches(request, item_id):
     """View all batches for a specific item, manage quarantine."""
+    if not _can_access_inventory(request.user):
+        return HttpResponseForbidden('Access denied.')
     item    = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     batches = item.batches.order_by('expiry_date')
 
@@ -739,6 +760,8 @@ DEPARTMENTS = [
 
 @login_required
 def requisition_list(request):
+    if not _can_access_inventory(request.user) and not _can_requisition(request.user):
+        return HttpResponseForbidden('Access denied.')
     status_filter = request.GET.get('status', '')
     search = request.GET.get('q', '').strip()
     reqs = DepartmentRequisition.objects.filter(is_deleted=False).select_related('requested_by')
@@ -795,6 +818,8 @@ def requisition_create(request):
 
 @login_required
 def requisition_detail(request, req_id):
+    if not _can_access_inventory(request.user) and not _can_requisition(request.user):
+        return HttpResponseForbidden('Access denied.')
     req      = get_object_or_404(DepartmentRequisition, id=req_id, is_deleted=False)
     req_items = req.items.select_related('item').all()
     return render(request, 'inventory/requisition_detail.html', {
@@ -1458,7 +1483,7 @@ def transfer_cancel(request, transfer_id):
 
 @login_required
 def grn_list(request):
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
     search = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '')
@@ -1523,7 +1548,7 @@ def grn_create(request):
 
 @login_required
 def grn_detail(request, grn_id):
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
     grn = get_object_or_404(GoodsReceivedNote, pk=grn_id, is_deleted=False)
     return render(request, 'inventory/grn_detail.html', {
@@ -2214,7 +2239,7 @@ def receive_stock(request):
 @login_required
 def alerts(request):
     """Consolidated alerts dashboard — low stock, expiry, overstock, auto-reorder."""
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
     import datetime
     today = timezone.localdate()
@@ -2428,7 +2453,7 @@ def quotation_create(request):
 
 @login_required
 def quotation_detail(request, rfq_id):
-    if not _can_access_store(request.user):
+    if not _can_manage_procurement(request.user) and not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
     q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
     # Find competing quotations for same items
@@ -2550,7 +2575,7 @@ def budget_list(request):
 
 @login_required
 def budget_create(request):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     if request.method == 'POST':
         StoreBudget.objects.create(
@@ -2572,7 +2597,7 @@ def budget_create(request):
 
 @login_required
 def budget_edit(request, budget_id):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     budget = get_object_or_404(StoreBudget, pk=budget_id, is_deleted=False)
     if request.method == 'POST':
@@ -3033,7 +3058,7 @@ def stock_card(request, item_id):
     Stock Card (Fiche de Stock): complete movement history for a single item.
     Shows opening balance, each IN/OUT/ADJUST/RETURN/ISSUE with running balance.
     """
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
     item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
 
@@ -3102,7 +3127,7 @@ def bin_card(request, item_id):
     Bin Card: physical location-based stock tracking for a single item.
     Shows item location, batches, expiry dates, and recent movements.
     """
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
     item = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
 
@@ -3131,7 +3156,7 @@ def stock_ledger(request):
     Stock Ledger (Grand Livre des Stocks): master ledger of all items with
     opening stock, total IN, total OUT, closing stock, and total value.
     """
-    if not _can_access_store(request.user):
+    if not _can_access_inventory(request.user):
         return HttpResponseForbidden('Access denied.')
 
     category = request.GET.get('category', '')
@@ -3195,7 +3220,7 @@ def annual_stock_take_report(request):
     Shows all items, their system vs physical quantities, variances,
     and total stock valuation.
     """
-    if not _can_manage_store(request.user) and not _can_validate_stock(request.user):
+    if not _can_view_reports(request.user) and not _can_validate_stock(request.user):
         return HttpResponseForbidden('Access denied.')
 
     year = request.GET.get('year', str(timezone.localdate().year))
@@ -3410,6 +3435,8 @@ def supplier_invoice_create(request):
 @login_required
 def supplier_invoice_detail(request, invoice_id):
     """View supplier invoice detail."""
+    if not _can_manage_procurement(request.user) and not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Access denied.')
     si = get_object_or_404(SupplierInvoice, id=invoice_id, is_deleted=False)
     si_items = si.items.select_related('item').all()
     matches = si.three_way_matches.all()
@@ -3494,6 +3521,8 @@ def three_way_match_create(request):
 @login_required
 def three_way_match_detail(request, match_id):
     """View 3-way match result with line-by-line comparison."""
+    if not _can_manage_procurement(request.user) and not _can_validate_stock(request.user):
+        return HttpResponseForbidden('Access denied.')
     match = get_object_or_404(ThreeWayMatch, id=match_id, is_deleted=False)
     po_items  = match.purchase_order.items.select_related('item').all()
     grn_items = match.grn.items.select_related('po_item__item').all()
