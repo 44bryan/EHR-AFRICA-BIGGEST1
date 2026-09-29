@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  {% include 'reports/pdf/_base_styles.html' %}
+</head>
+<body>
+  {% include 'reports/pdf/_letterhead.html' %}
+
+  <div class="accred-bar">
+    <span>INTER-STORE TRANSFER NOTE</span>
+    <span>{{ transfer.transfer_number }}</span>
+  </div>
+
+  <div style="display:flex; gap:20px; margin-bottom:14px; font-size:9.5pt;">
+    <div style="flex:1;">
+      <div class="field-row"><span class="field-label">Transfer #:</span><span class="field-value"><strong>{{ transfer.transfer_number }}</strong></span></div>
+      <div class="field-row"><span class="field-label">From:</span><span class="field-value">{{ transfer.from_location.name }}</span></div>
+      <div class="field-row"><span class="field-label">To:</span><span class="field-value">{{ transfer.to_location.name }}</span></div>
+    </div>
+    <div style="flex:1;">
+      <div class="field-row"><span class="field-label">Transfer Date:</span><span class="field-value">{{ transfer.transfer_date|date:"d M Y" }}</span></div>
+      <div class="field-row"><span class="field-label">Status:</span><span class="field-value">{{ transfer.get_status_display }}</span></div>
+      <div class="field-row"><span class="field-label">Requested By:</span><span class="field-value">{{ transfer.requested_by.get_full_name }}</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Transfer Items</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>#</th><th>Item</th><th>Item Code</th><th style="text-align:right;">Quantity</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        {% for ti in transfer_items %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ ti.item.name }}</td>
+          <td>{{ ti.item.item_code }}</td>
+          <td style="text-align:right;">{{ ti.quantity }}</td>
+          <td>{{ ti.notes|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if transfer.notes %}
+  <div class="section">
+    <div class="section-title">Notes</div>
+    <div class="info-box">{{ transfer.notes }}</div>
+  </div>
+  {% endif %}
+
+  <div class="auth-block">
+    <div class="section-title">Signatures</div>
+    <div class="auth-row">
+      <div class="auth-col">
+        <div class="auth-role">{{ transfer.requested_by.get_full_name }}</div>
+        <div class="auth-title">Requested By</div>
+        <div class="auth-date">Date: {{ transfer.created_at|date:"d/m/Y" }}</div>
+      </div>
+      <div class="auth-col">
+        {% if transfer.approved_by %}
+        <div class="auth-role">{{ transfer.approved_by.get_full_name }}</div>
+        {% else %}
+        <div class="auth-role">________________</div>
+        {% endif %}
+        <div class="auth-title">Approved By</div>
+        <div class="auth-date">Date: ___/___/______</div>
+      </div>
+      <div class="auth-col">
+        {% if transfer.received_by %}
+        <div class="auth-role">{{ transfer.received_by.get_full_name }}</div>
+        {% else %}
+        <div class="auth-role">________________</div>
+        {% endif %}
+        <div class="auth-title">Received By</div>
+        <div class="auth-date">Date: ___/___/______</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pdf-footer">
+    <span>{{ hospital_name }} &mdash; Inter-Store Transfer Note</span>
+    <span>Generated: {% now "d/m/Y H:i" %}</span>
+  </div>
+</body>
+</html>

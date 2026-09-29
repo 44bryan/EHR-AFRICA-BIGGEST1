@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  {% include 'reports/pdf/_base_styles.html' %}
+</head>
+<body>
+  {% include 'reports/pdf/_letterhead.html' %}
+
+  <div class="accred-bar">
+    <span>GOODS RECEIVED NOTE</span>
+    <span>{{ grn.grn_number }}</span>
+  </div>
+
+  <!-- Header info -->
+  <div style="display:flex; gap:20px; margin-bottom:14px; font-size:9.5pt;">
+    <div style="flex:1;">
+      <div class="field-row"><span class="field-label">GRN Number:</span><span class="field-value"><strong>{{ grn.grn_number }}</strong></span></div>
+      <div class="field-row"><span class="field-label">Purchase Order:</span><span class="field-value">{{ grn.purchase_order.po_number }}</span></div>
+      <div class="field-row"><span class="field-label">Vendor:</span><span class="field-value">{{ grn.purchase_order.vendor.name|default:"—" }}</span></div>
+    </div>
+    <div style="flex:1;">
+      <div class="field-row"><span class="field-label">Received Date:</span><span class="field-value">{{ grn.received_date|date:"d M Y" }}</span></div>
+      <div class="field-row"><span class="field-label">Received By:</span><span class="field-value">{{ grn.received_by.get_full_name }}</span></div>
+      <div class="field-row"><span class="field-label">Status:</span><span class="field-value">{{ grn.get_status_display }}</span></div>
+      <div class="field-row"><span class="field-label">Inspection Score:</span><span class="field-value">{{ grn.inspection_score }}/7</span></div>
+    </div>
+  </div>
+
+  <!-- Inspection checklist -->
+  <div class="section">
+    <div class="section-title">Inspection Checklist (JCI FMS.5)</div>
+    <table class="data-table">
+      <thead><tr><th style="width:70%;">Check Item</th><th class="text-center">Result</th></tr></thead>
+      <tbody>
+        <tr><td>Packaging intact and undamaged</td><td style="text-align:center;">{% if grn.packaging_intact %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Labels correct and legible</td><td style="text-align:center;">{% if grn.labels_correct %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Quantity matches Purchase Order</td><td style="text-align:center;">{% if grn.quantity_matches_po %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Expiry dates acceptable</td><td style="text-align:center;">{% if grn.expiry_acceptable %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Storage temperature maintained</td><td style="text-align:center;">{% if grn.storage_temp_ok %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Certificates / COA present</td><td style="text-align:center;">{% if grn.certificates_present %}PASS{% else %}FAIL{% endif %}</td></tr>
+        <tr><td>Visual inspection satisfactory</td><td style="text-align:center;">{% if grn.visual_inspection_ok %}PASS{% else %}FAIL{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if grn.inspection_notes %}
+  <div class="section">
+    <div class="section-title">Inspection Notes</div>
+    <div class="info-box">{{ grn.inspection_notes }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Items received -->
+  <div class="section">
+    <div class="section-title">Items Received</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>#</th><th>Item</th><th style="text-align:center;">Qty Received</th><th style="text-align:center;">Qty Accepted</th><th style="text-align:center;">Qty Rejected</th><th>Lot #</th><th>Expiry</th></tr>
+      </thead>
+      <tbody>
+        {% for gi in grn_items %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ gi.po_item.item.name }}</td>
+          <td style="text-align:center;">{{ gi.quantity_received }}</td>
+          <td style="text-align:center;">{{ gi.quantity_accepted|default:"—" }}</td>
+          <td style="text-align:center;">{{ gi.quantity_rejected|default:"0" }}</td>
+          <td>{{ gi.lot_number|default:"—" }}</td>
+          <td>{% if gi.expiry_date %}{{ gi.expiry_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if grn.notes %}
+  <div class="section">
+    <div class="section-title">General Notes</div>
+    <div class="info-box">{{ grn.notes }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Signature block -->
+  <div class="auth-block">
+    <div class="section-title">Signatures</div>
+    <div class="auth-row">
+      <div class="auth-col">
+        <div class="auth-role">{{ grn.requester_name|default:"________________" }}</div>
+        <div class="auth-title">Requester</div>
+        <div class="auth-date">Date: {{ grn.requester_signature_date|date:"d/m/Y"|default:"___/___/______" }}</div>
+      </div>
+      <div class="auth-col">
+        <div class="auth-role">{{ grn.logistics_assistant|default:"________________" }}</div>
+        <div class="auth-title">Logistics Assistant / Store Keeper</div>
+        <div class="auth-date">Date: {{ grn.logistics_signature_date|date:"d/m/Y"|default:"___/___/______" }}</div>
+      </div>
+      <div class="auth-col">
+        <div class="auth-role">{{ grn.received_by.get_full_name }}</div>
+        <div class="auth-title">Inspected By (System)</div>
+        <div class="auth-date">Date: {{ grn.received_date|date:"d/m/Y" }}</div>
+      </div>
+    </div>
+    {% if grn.validated_by %}
+    <div class="auth-row" style="margin-top:12px;">
+      <div class="auth-col">
+        <div class="auth-role">{{ grn.validated_by.get_full_name }}</div>
+        <div class="auth-title">Finance Director (GL Validation)</div>
+        <div class="auth-date">Date: {{ grn.validated_at|date:"d/m/Y H:i"|default:"—" }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="pdf-footer">
+    <span>{{ hospital_name }} &mdash; Goods Received Note</span>
+    <span>Generated: {% now "d/m/Y H:i" %}</span>
+  </div>
+</body>
+</html>

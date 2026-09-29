@@ -642,6 +642,13 @@ class GoodsReceivedNote(AuditModel):
     visual_inspection_ok = models.BooleanField(default=False, help_text='No visible damage, discoloration, leakage')
     inspection_notes    = models.TextField(blank=True)
     notes               = models.TextField(blank=True)
+    # Signature fields (requester who raised the PO + logistics assistant who received)
+    requester_name      = models.CharField(max_length=100, blank=True,
+                                            help_text='Name of person who raised the requisition/PO')
+    logistics_assistant = models.CharField(max_length=100, blank=True,
+                                            help_text='Name of logistics assistant who physically received goods')
+    requester_signature_date  = models.DateField(null=True, blank=True)
+    logistics_signature_date  = models.DateField(null=True, blank=True)
     # Environmental compliance
     environmental_certificate = models.BooleanField(default=False, help_text='Environmental compliance certificate')
     # 4-Eyes Principle: Finance Director validation (Cameroon store-keeping law)

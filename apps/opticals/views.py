@@ -26,6 +26,12 @@ def _can_access_optical(user):
     )
 
 
+def _is_store_keeper_only(user):
+    """True if user is Store Keeper (not optical dispenser/admin)."""
+    from apps.accounts.models import UserRole
+    return user.role == UserRole.STORE_KEEPER
+
+
 @login_required
 def dashboard(request):
     if not _can_access_optical(request.user):
@@ -130,9 +136,7 @@ def frame_list(request):
 
 @login_required
 def frame_create(request):
-    from apps.accounts.models import UserRole
-    if not (request.user.is_super_admin or request.user.is_medical_director or
-            request.user.role in (UserRole.ADMIN, UserRole.OPTICAL_DISPENSER)):
+    if not _can_manage_optical_stock(request.user):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     if request.method == 'POST':
@@ -168,9 +172,7 @@ def frame_create(request):
 
 @login_required
 def frame_edit(request, frame_id):
-    from apps.accounts.models import UserRole
-    if not (request.user.is_super_admin or request.user.is_medical_director or
-            request.user.role in (UserRole.ADMIN, UserRole.OPTICAL_DISPENSER)):
+    if not _can_manage_optical_stock(request.user):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     frame = get_object_or_404(Frame, id=frame_id, is_deleted=False)
@@ -206,9 +208,7 @@ def lens_list(request):
 
 @login_required
 def lens_create(request):
-    from apps.accounts.models import UserRole
-    if not (request.user.is_super_admin or request.user.is_medical_director or
-            request.user.role in (UserRole.ADMIN, UserRole.OPTICAL_DISPENSER)):
+    if not _can_manage_optical_stock(request.user):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     if request.method == 'POST':
@@ -240,9 +240,7 @@ def lens_create(request):
 
 @login_required
 def lens_edit(request, lens_id):
-    from apps.accounts.models import UserRole
-    if not (request.user.is_super_admin or request.user.is_medical_director or
-            request.user.role in (UserRole.ADMIN, UserRole.OPTICAL_DISPENSER)):
+    if not _can_manage_optical_stock(request.user):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     lens = get_object_or_404(Lens, id=lens_id, is_deleted=False)
@@ -680,9 +678,7 @@ def collect_payment(request, order_id):
 @require_POST
 def frame_receive_stock(request, frame_id):
     """Receive a new batch of frames — increments quantity_in_stock."""
-    from apps.accounts.models import UserRole
-    if not (request.user.is_super_admin or request.user.is_medical_director or
-            request.user.role in (UserRole.ADMIN, UserRole.OPTICAL_DISPENSER)):
+    if not _can_manage_optical_stock(request.user):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     frame = get_object_or_404(Frame, id=frame_id, is_deleted=False)
@@ -1118,6 +1114,12 @@ def lva_dispensing_create(request, patient_id=None):
 # ── Optical Lab Job Card ──────────────────────────────────────────────────────
 
 def _can_manage_optical(user):
+    """Full optical management (orders, pricing, lab, repairs) — NOT store keeper."""
+    return user.role in ('optical_dispenser', 'super_admin', 'admin', 'admin_director', 'medical_director')
+
+
+def _can_manage_optical_stock(user):
+    """Optical inventory management — frames, lenses, GRN, stocktake, min-stock alerts."""
     return user.role in ('optical_dispenser', 'store_keeper', 'super_admin', 'admin', 'admin_director', 'medical_director')
 
 
@@ -1661,7 +1663,7 @@ def warranty_list(request):
 
 @login_required
 def supplier_list(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     suppliers = FrameSupplier.objects.filter(is_deleted=False).order_by('name')
@@ -1670,7 +1672,7 @@ def supplier_list(request):
 
 @login_required
 def supplier_create(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     if request.method == 'POST':
@@ -1697,7 +1699,7 @@ def supplier_create(request):
 
 @login_required
 def supplier_edit(request, supplier_id):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     supplier = get_object_or_404(FrameSupplier, id=supplier_id, is_deleted=False)
@@ -1723,7 +1725,7 @@ def supplier_edit(request, supplier_id):
 
 @login_required
 def grn_list(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     grns = FrameGoodsReceived.objects.filter(is_deleted=False).select_related(
@@ -1734,7 +1736,7 @@ def grn_list(request):
 
 @login_required
 def grn_create(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
@@ -1792,7 +1794,7 @@ def grn_create(request):
 
 @login_required
 def grn_detail(request, grn_id):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     grn = get_object_or_404(FrameGoodsReceived, id=grn_id, is_deleted=False)
@@ -1804,7 +1806,7 @@ def grn_detail(request, grn_id):
 @require_POST
 def grn_confirm(request, grn_id):
     """Confirm receipt — updates frame stock quantities."""
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     grn = get_object_or_404(FrameGoodsReceived, id=grn_id, is_deleted=False)
@@ -1831,7 +1833,7 @@ def grn_confirm(request, grn_id):
 
 @login_required
 def frame_stocktake_list(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     stocktakes = FrameStocktake.objects.filter(is_deleted=False).select_related('conducted_by')
@@ -1841,7 +1843,7 @@ def frame_stocktake_list(request):
 @login_required
 def frame_stocktake_create(request):
     """Create a new stocktake session pre-populated with all active frames."""
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
@@ -1875,7 +1877,7 @@ def frame_stocktake_create(request):
 
 @login_required
 def frame_stocktake_detail(request, stocktake_id):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     st = get_object_or_404(FrameStocktake, id=stocktake_id, is_deleted=False)
@@ -1901,7 +1903,7 @@ def frame_stocktake_detail(request, stocktake_id):
 @require_POST
 def frame_stocktake_finalize(request, stocktake_id):
     """Finalize stocktake — adjust system stock to match counted quantities."""
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     st = get_object_or_404(FrameStocktake, id=stocktake_id, is_deleted=False)
@@ -1928,7 +1930,7 @@ def frame_stocktake_finalize(request, stocktake_id):
 
 @login_required
 def min_stock_alerts(request):
-    if not _can_manage_optical(request.user):
+    if not _can_manage_optical_stock(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 

@@ -62,6 +62,7 @@ urlpatterns = [
     path('transfers/<uuid:transfer_id>/dispatch/', views.transfer_dispatch, name='transfer_dispatch'),
     path('transfers/<uuid:transfer_id>/receive/', views.transfer_receive, name='transfer_receive'),
     path('transfers/<uuid:transfer_id>/cancel/', views.transfer_cancel, name='transfer_cancel'),
+    path('transfers/<uuid:transfer_id>/pdf/', views.transfer_pdf, name='transfer_pdf'),
 
     # Goods Received Notes (GRN)
     path('grn/', views.grn_list, name='grn_list'),
@@ -69,6 +70,7 @@ urlpatterns = [
     path('grn/<uuid:grn_id>/', views.grn_detail, name='grn_detail'),
     path('grn/<uuid:grn_id>/accept/', views.grn_accept, name='grn_accept'),
     path('grn/<uuid:grn_id>/reject/', views.grn_reject, name='grn_reject'),
+    path('grn/<uuid:grn_id>/pdf/', views.grn_pdf, name='grn_pdf'),
 
     # Disposal Workflow
     path('disposal/', views.disposal_list, name='disposal_list'),
@@ -131,8 +133,10 @@ urlpatterns = [
     # ── Stock Entry / Exit ─────────────────────────────────────────
     path('stock-exit/', views.stock_exit_list, name='stock_exit_list'),
     path('stock-exit/create/', views.stock_exit_create, name='stock_exit_create'),
+    path('stock-exit/pdf/', views.stock_exit_pdf, name='stock_exit_pdf'),
     path('stock-entry/', views.stock_entry_list, name='stock_entry_list'),
     path('stock-entry/create/', views.stock_entry_create, name='stock_entry_create'),
+    path('stock-entry/pdf/', views.stock_entry_pdf, name='stock_entry_pdf'),
 
     # ── 4-Eyes Stock Validation (Finance Director) ────────────────
     path('validations/', views.stock_validation_list, name='stock_validation_list'),

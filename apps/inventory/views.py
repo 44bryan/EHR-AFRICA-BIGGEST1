@@ -1619,6 +1619,10 @@ def grn_create(request):
             visual_inspection_ok='visual_inspection_ok' in request.POST,
             inspection_notes=request.POST.get('inspection_notes', '').strip(),
             notes=request.POST.get('notes', '').strip(),
+            requester_name=request.POST.get('requester_name', '').strip(),
+            logistics_assistant=request.POST.get('logistics_assistant', '').strip(),
+            requester_signature_date=timezone.localdate(),
+            logistics_signature_date=timezone.localdate(),
             status=GRNStatus.INSPECTED,
         )
         # Auto-create GRN items from PO items
@@ -1645,6 +1649,21 @@ def grn_detail(request, grn_id):
     return render(request, 'inventory/grn_detail.html', {
         'grn': grn,
         'grn_items': grn.items.select_related('po_item__item').all(),
+    })
+
+
+@login_required
+def grn_pdf(request, grn_id):
+    """Generate professional PDF for a GRN with letterhead and signatures."""
+    if not _can_access_inventory(request.user):
+        return HttpResponseForbidden('Access denied.')
+    grn = get_object_or_404(GoodsReceivedNote, pk=grn_id, is_deleted=False)
+    grn_items = grn.items.select_related('po_item__item').all()
+    from apps.reports.views import render_pdf
+    return render_pdf('inventory/pdf/grn_pdf.html', {
+        'grn': grn, 'grn_items': grn_items,
+        'pdf_filename': f'GRN_{grn.grn_number}.pdf',
+        'pdf_seal_label': 'GOODS RECEIVED NOTE',
     })
 
 
@@ -3120,6 +3139,80 @@ def stock_entry_create(request):
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES, 'store_locations': store_locations,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PDF GENERATION — Professional letterhead PDFs for inventory documents
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def stock_entry_pdf(request):
+    """PDF report of stock entries with letterhead and signatures."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    days = int(request.GET.get('days', 30))
+    search = request.GET.get('q', '').strip()
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    entries = StockMovement.objects.filter(
+        movement_type='IN', created_at__date__gte=cutoff,
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    if search:
+        entries = entries.filter(
+            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        )
+    from apps.reports.views import render_pdf
+    return render_pdf('inventory/pdf/stock_entry_pdf.html', {
+        'entries': entries[:500],
+        'reference': f'SEN-RPT-{timezone.localdate().strftime("%Y%m%d")}',
+        'date_from': cutoff, 'date_to': timezone.localdate(),
+        'user': request.user,
+        'pdf_filename': f'Stock_Entry_Report_{timezone.localdate()}.pdf',
+        'pdf_seal_label': 'STOCK ENTRY REPORT',
+    })
+
+
+@login_required
+def stock_exit_pdf(request):
+    """PDF report of stock exits with letterhead and signatures."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    import datetime
+    days = int(request.GET.get('days', 30))
+    search = request.GET.get('q', '').strip()
+    cutoff = timezone.localdate() - datetime.timedelta(days=days)
+    exits = StockMovement.objects.filter(
+        movement_type__in=['OUT', 'ISSUE', 'EXPIRE'],
+        created_at__date__gte=cutoff,
+    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    if search:
+        exits = exits.filter(
+            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        )
+    from apps.reports.views import render_pdf
+    return render_pdf('inventory/pdf/stock_exit_pdf.html', {
+        'exits': exits[:500],
+        'reference': f'SEX-RPT-{timezone.localdate().strftime("%Y%m%d")}',
+        'date_from': cutoff, 'date_to': timezone.localdate(),
+        'user': request.user,
+        'pdf_filename': f'Stock_Exit_Report_{timezone.localdate()}.pdf',
+        'pdf_seal_label': 'STOCK EXIT REPORT',
+    })
+
+
+@login_required
+def transfer_pdf(request, transfer_id):
+    """PDF for a specific inter-store transfer with letterhead and signatures."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    tr = get_object_or_404(StoreTransfer, pk=transfer_id, is_deleted=False)
+    from apps.reports.views import render_pdf
+    return render_pdf('inventory/pdf/transfer_pdf.html', {
+        'transfer': tr,
+        'transfer_items': tr.items.select_related('item').all(),
+        'pdf_filename': f'Transfer_{tr.transfer_number}.pdf',
+        'pdf_seal_label': 'INTER-STORE TRANSFER',
     })
 
 
