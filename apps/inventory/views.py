@@ -32,17 +32,27 @@ def _can_access_store(user):
     """View store dashboard, items, requisitions."""
     from apps.accounts.models import UserRole
     return user.role in (
-        UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.STORE_KEEPER, UserRole.PROCUREMENT_OFFICER,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
         UserRole.NURSE_DIRECTOR,
     )
 
 
 def _can_manage_store(user):
-    """Full CRUD: items, POs, vendor management, stock adjustments, issue."""
+    """Store Keeper ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.ADMIN,
+    )
+
+
+def _can_manage_procurement(user):
+    """Procurement Officer ops: vendors, RFQs, POs, supplier invoices, 3-way match."""
+    from apps.accounts.models import UserRole
+    return user.role in (
+        UserRole.PROCUREMENT_OFFICER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
     )
 
@@ -53,10 +63,11 @@ def _can_requisition(user):
 
 
 def _can_view_reports(user):
-    """Reports: store keeper + leadership."""
+    """Reports: store keeper + procurement + leadership."""
     from apps.accounts.models import UserRole
     return user.role in (
-        UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
+        UserRole.STORE_KEEPER, UserRole.PROCUREMENT_OFFICER,
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN, UserRole.CEO, UserRole.FINANCE_DIRECTOR,
         UserRole.SENIOR_ACCOUNTANT,
     )
@@ -206,6 +217,91 @@ def dashboard(request):
     return render(request, 'inventory/dashboard.html', context)
 
 
+# ── Procurement Dashboard ─────────────────────────────────────────────────────
+
+@login_required
+def procurement_dashboard(request):
+    """Dedicated dashboard for Procurement Officer — focuses on sourcing, POs, invoices, matching."""
+    if not _can_manage_procurement(request.user):
+        return HttpResponseForbidden('Access denied — Procurement Officer role required.')
+
+    today = timezone.localdate()
+
+    # PO statistics
+    po_qs = PurchaseOrder.objects.filter(is_deleted=False)
+    draft_pos = po_qs.filter(status='DRAFT').count()
+    submitted_pos = po_qs.filter(status='SUBMITTED').count()
+    approved_pos = po_qs.filter(status='APPROVED').count()
+    received_pos = po_qs.filter(status='RECEIVED', received_date__year=today.year).count()
+
+    # YTD PO spend
+    po_spend_ytd = po_qs.filter(
+        status='RECEIVED', ordered_date__year=today.year
+    ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+    # Pending finance approval
+    pending_finance = po_qs.filter(status='SUBMITTED').count()
+
+    # Supplier Invoices
+    inv_qs = SupplierInvoice.objects.filter(is_deleted=False)
+    pending_invoices = inv_qs.filter(status='PENDING').count()
+    total_invoices = inv_qs.count()
+
+    # 3-Way Match
+    match_qs = ThreeWayMatch.objects.filter(is_deleted=False)
+    pending_matches = match_qs.filter(status='PENDING').count()
+    mismatched = match_qs.filter(status='MISMATCH').count()
+    matched_count = match_qs.filter(status='MATCHED').count()
+
+    # Open quotations
+    open_rfqs = SupplierQuotation.objects.filter(
+        is_deleted=False, status__in=['DRAFT', 'SENT']
+    ).count()
+
+    # Vendor stats
+    active_vendors = Vendor.objects.filter(is_active=True, is_deleted=False).count()
+
+    # Items needing reorder (procurement action required)
+    all_items = list(InventoryItem.objects.filter(is_active=True, is_deleted=False))
+    low_stock_items = [i for i in all_items if i.needs_reorder]
+
+    # Auto-generated POs awaiting review
+    auto_pos = po_qs.filter(status='DRAFT', is_auto_generated=True).count()
+
+    # Recent POs (last 10)
+    recent_pos = po_qs.select_related('vendor').order_by('-created_at')[:10]
+
+    # Recent supplier invoices (last 10)
+    recent_invoices = inv_qs.select_related('vendor').order_by('-created_at')[:10]
+
+    # Unmatched invoices (no 3-way match yet)
+    matched_invoice_ids = ThreeWayMatch.objects.filter(is_deleted=False).values_list('supplier_invoice_id', flat=True)
+    unmatched_invoices = inv_qs.exclude(id__in=matched_invoice_ids).count()
+
+    context = {
+        'draft_pos': draft_pos,
+        'submitted_pos': submitted_pos,
+        'approved_pos': approved_pos,
+        'received_pos': received_pos,
+        'po_spend_ytd': int(po_spend_ytd),
+        'pending_finance': pending_finance,
+        'pending_invoices': pending_invoices,
+        'total_invoices': total_invoices,
+        'unmatched_invoices': unmatched_invoices,
+        'pending_matches': pending_matches,
+        'mismatched': mismatched,
+        'matched_count': matched_count,
+        'open_rfqs': open_rfqs,
+        'active_vendors': active_vendors,
+        'low_stock_count': len(low_stock_items),
+        'low_stock_items': low_stock_items[:10],
+        'auto_pos': auto_pos,
+        'recent_pos': recent_pos,
+        'recent_invoices': recent_invoices,
+    }
+    return render(request, 'inventory/procurement_dashboard.html', context)
+
+
 # ── Item list / detail ────────────────────────────────────────────────────────
 
 @login_required
@@ -299,7 +395,7 @@ def purchase_order_list(request):
 
 @login_required
 def po_create(request):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
@@ -461,7 +557,7 @@ def vendor_list(request):
 
 @login_required
 def vendor_create(request):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
     if request.method == 'POST':
@@ -481,7 +577,7 @@ def vendor_create(request):
 
 @login_required
 def vendor_edit(request, vendor_id):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
     vendor = get_object_or_404(Vendor, id=vendor_id, is_deleted=False)
@@ -2276,7 +2372,7 @@ def consignment_dashboard(request):
 
 @login_required
 def quotation_list(request):
-    if not _can_access_store(request.user):
+    if not _can_access_store(request.user) and not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     status = request.GET.get('status', '')
     qs = SupplierQuotation.objects.filter(is_deleted=False).select_related('vendor', 'requested_by')
@@ -2290,7 +2386,7 @@ def quotation_list(request):
 
 @login_required
 def quotation_create(request):
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
@@ -2352,7 +2448,7 @@ def quotation_detail(request, rfq_id):
 @login_required
 def quotation_update(request, rfq_id):
     """Update quotation with received prices."""
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     q = get_object_or_404(SupplierQuotation, pk=rfq_id, is_deleted=False)
     if request.method == 'POST':
@@ -2406,7 +2502,7 @@ def quotation_update(request, rfq_id):
 @login_required
 def quotation_compare(request):
     """Compare quotations for the same items side-by-side."""
-    if not _can_access_store(request.user):
+    if not _can_access_store(request.user) and not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     rfq_ids = request.GET.getlist('rfq')
     quotations = SupplierQuotation.objects.filter(
@@ -3230,7 +3326,7 @@ def po_finance_reject(request, po_id):
 @login_required
 def supplier_invoice_list(request):
     """List all supplier invoices."""
-    if not _can_access_store(request.user):
+    if not _can_access_store(request.user) and not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     status_filter = request.GET.get('status', '')
     search = request.GET.get('q', '').strip()
@@ -3251,7 +3347,7 @@ def supplier_invoice_list(request):
 @login_required
 def supplier_invoice_create(request):
     """Record a new supplier invoice."""
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     pos     = PurchaseOrder.objects.filter(is_deleted=False, status__in=['APPROVED', 'RECEIVED']).order_by('-ordered_date')
@@ -3329,7 +3425,7 @@ def supplier_invoice_detail(request, invoice_id):
 @login_required
 def three_way_match_list(request):
     """List all 3-way matches."""
-    if not _can_access_store(request.user) and not _can_validate_stock(request.user):
+    if not _can_access_store(request.user) and not _can_manage_procurement(request.user) and not _can_validate_stock(request.user):
         return HttpResponseForbidden('Access denied.')
     status_filter = request.GET.get('status', '')
     search = request.GET.get('q', '').strip()
@@ -3354,7 +3450,7 @@ def three_way_match_list(request):
 @login_required
 def three_way_match_create(request):
     """Create a new 3-way match by selecting PO, GRN, and Supplier Invoice."""
-    if not _can_manage_store(request.user):
+    if not _can_manage_procurement(request.user):
         return HttpResponseForbidden('Access denied.')
 
     if request.method == 'POST':

@@ -1519,6 +1519,10 @@ def home_view(request):
     if user.is_store_keeper:
         return redirect('inventory:dashboard')
 
+    # ── Procurement Officer → Procurement dashboard ───────────────────
+    if user.is_procurement_officer:
+        return redirect('inventory:procurement_dashboard')
+
     # ── Anaesthetist — dedicated anaesthesia dashboard ───────────────────
     if user.is_anaesthetist:
         try:

@@ -1,0 +1,232 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Procurement Dashboard{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold">Procurement Dashboard</h5>
+    <div class="text-muted small">Sourcing, Purchase Orders, Invoices &amp; 3-Way Match</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'inventory:po_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New PO</a>
+    <a href="{% url 'inventory:quotation_create' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-ruled me-1"></i>New RFQ</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── KPI Row 1: PO Pipeline ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Draft POs</div>
+        <h3 class="fw-bold mb-0 text-secondary">{{ draft_pos }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Awaiting Finance</div>
+        <h3 class="fw-bold mb-0 text-warning">{{ pending_finance }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Approved POs</div>
+        <h3 class="fw-bold mb-0 text-info">{{ approved_pos }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">YTD PO Spend</div>
+        <h3 class="fw-bold mb-0 text-primary font-monospace">{{ po_spend_ytd|intcomma }}</h3>
+        <div class="text-muted" style="font-size:.65rem;">XAF</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── KPI Row 2: Invoices & Matching ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Pending Invoices</div>
+        <h3 class="fw-bold mb-0 text-warning">{{ pending_invoices }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Unmatched Invoices</div>
+        <h3 class="fw-bold mb-0 text-danger">{{ unmatched_invoices }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Mismatched (3-Way)</div>
+        <h3 class="fw-bold mb-0 text-danger">{{ mismatched }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Matched OK</div>
+        <h3 class="fw-bold mb-0 text-success">{{ matched_count }}</h3>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── KPI Row 3: Quick Stats ── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Open RFQs</div>
+        <h3 class="fw-bold mb-0">{{ open_rfqs }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Active Vendors</div>
+        <h3 class="fw-bold mb-0">{{ active_vendors }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Items Low Stock</div>
+        <h3 class="fw-bold mb-0 text-danger">{{ low_stock_count }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small">Auto-Reorder POs</div>
+        <h3 class="fw-bold mb-0 text-info">{{ auto_pos }}</h3>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# ── Recent Purchase Orders ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold">Recent Purchase Orders</span>
+        <a href="{% url 'inventory:po_list' %}" class="btn btn-sm btn-outline-primary py-0 px-2">View All</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 small">
+          <thead class="table-light">
+            <tr><th>PO #</th><th>Vendor</th><th class="text-end">Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for po in recent_pos %}
+            <tr>
+              <td><a href="{% url 'inventory:po_detail' po.pk %}">{{ po.po_number }}</a></td>
+              <td>{{ po.vendor.name|truncatechars:25 }}</td>
+              <td class="text-end font-monospace">{{ po.total_amount|floatformat:0|intcomma }}</td>
+              <td>
+                {% if po.status == 'DRAFT' %}<span class="badge bg-secondary">Draft</span>
+                {% elif po.status == 'SUBMITTED' %}<span class="badge bg-warning text-dark">Submitted</span>
+                {% elif po.status == 'APPROVED' %}<span class="badge bg-info">Approved</span>
+                {% elif po.status == 'RECEIVED' %}<span class="badge bg-success">Received</span>
+                {% elif po.status == 'CANCELLED' %}<span class="badge bg-danger">Cancelled</span>
+                {% else %}<span class="badge bg-light text-dark">{{ po.status }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No purchase orders yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Recent Supplier Invoices ── #}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold">Recent Supplier Invoices</span>
+        <a href="{% url 'inventory:supplier_invoice_list' %}" class="btn btn-sm btn-outline-primary py-0 px-2">View All</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 small">
+          <thead class="table-light">
+            <tr><th>Invoice #</th><th>Vendor</th><th class="text-end">Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for inv in recent_invoices %}
+            <tr>
+              <td><a href="{% url 'inventory:supplier_invoice_detail' inv.pk %}">{{ inv.invoice_number }}</a></td>
+              <td>{{ inv.vendor.name|truncatechars:25 }}</td>
+              <td class="text-end font-monospace">{{ inv.total_amount|floatformat:0|intcomma }}</td>
+              <td>
+                {% if inv.status == 'PENDING' %}<span class="badge bg-warning text-dark">Pending</span>
+                {% elif inv.status == 'VERIFIED' %}<span class="badge bg-info">Verified</span>
+                {% elif inv.status == 'PAID' %}<span class="badge bg-success">Paid</span>
+                {% elif inv.status == 'DISPUTED' %}<span class="badge bg-danger">Disputed</span>
+                {% else %}<span class="badge bg-light text-dark">{{ inv.status }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No supplier invoices yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Low Stock Items Needing Reorder ── #}
+{% if low_stock_items %}
+<div class="card border-0 shadow-sm mt-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Items Below Reorder Level</span>
+    <a href="{% url 'inventory:alerts' %}" class="btn btn-sm btn-outline-danger py-0 px-2">All Alerts</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0 small">
+      <thead class="table-light">
+        <tr><th>Item</th><th>Code</th><th class="text-end">Current Stock</th><th class="text-end">Reorder Level</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for item in low_stock_items %}
+        <tr>
+          <td>{{ item.name|truncatechars:35 }}</td>
+          <td class="font-monospace">{{ item.item_code }}</td>
+          <td class="text-end fw-bold text-danger">{{ item.current_stock }}</td>
+          <td class="text-end">{{ item.reorder_level }}</td>
+          <td><a href="{% url 'inventory:po_create' %}" class="btn btn-sm btn-outline-primary py-0 px-2">Create PO</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
