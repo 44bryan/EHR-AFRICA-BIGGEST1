@@ -408,11 +408,16 @@ class StoreLocation(AuditModel):
         ('GENERAL', 'General Store'),
         ('PHARMACY', 'Pharmacy Store'),
         ('OPTICAL', 'Optical Store'),
-        ('THEATRE', 'Theatre Store'),
+        ('SHOWROOM', 'Optical Showroom'),
+        ('THEATRE', 'Theatre / OT Store'),
         ('CENTRAL', 'Central Store'),
         ('SUB', 'Sub-Store'),
         ('WARD', 'Ward Store'),
-        ('EMERGENCY', 'Emergency Store'),
+        ('EMERGENCY', 'Emergency / Chariots d\'Urgence'),
+        ('FRONT_DESK', 'Front Desk Store'),
+        ('NON_MEDICAL', 'Non-Medical Consumables'),
+        ('OUTREACH', 'Outreach Store'),
+        ('OTN', 'OTN Store'),
     ])
     gl_account_code = models.CharField(
         max_length=10, blank=True,
@@ -425,16 +430,21 @@ class StoreLocation(AuditModel):
     )
     is_active = models.BooleanField(default=True)
 
-    # Auto-assign GL account based on store type
+    # Auto-assign GL account based on store type (OHADA SYSCEBNL Class 3)
     STORE_GL_MAP = {
-        'GENERAL':   '311000',
-        'PHARMACY':  '321000',
-        'OPTICAL':   '322000',
-        'THEATRE':   '323000',
-        'CENTRAL':   '311000',
-        'SUB':       '331000',
-        'WARD':      '331000',
-        'EMERGENCY': '331000',
+        'GENERAL':     '311000',   # Marchandises — general
+        'PHARMACY':    '321000',   # Matieres premieres — pharmaceutiques
+        'OPTICAL':     '322000',   # Marchandises — optique (stock)
+        'SHOWROOM':    '322000',   # Marchandises — optique (display = same GL)
+        'THEATRE':     '323000',   # Fournitures chirurgicales
+        'CENTRAL':     '311000',   # Marchandises — central
+        'SUB':         '331000',   # Autres approvisionnements
+        'WARD':        '331000',   # Autres approvisionnements — ward
+        'EMERGENCY':   '331000',   # Autres approvisionnements — urgence
+        'FRONT_DESK':  '332000',   # Fournitures de bureau — front desk
+        'NON_MEDICAL': '333000',   # Fournitures non médicales
+        'OUTREACH':    '334000',   # Stock en transit — outreach
+        'OTN':         '335000',   # Stock — OTN
     }
 
     def save(self, *args, **kwargs):

@@ -1543,6 +1543,12 @@ def transfer_receive(request, transfer_id):
     tr.status = StoreTransferStatus.RECEIVED
     tr.received_by = request.user
     tr.save(update_fields=['status', 'received_by', 'updated_at'])
+    # GL posting: Dr destination store / Cr source store (balance sheet reclassification)
+    try:
+        from apps.inventory.gl_service import post_inter_store_transfer
+        post_inter_store_transfer(tr, user=request.user)
+    except Exception:
+        pass
     messages.success(request, f'Transfer {tr.transfer_number} received.')
     return redirect('inventory:transfer_detail', transfer_id=tr.pk)
 
@@ -2858,6 +2864,7 @@ def stock_exit_create(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
     if request.method == 'POST':
         department = request.POST.get('department', '').strip()
@@ -2865,6 +2872,8 @@ def stock_exit_create(request):
         reference = request.POST.get('reference', '').strip()
         notes = request.POST.get('notes', '').strip()
         authorized_by = request.POST.get('authorized_by', '').strip()
+        source_store_id = request.POST.get('source_store', '')
+        received_by_name = request.POST.get('received_by', '').strip()
 
         item_ids = request.POST.getlist('item_id[]')
         quantities = request.POST.getlist('quantity[]')
@@ -2904,11 +2913,28 @@ def stock_exit_create(request):
                     if not batch_ref:
                         batch_ref = batch
 
+            ref_parts = [reason]
+            if department:
+                ref_parts.append(department)
+            if source_store_id:
+                try:
+                    src = StoreLocation.objects.get(pk=source_store_id)
+                    ref_parts.append(f'Store: {src.name}')
+                except StoreLocation.DoesNotExist:
+                    pass
+            note_parts = []
+            if authorized_by:
+                note_parts.append(f'Auth: {authorized_by}')
+            if received_by_name:
+                note_parts.append(f'Rcvd: {received_by_name}')
+            if notes:
+                note_parts.append(notes)
+
             StockMovement.objects.create(
                 item=inv_item, movement_type='OUT', quantity=-actual_qty,
                 balance_after=inv_item.current_stock,
-                reference=f'{reason}: {department}' if department else reason,
-                notes=f'Auth: {authorized_by} | {notes}'.strip(' |') if authorized_by else notes,
+                reference=' | '.join(ref_parts),
+                notes=' | '.join(note_parts),
                 performed_by=request.user, batch=batch_ref,
             )
             _trigger_auto_reorder(inv_item, request.user)
@@ -2939,7 +2965,7 @@ def stock_exit_create(request):
 
     return render(request, 'inventory/stock_exit_form.html', {
         'items': items, 'departments': DEPARTMENTS,
-        'reasons': EXIT_REASONS,
+        'reasons': EXIT_REASONS, 'store_locations': store_locations,
     })
 
 
@@ -2987,6 +3013,7 @@ def stock_entry_create(request):
         return HttpResponseForbidden('Access denied.')
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
     if request.method == 'POST':
         source = request.POST.get('source', 'PURCHASE')
@@ -2994,6 +3021,10 @@ def stock_entry_create(request):
         delivery_note = request.POST.get('delivery_note', '').strip()
         invoice_number = request.POST.get('invoice_number', '').strip()
         notes = request.POST.get('notes', '').strip()
+        dest_store_id = request.POST.get('destination_store', '')
+        condition = request.POST.get('condition', 'GOOD')
+        po_reference = request.POST.get('po_reference', '').strip()
+        temp_check = request.POST.get('temp_check', '')
 
         item_ids = request.POST.getlist('item_id[]')
         quantities = request.POST.getlist('quantity[]')
@@ -3036,12 +3067,30 @@ def stock_entry_create(request):
                 ref_parts.append(vendor_name)
             if delivery_note:
                 ref_parts.append(f'DN:{delivery_note}')
+            if po_reference:
+                ref_parts.append(f'PO:{po_reference}')
+            if dest_store_id:
+                try:
+                    dst = StoreLocation.objects.get(pk=dest_store_id)
+                    ref_parts.append(f'Store: {dst.name}')
+                except StoreLocation.DoesNotExist:
+                    pass
+
+            note_parts = []
+            if invoice_number:
+                note_parts.append(f'INV:{invoice_number}')
+            if condition and condition != 'GOOD':
+                note_parts.append(f'Condition: {condition}')
+            if temp_check:
+                note_parts.append(f'Temp: {temp_check}')
+            if notes:
+                note_parts.append(notes)
 
             StockMovement.objects.create(
                 item=inv_item, movement_type='IN', quantity=qty,
                 balance_after=inv_item.current_stock,
                 reference=' | '.join(ref_parts),
-                notes=f'INV:{invoice_number} {notes}'.strip() if invoice_number else notes,
+                notes=' | '.join(note_parts) if note_parts else '',
                 performed_by=request.user, batch=batch,
             )
             received_count += 1
@@ -3070,7 +3119,7 @@ def stock_entry_create(request):
 
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
-        'sources': ENTRY_SOURCES,
+        'sources': ENTRY_SOURCES, 'store_locations': store_locations,
     })
 
 

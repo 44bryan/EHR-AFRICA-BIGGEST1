@@ -446,6 +446,61 @@ def post_stock_count_variance(stock_count, user=None):
         return None
 
 
+def post_inter_store_transfer(transfer, user=None):
+    """
+    GL posting for inter-store transfers.
+    No P&L impact — just balance sheet reclassification between Class 3 sub-accounts.
+        Dr  destination store GL (stock in)
+        Cr  source store GL      (stock out)
+    """
+    try:
+        from apps.inventory.models import StoreTransferItem
+        items = StoreTransferItem.objects.filter(transfer=transfer).select_related('item')
+        lines = []
+        total = Decimal('0')
+
+        src_code = transfer.from_location.gl_account_code or '311000'
+        dst_code = transfer.to_location.gl_account_code or '311000'
+
+        if src_code == dst_code:
+            # Same GL account — no journal entry needed
+            return None
+
+        for ti in items:
+            qty = ti.quantity or 0
+            if qty <= 0:
+                continue
+            unit_cost = ti.item.unit_cost or Decimal('0')
+            amount = Decimal(str(qty)) * Decimal(str(unit_cost))
+            if amount <= 0:
+                continue
+            total += amount
+
+        if total <= 0:
+            return None
+
+        lines = [
+            (dst_code, total, 0,
+             f"Transfer in: {transfer.transfer_number} from {transfer.from_location.name}"),
+            (src_code, 0, total,
+             f"Transfer out: {transfer.transfer_number} to {transfer.to_location.name}"),
+        ]
+
+        return _create_entry(
+            date=transfer.transfer_date,
+            description=f"Inter-store transfer — {transfer.transfer_number} — "
+                        f"{transfer.from_location.name} → {transfer.to_location.name}",
+            reference=transfer.transfer_number,
+            source_type='store_transfer',
+            source_id=transfer.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for transfer {transfer.pk}: {e}")
+        return None
+
+
 def post_department_return(dept_return, user=None):
     """
     GL posting when good-condition items are returned to store.
