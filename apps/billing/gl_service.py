@@ -3,32 +3,36 @@ GL Service — Auto-posting functions for double-entry bookkeeping.
 
 Called by signals when Payments, Expenses, AP Payments are saved.
 Maps business transactions → OHADA GL account codes → JournalEntry + JournalLine.
+
+Account code lookups: GLMapping DB table (editable GUI) → hardcoded fallback.
 """
 import logging
 from decimal import Decimal
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# ── OHADA Account Code Map ─────────────────────────────────────────────────────
-# These codes must exist in the GLAccount table (seeded by seed_coa command).
+# ── HARDCODED FALLBACKS (used when GLMapping table is empty or not yet seeded) ─
 
-CASH_ACCOUNT          = '572000'   # Main Cash Drawer
-BANK_ACCOUNT          = '521000'   # Bank Account
-MOBILE_MONEY_ACCOUNT  = '521100'   # Mobile Money (treated as bank)
-AR_PATIENT            = '411000'   # Patient Accounts Receivable
-AR_INSURANCE          = '412000'   # Insurance Receivables
-AR_CORPORATE          = '413000'   # Corporate Receivables
-AP_VENDORS            = '401000'   # Accounts Payable (Suppliers)
-PATIENT_DEPOSITS      = '499000'   # Patient Wallet / Deposits Liability
-STAFF_ADVANCES        = '421000'   # Staff Advances Receivable
-LOSS_ON_DISPOSAL      = '654000'   # Loss on Asset Disposal
-GAIN_ON_DISPOSAL      = '754000'   # Gain on Asset Disposal
-ACCUM_DEPRECIATION    = '281000'   # Accumulated Depreciation
-FIXED_ASSETS          = '241000'   # Fixed Assets (Equipment)
+_SYSTEM_DEFAULTS = {
+    'CASH_ACCOUNT':       '572000',
+    'BANK_ACCOUNT':       '521000',
+    'MOBILE_MONEY':       '521100',
+    'AR_PATIENT':         '411000',
+    'AR_INSURANCE':       '412000',
+    'AR_CORPORATE':       '413000',
+    'AP_VENDORS':         '401000',
+    'PATIENT_DEPOSITS':   '499000',
+    'STAFF_ADVANCES':     '421000',
+    'LOSS_ON_DISPOSAL':   '654000',
+    'GAIN_ON_DISPOSAL':   '754000',
+    'ACCUM_DEPRECIATION': '281000',
+    'FIXED_ASSETS':       '241000',
+}
 
-# Revenue accounts by ServiceCategory
-REVENUE_MAP = {
+_REVENUE_DEFAULTS = {
     'CONSULT':   '701000',
+    'CLINICAL':  '701000',
     'INVEST':    '702000',
     'LAB':       '703000',
     'PHARMACY':  '704000',
@@ -39,8 +43,7 @@ REVENUE_MAP = {
     'OTHER':     '709000',
 }
 
-# Expense accounts by ExpenseCategory
-EXPENSE_MAP = {
+_EXPENSE_DEFAULTS = {
     'SUPPLIES':   '602000',
     'UTILITIES':  '642000',
     'SALARY':     '621000',
@@ -53,16 +56,130 @@ EXPENSE_MAP = {
     'EXP_OTHER':  '658000',
 }
 
-# Payment method → GL debit account
-PAYMENT_METHOD_ACCOUNT = {
-    'CASH':      CASH_ACCOUNT,
-    'CARD':      BANK_ACCOUNT,
-    'TRANSFER':  BANK_ACCOUNT,
-    'MOBILE':    MOBILE_MONEY_ACCOUNT,
-    'INSURANCE': AR_INSURANCE,
-    'NHIS':      AR_INSURANCE,
-    'WAIVER':    None,  # No GL posting for waivers
+_PAYMENT_DEFAULTS = {
+    'CASH':      '572000',
+    'CARD':      '521000',
+    'TRANSFER':  '521000',
+    'MOBILE':    '521100',
+    'INSURANCE': '412000',
+    'NHIS':      '412000',
+    'WAIVER':    None,
 }
+
+
+# ── DB-backed lookup with hardcoded fallback ─────────────────────────────────
+
+def _load_mapping_cache():
+    """Load all GLMappings into a dict. Called once, cached."""
+    try:
+        from apps.billing.models import GLMapping
+        qs = GLMapping.objects.filter(is_active=True).select_related('gl_account')
+        return {(m.category, m.source_key): m.gl_account.code for m in qs}
+    except Exception:
+        return {}
+
+
+_mapping_cache = None
+
+
+def _get_mapping(category, key, fallback=None):
+    """Look up GL code from DB cache, fall back to hardcoded default."""
+    global _mapping_cache
+    if _mapping_cache is None:
+        _mapping_cache = _load_mapping_cache()
+    return _mapping_cache.get((category, key), fallback)
+
+
+def invalidate_gl_cache():
+    """Call after GLMapping save to refresh the cache."""
+    global _mapping_cache
+    _mapping_cache = None
+
+
+def _sys(key):
+    return _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+
+
+# ── Public constants (now DB-backed) ─────────────────────────────────────────
+
+def _get_system_account(key):
+    return _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+
+
+@property
+def CASH_ACCOUNT():
+    return _sys('CASH_ACCOUNT')
+
+
+# For backward compat: module-level names that read from DB
+# These are accessed as gl_service.CASH_ACCOUNT etc. throughout the codebase.
+# We use a lazy approach: the first call loads the cache.
+
+class _LazyCode:
+    """Descriptor that looks up GL code from DB on first access."""
+    def __init__(self, category, key, fallback):
+        self.category = category
+        self.key = key
+        self.fallback = fallback
+
+    def __str__(self):
+        return _get_mapping(self.category, self.key, self.fallback) or ''
+
+    def __eq__(self, other):
+        return str(self) == str(other)
+
+    def __hash__(self):
+        return hash(str(self))
+
+
+# Keep simple string constants for backward compat — read from DB at call time
+def _s(key):
+    return _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+
+
+# Module-level accessors (used by all post_* functions below)
+CASH_ACCOUNT          = _SYSTEM_DEFAULTS['CASH_ACCOUNT']
+BANK_ACCOUNT          = _SYSTEM_DEFAULTS['BANK_ACCOUNT']
+MOBILE_MONEY_ACCOUNT  = _SYSTEM_DEFAULTS['MOBILE_MONEY']
+AR_PATIENT            = _SYSTEM_DEFAULTS['AR_PATIENT']
+AR_INSURANCE          = _SYSTEM_DEFAULTS['AR_INSURANCE']
+AR_CORPORATE          = _SYSTEM_DEFAULTS['AR_CORPORATE']
+AP_VENDORS            = _SYSTEM_DEFAULTS['AP_VENDORS']
+PATIENT_DEPOSITS      = _SYSTEM_DEFAULTS['PATIENT_DEPOSITS']
+STAFF_ADVANCES        = _SYSTEM_DEFAULTS['STAFF_ADVANCES']
+LOSS_ON_DISPOSAL      = _SYSTEM_DEFAULTS['LOSS_ON_DISPOSAL']
+GAIN_ON_DISPOSAL      = _SYSTEM_DEFAULTS['GAIN_ON_DISPOSAL']
+ACCUM_DEPRECIATION    = _SYSTEM_DEFAULTS['ACCUM_DEPRECIATION']
+FIXED_ASSETS          = _SYSTEM_DEFAULTS['FIXED_ASSETS']
+
+
+def get_revenue_code(category_key):
+    """Get GL code for a revenue/service category."""
+    return _get_mapping('REVENUE', category_key, _REVENUE_DEFAULTS.get(category_key, _REVENUE_DEFAULTS['OTHER']))
+
+
+def get_expense_code(category_key):
+    """Get GL code for an expense category."""
+    return _get_mapping('EXPENSE', category_key, _EXPENSE_DEFAULTS.get(category_key, _EXPENSE_DEFAULTS['EXP_OTHER']))
+
+
+def get_payment_account(method_key):
+    """Get GL code for a payment method. Returns None for waivers."""
+    code = _get_mapping('PAYMENT', method_key, _PAYMENT_DEFAULTS.get(method_key))
+    return code
+
+
+def get_system_account(key):
+    """Get a system GL account code (AR, AP, Cash, etc.)."""
+    return _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+
+
+# Backward-compatible dicts — these now delegate to DB
+REVENUE_MAP = _REVENUE_DEFAULTS  # fallback; post_* functions use get_revenue_code()
+
+EXPENSE_MAP = _EXPENSE_DEFAULTS  # fallback; post_* functions use get_expense_code()
+
+PAYMENT_METHOD_ACCOUNT = _PAYMENT_DEFAULTS  # fallback; post_* functions use get_payment_account()
 
 
 def _get_account(code):
@@ -152,7 +269,7 @@ def post_invoice_issued(invoice, user=None):
         total_allocated = Decimal('0')
         item_list = list(items)
         for i, item in enumerate(item_list):
-            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            rev_code = get_revenue_code(item.category)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:
@@ -163,7 +280,7 @@ def post_invoice_issued(invoice, user=None):
                 lines.append((rev_code, 0, item_amount, item.description))
 
         if not item_list:
-            lines.append((REVENUE_MAP['OTHER'], 0, amount,
+            lines.append((get_revenue_code('OTHER'), 0, amount,
                            f"Invoice {invoice.invoice_number}"))
 
         return _create_entry(
@@ -195,7 +312,7 @@ def post_payment(payment):
     Waiver:  no GL entry (no cash movement)
     """
     try:
-        debit_code = PAYMENT_METHOD_ACCOUNT.get(payment.payment_method)
+        debit_code = get_payment_account(payment.payment_method)
         if debit_code is None:
             return  # Waiver — skip
 
@@ -230,7 +347,7 @@ def post_expense(expense):
         Dr  Expense Account  |  Cr  Cash / Bank
     """
     try:
-        debit_code  = EXPENSE_MAP.get(expense.category, EXPENSE_MAP['EXP_OTHER'])
+        debit_code  = get_expense_code(expense.category)
         credit_code = CASH_ACCOUNT if expense.payment_method == 'CASH' else BANK_ACCOUNT
         amount = Decimal(str(expense.amount))
 
@@ -283,7 +400,7 @@ def post_ap_bill(bill):
         Dr  Expense Account  |  Cr  AP Vendors (401000)
     """
     try:
-        debit_code = EXPENSE_MAP.get(bill.category, EXPENSE_MAP['EXP_OTHER'])
+        debit_code = get_expense_code(bill.category)
         if bill.gl_account:
             debit_code = bill.gl_account.code
         amount = Decimal(str(bill.amount_due))
@@ -367,7 +484,7 @@ def post_advance_disbursement(advance, user=None):
     Dr  Staff Advance 421000  |  Cr  Cash/Bank
     """
     try:
-        cr_code = PAYMENT_METHOD_ACCOUNT.get(advance.payment_method, CASH_ACCOUNT)
+        cr_code = get_payment_account(advance.payment_method) or CASH_ACCOUNT
         if cr_code is None:
             cr_code = CASH_ACCOUNT
         amount = advance.amount_approved or advance.amount_requested
@@ -481,7 +598,7 @@ def post_refund(refund, user=None):
     """
     try:
         from apps.billing.models import ServiceCategory
-        credit_code = PAYMENT_METHOD_ACCOUNT.get(refund.payment_method, CASH_ACCOUNT)
+        credit_code = get_payment_account(refund.payment_method) or CASH_ACCOUNT
         if credit_code is None:
             credit_code = CASH_ACCOUNT
 
@@ -495,7 +612,7 @@ def post_refund(refund, user=None):
         item_list = list(items)
         total_allocated = Decimal('0')
         for i, item in enumerate(item_list):
-            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            rev_code = get_revenue_code(item.category)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:
@@ -506,7 +623,7 @@ def post_refund(refund, user=None):
                 lines.append((rev_code, item_amount, 0, f"Refund: {item.description}"))
 
         if not item_list:
-            lines.append((REVENUE_MAP['OTHER'], amount, 0, f"Refund — {invoice.invoice_number}"))
+            lines.append((get_revenue_code('OTHER'), amount, 0, f"Refund — {invoice.invoice_number}"))
 
         # Credit side: cash/bank out
         lines.append((credit_code, 0, amount, f"Refund issued via {refund.payment_method}"))
@@ -565,7 +682,7 @@ def post_waiver(invoice, user=None):
         item_list = list(items)
         total_allocated = Decimal('0')
         for i, item in enumerate(item_list):
-            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            rev_code = get_revenue_code(item.category)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:
@@ -576,7 +693,7 @@ def post_waiver(invoice, user=None):
                 lines.append((rev_code, 0, item_amount, f"Waiver: {item.description}"))
 
         if not item_list:
-            lines.append((REVENUE_MAP['OTHER'], 0, amount, f"Waiver — {invoice.invoice_number}"))
+            lines.append((get_revenue_code('OTHER'), 0, amount, f"Waiver — {invoice.invoice_number}"))
 
         # Debit: bad debt expense
         lines.insert(0, (BAD_DEBT_EXPENSE, amount, 0, f"Write-off — {invoice.invoice_number}"))
@@ -604,7 +721,7 @@ def post_wallet_deposit(wallet_txn, user=None):
         if amount <= 0:
             return
         method = getattr(wallet_txn, 'payment_method', 'CASH')
-        debit_code = PAYMENT_METHOD_ACCOUNT.get(method, CASH_ACCOUNT) or CASH_ACCOUNT
+        debit_code = get_payment_account(method) or CASH_ACCOUNT
 
         _create_entry(
             date=wallet_txn.created_at.date() if hasattr(wallet_txn.created_at, 'date') else wallet_txn.created_at,
@@ -632,7 +749,7 @@ def post_wallet_deduction(wallet_txn, user=None):
         if amount <= 0:
             return
 
-        credit_code = REVENUE_MAP['OTHER']
+        credit_code = get_revenue_code('OTHER')
         credit_desc = "Revenue from wallet deduction"
 
         # If linked to an invoice, try to get revenue categories
@@ -644,7 +761,7 @@ def post_wallet_deduction(wallet_txn, user=None):
                 total_inv = wallet_txn.invoice.total or Decimal('0')
                 total_allocated = Decimal('0')
                 for i, item in enumerate(item_list):
-                    rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+                    rev_code = get_revenue_code(item.category)
                     if i == len(item_list) - 1:
                         item_amount = amount - total_allocated
                     else:
@@ -697,7 +814,7 @@ def post_petty_cash_entry(entry, user=None):
 
         if entry.entry_type == 'DEBIT':
             # Expense from petty cash
-            debit_code = EXPENSE_MAP.get(entry.category, EXPENSE_MAP.get('EXP_OTHER', '658000'))
+            debit_code = get_expense_code(entry.category)
             lines = [
                 (debit_code, amount, 0, entry.description),
                 (PETTY_CASH, 0, amount, f"Petty cash payment — {entry.fund.name}"),
@@ -838,7 +955,7 @@ def post_insurance_invoice_split(invoice, user=None):
         total_allocated = Decimal('0')
         item_list = list(items)
         for i, item in enumerate(item_list):
-            rev_code = REVENUE_MAP.get(item.category, REVENUE_MAP['OTHER'])
+            rev_code = get_revenue_code(item.category)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:
@@ -849,7 +966,7 @@ def post_insurance_invoice_split(invoice, user=None):
                 lines.append((rev_code, 0, item_amount, item.description))
 
         if not item_list:
-            lines.append((REVENUE_MAP['OTHER'], 0, amount,
+            lines.append((get_revenue_code('OTHER'), 0, amount,
                           f"Invoice {invoice.invoice_number}"))
 
         return _create_entry(

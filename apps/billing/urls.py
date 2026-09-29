@@ -294,6 +294,12 @@ urlpatterns = [
     path('fiscal-periods/<uuid:period_id>/action/', views.fiscal_period_action, name='fiscal_period_action'),
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # GL MAPPING SETTINGS (System Admin)
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('gl/mappings/', views.gl_mapping_list, name='gl_mapping_list'),
+    path('gl/mappings/seed/', views.gl_mapping_seed, name='gl_mapping_seed'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # ROLE DASHBOARDS
     # ═══════════════════════════════════════════════════════════════════════════
     path('dashboard/finance-director/', views.finance_director_dashboard, name='finance_director_dashboard'),

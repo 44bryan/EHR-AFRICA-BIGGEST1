@@ -8689,3 +8689,121 @@ def senior_accountant_dashboard(request):
         'budget_burn': budget_burn,
         'recent_entries': recent_entries,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GL MAPPING SETTINGS — configurable account mapping (System Admin)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def gl_mapping_list(request):
+    """GL Mapping settings page — view and edit all transaction-to-GL-account mappings."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden('Super Admin access required.')
+
+    from .models import GLMapping, GLMappingCategory, GLAccount
+
+    if request.method == 'POST':
+        # Save all mapping changes
+        mapping_ids = request.POST.getlist('mapping_id')
+        for mid in mapping_ids:
+            try:
+                m = GLMapping.objects.get(pk=mid)
+                new_account_id = request.POST.get(f'gl_account_{mid}')
+                new_notes = request.POST.get(f'notes_{mid}', '').strip()
+                if new_account_id:
+                    m.gl_account_id = new_account_id
+                m.notes = new_notes
+                m.save(update_fields=['gl_account_id', 'notes', 'updated_at'])
+            except (GLMapping.DoesNotExist, ValueError):
+                continue
+        messages.success(request, 'GL mappings updated successfully.')
+        return redirect('billing:gl_mapping_list')
+
+    mappings = GLMapping.objects.filter(is_active=True).select_related('gl_account').order_by('category', 'source_key')
+    accounts = GLAccount.objects.filter(is_active=True).order_by('code')
+
+    # Group by category for display
+    grouped = {}
+    for cat_val, cat_label in GLMappingCategory.choices:
+        grouped[cat_val] = {
+            'label': cat_label,
+            'mappings': [m for m in mappings if m.category == cat_val],
+        }
+
+    return render(request, 'billing/gl_mapping_list.html', {
+        'grouped': grouped,
+        'accounts': accounts,
+    })
+
+
+@login_required
+@require_POST
+def gl_mapping_seed(request):
+    """Seed/reset GL mappings from hardcoded defaults in gl_service.py."""
+    if not request.user.is_super_admin:
+        return HttpResponseForbidden('Super Admin access required.')
+
+    from .models import GLMapping, GLMappingCategory, GLAccount
+
+    DEFAULTS = [
+        # Revenue mappings
+        ('REVENUE', 'CONSULT',   'Consultations',           '701000'),
+        ('REVENUE', 'CLINICAL',  'Clinical Exam',           '701000'),
+        ('REVENUE', 'INVEST',    'Investigations',          '702000'),
+        ('REVENUE', 'LAB',       'Laboratory',              '703000'),
+        ('REVENUE', 'PHARMACY',  'Pharmacy Sales',          '704000'),
+        ('REVENUE', 'OPTICAL',   'Optical Sales',           '705000'),
+        ('REVENUE', 'SURGICAL',  'Surgical Procedures',     '706000'),
+        ('REVENUE', 'ADMISSION', 'Inpatient Admissions',    '707000'),
+        ('REVENUE', 'REG',       'Registration Fees',       '708000'),
+        ('REVENUE', 'OTHER',     'Other Revenue',           '709000'),
+        # Payment method mappings
+        ('PAYMENT', 'CASH',      'Cash',                    '572000'),
+        ('PAYMENT', 'CARD',      'POS / Card',              '521000'),
+        ('PAYMENT', 'TRANSFER',  'Bank Transfer',           '521000'),
+        ('PAYMENT', 'MOBILE',    'Mobile Money',            '521100'),
+        ('PAYMENT', 'INSURANCE', 'Insurance',               '412000'),
+        ('PAYMENT', 'NHIS',      'NHIS',                    '412000'),
+        # Expense mappings
+        ('EXPENSE', 'SUPPLIES',  'Supplies',                '602000'),
+        ('EXPENSE', 'UTILITIES', 'Utilities',               '642000'),
+        ('EXPENSE', 'SALARY',    'Salaries',                '621000'),
+        ('EXPENSE', 'RENT',      'Rent',                    '641000'),
+        ('EXPENSE', 'EQUIPMENT', 'Equipment',               '643000'),
+        ('EXPENSE', 'DRUGS',     'Drug Purchases (COGS)',   '601000'),
+        ('EXPENSE', 'TRANSPORT', 'Transport',               '653000'),
+        ('EXPENSE', 'ADMIN',     'Administration',          '651000'),
+        ('EXPENSE', 'MARKETING', 'Marketing',               '652000'),
+        ('EXPENSE', 'EXP_OTHER', 'Other Expenses',          '658000'),
+        # System accounts
+        ('SYSTEM', 'CASH_ACCOUNT',       'Main Cash Drawer',            '572000'),
+        ('SYSTEM', 'BANK_ACCOUNT',       'Bank Account',                '521000'),
+        ('SYSTEM', 'MOBILE_MONEY',       'Mobile Money Account',        '521100'),
+        ('SYSTEM', 'AR_PATIENT',         'Patient Accounts Receivable', '411000'),
+        ('SYSTEM', 'AR_INSURANCE',       'Insurance Receivable',        '412000'),
+        ('SYSTEM', 'AR_CORPORATE',       'Corporate Receivable',        '413000'),
+        ('SYSTEM', 'AP_VENDORS',         'Accounts Payable (Suppliers)','401000'),
+        ('SYSTEM', 'PATIENT_DEPOSITS',   'Patient Wallet / Deposits',   '499000'),
+        ('SYSTEM', 'STAFF_ADVANCES',     'Staff Advances Receivable',   '421000'),
+        ('SYSTEM', 'LOSS_ON_DISPOSAL',   'Loss on Asset Disposal',      '654000'),
+        ('SYSTEM', 'GAIN_ON_DISPOSAL',   'Gain on Asset Disposal',      '754000'),
+        ('SYSTEM', 'ACCUM_DEPRECIATION', 'Accumulated Depreciation',    '281000'),
+        ('SYSTEM', 'FIXED_ASSETS',       'Fixed Assets (Equipment)',     '241000'),
+    ]
+
+    created = 0
+    for cat, key, label, code in DEFAULTS:
+        acct = GLAccount.objects.filter(code=code, is_active=True).first()
+        if not acct:
+            continue
+        _, was_created = GLMapping.objects.update_or_create(
+            category=cat, source_key=key,
+            defaults={'label': label, 'gl_account': acct, 'is_active': True,
+                      'created_by': request.user},
+        )
+        if was_created:
+            created += 1
+
+    messages.success(request, f'GL mappings seeded — {created} new, {len(DEFAULTS) - created} updated.')
+    return redirect('billing:gl_mapping_list')

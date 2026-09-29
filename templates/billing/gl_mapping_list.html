@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load ehr_tags %}
+
+{% block title %}GL Account Mappings — System Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>GL Account Mappings</h4>
+      <small class="text-muted">Map transaction types to OHADA Chart of Accounts codes. Changes take effect immediately.</small>
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" action="{% url 'billing:gl_mapping_seed' %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-secondary btn-sm"
+                onclick="return confirm('This will reset all mappings to OHADA defaults. Custom changes will be overwritten. Continue?')">
+          <i class="bi bi-arrow-repeat me-1"></i>Reset to Defaults
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% for cat_key, group in grouped.items %}
+    {% if group.mappings %}
+    <div class="card mb-3 shadow-sm">
+      <div class="card-header py-2 {% if cat_key == 'REVENUE' %}bg-success bg-opacity-10{% elif cat_key == 'PAYMENT' %}bg-primary bg-opacity-10{% elif cat_key == 'EXPENSE' %}bg-danger bg-opacity-10{% else %}bg-secondary bg-opacity-10{% endif %}">
+        <h6 class="mb-0">
+          {% if cat_key == 'REVENUE' %}<i class="bi bi-graph-up-arrow text-success me-1"></i>
+          {% elif cat_key == 'PAYMENT' %}<i class="bi bi-cash-coin text-primary me-1"></i>
+          {% elif cat_key == 'EXPENSE' %}<i class="bi bi-receipt-cutoff text-danger me-1"></i>
+          {% else %}<i class="bi bi-gear text-secondary me-1"></i>{% endif %}
+          {{ group.label }}
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th style="width:120px">Key</th>
+                <th style="width:200px">Description</th>
+                <th style="width:350px">GL Account</th>
+                <th>Current Code</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in group.mappings %}
+              <tr>
+                <td>
+                  <code class="text-dark">{{ m.source_key }}</code>
+                  <input type="hidden" name="mapping_id" value="{{ m.pk }}">
+                </td>
+                <td>{{ m.label }}</td>
+                <td>
+                  <select name="gl_account_{{ m.pk }}" class="form-select form-select-sm">
+                    {% for acct in accounts %}
+                    <option value="{{ acct.pk }}" {% if acct.pk == m.gl_account_id %}selected{% endif %}>
+                      {{ acct.code }} — {{ acct.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <span class="badge bg-dark bg-opacity-75 font-monospace">{{ m.gl_account.code }}</span>
+                </td>
+                <td>
+                  <input type="text" name="notes_{{ m.pk }}" value="{{ m.notes }}"
+                         class="form-control form-control-sm" placeholder="Optional note">
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <div class="text-end mb-4">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>Save All Mappings
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

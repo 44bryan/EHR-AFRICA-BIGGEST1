@@ -2307,3 +2307,52 @@ class FiscalPeriod(AuditModel):
         """Can journal entries be posted to this period?"""
         return self.status == FiscalPeriodStatus.OPEN
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GL MAPPING — configurable link between transactions and GL accounts
+# ══════════════════════════════════════════════════════════════════════════════
+
+class GLMappingCategory(models.TextChoices):
+    REVENUE  = 'REVENUE',  'Revenue (Service → GL)'
+    PAYMENT  = 'PAYMENT',  'Payment Method (Cash/Card → GL)'
+    EXPENSE  = 'EXPENSE',  'Expense Category (Type → GL)'
+    SYSTEM   = 'SYSTEM',   'System Accounts (AR, AP, Cash, etc.)'
+
+
+class GLMapping(AuditModel):
+    """
+    Configurable mapping between business transaction types and GL accounts.
+    Replaces hardcoded dicts in gl_service.py — editable from Finance Director GUI.
+    """
+    category    = models.CharField(max_length=10, choices=GLMappingCategory.choices,
+                    help_text='Which mapping group this belongs to')
+    source_key  = models.CharField(max_length=30,
+                    help_text='Transaction type key (e.g. CONSULT, CASH, SUPPLIES, AR_PATIENT)')
+    label       = models.CharField(max_length=100,
+                    help_text='Human-readable label for this mapping')
+    gl_account  = models.ForeignKey(GLAccount, on_delete=models.PROTECT,
+                    related_name='mappings',
+                    help_text='Target GL account for this transaction type')
+    is_active   = models.BooleanField(default=True)
+    notes       = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        unique_together = [('category', 'source_key')]
+        ordering = ['category', 'source_key']
+        verbose_name = 'GL Mapping'
+        verbose_name_plural = 'GL Mappings'
+
+    def __str__(self):
+        return f"{self.get_category_display()}: {self.label} → {self.gl_account.code}"
+
+    @classmethod
+    def get_code(cls, category, source_key, fallback=None):
+        """Look up GL account code. Returns fallback if not found."""
+        try:
+            m = cls.objects.select_related('gl_account').get(
+                category=category, source_key=source_key, is_active=True,
+            )
+            return m.gl_account.code
+        except cls.DoesNotExist:
+            return fallback
+
