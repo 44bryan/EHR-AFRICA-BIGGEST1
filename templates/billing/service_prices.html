@@ -1,12 +1,12 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Service Price Catalog{% endblock %}
+{% block title %}Service & Item Price Catalog{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div>
-    <h5 class="mb-0 fw-bold">Service Price Catalog</h5>
-    <div class="text-muted small">Charge Description Master — all billable services, categories & GL accounts</div>
+    <h5 class="mb-0 fw-bold">Service & Item Price Catalog</h5>
+    <div class="text-muted small">Charge Description Master — all billable services, items, categories & GL accounts</div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'billing:export_service_prices' %}?q={{ search }}&cat={{ filter_cat }}" class="btn btn-success btn-sm">
@@ -16,7 +16,7 @@
       <i class="bi bi-folder me-1"></i>Manage Families ({{ sub_categories|length }})
     </a>
     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPriceModal">
-      <i class="bi bi-plus-circle me-1"></i>Add Service
+      <i class="bi bi-plus-circle me-1"></i>Add Service / Item
     </button>
   </div>
 </div>
@@ -28,11 +28,19 @@
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
     <form method="get" class="row g-2 align-items-center">
-      <div class="col-md-3">
+      <div class="col-md-2">
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
           <input type="text" name="q" class="form-control" placeholder="Search name or code..." value="{{ search }}">
         </div>
+      </div>
+      <div class="col-md-2">
+        <select name="etype" class="form-select form-select-sm">
+          <option value="">All Types</option>
+          {% for val, label in entry_types %}
+          <option value="{{ val }}" {% if filter_etype == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <select name="cat" class="form-select form-select-sm">
@@ -61,7 +69,7 @@
         <button type="submit" class="btn btn-sm btn-primary">Filter</button>
         <a href="{% url 'billing:service_price_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
       </div>
-      <div class="col-auto ms-auto text-muted small">{{ prices|length }} service{% if prices|length != 1 %}s{% endif %}</div>
+      <div class="col-auto ms-auto text-muted small">{{ prices|length }} entr{{ prices|length|pluralize:"y,ies" }}</div>
     </form>
   </div>
 </div>
@@ -73,11 +81,12 @@
       <table class="table table-hover align-middle mb-0 small">
         <thead class="table-light">
           <tr>
-            <th>Service Name</th>
+            <th>Type</th>
+            <th>Name</th>
             <th>Code</th>
             <th>Category</th>
             <th>Sub-Category</th>
-            <th>GL Account</th>
+            <th>Sales GL</th>
             <th>Tier</th>
             <th class="text-end">HT (FCFA)</th>
             <th class="text-center">Tax %</th>
@@ -90,6 +99,13 @@
         <tbody>
           {% for sp in prices %}
           <tr id="row-{{ sp.id }}">
+            <td>
+              {% if sp.entry_type == 'ITEM' %}
+                <span class="badge bg-success"><i class="bi bi-box-seam me-1"></i>Item</span>
+              {% else %}
+                <span class="badge bg-primary"><i class="bi bi-gear me-1"></i>Service</span>
+              {% endif %}
+            </td>
             <td class="fw-semibold">{{ sp.name }}
               {% if sp.requires_price_entry %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Manual Price</span>{% endif %}
             </td>
@@ -109,6 +125,7 @@
               {% if sp.tier == 'VIP' %}<span class="badge bg-danger">VIP</span>
               {% elif sp.tier == 'INSURED' %}<span class="badge bg-info text-dark">HMO</span>
               {% elif sp.tier == 'STANDARD' %}<span class="badge bg-secondary">Std</span>
+              {% elif sp.tier == 'EXPRESS' %}<span class="badge bg-warning text-dark">Exp</span>
               {% else %}<span class="badge bg-light text-muted border">All</span>{% endif %}
             </td>
             <td class="text-end text-muted">{% if sp.price_ht %}{{ sp.price_ht|floatformat:0|intcomma }}{% else %}-{% endif %}</td>
@@ -117,6 +134,7 @@
             <td class="text-center">
               {% if sp.is_stockable %}<span class="badge bg-info text-dark me-1" title="Stockable"><i class="bi bi-box-seam"></i></span>{% endif %}
               {% if sp.is_taxable %}<span class="badge bg-warning text-dark" title="Taxable"><i class="bi bi-percent"></i></span>{% endif %}
+              {% if sp.purchase_gl_account %}<span class="badge bg-light text-dark border" title="ERP Linked"><i class="bi bi-link-45deg"></i></span>{% endif %}
             </td>
             <td class="text-center">
               <button class="btn btn-sm py-0 px-2 {% if sp.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
@@ -126,20 +144,24 @@
             </td>
             <td>
               <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="openEdit('{{ sp.id }}', this)" data-sp='{{ sp.id }}'
+                data-entry_type="{{ sp.entry_type }}"
                 data-name="{{ sp.name|escapejs }}" data-code="{{ sp.code|escapejs }}" data-category="{{ sp.category }}"
                 data-tier="{{ sp.tier }}" data-price="{{ sp.price }}" data-nhis="{% if sp.nhis_price %}{{ sp.nhis_price }}{% endif %}"
                 data-ins="{% if sp.insurance_price %}{{ sp.insurance_price }}{% endif %}" data-req="{{ sp.requires_price_entry|yesno:'1,0' }}"
                 data-price_ht="{{ sp.price_ht|default_if_none:0 }}" data-tax_rate="{{ sp.tax_rate|default_if_none:0 }}"
                 data-sub_category="{% if sp.sub_category_id %}{{ sp.sub_category_id }}{% endif %}"
                 data-gl_account="{% if sp.gl_account_id %}{{ sp.gl_account_id }}{% endif %}"
+                data-purchase_gl="{% if sp.purchase_gl_account_id %}{{ sp.purchase_gl_account_id }}{% endif %}"
+                data-stock_gl="{% if sp.stock_gl_account_id %}{{ sp.stock_gl_account_id }}{% endif %}"
+                data-stock_var_gl="{% if sp.stock_variation_gl_account_id %}{{ sp.stock_variation_gl_account_id }}{% endif %}"
                 data-stockable="{{ sp.is_stockable|yesno:'1,0' }}" data-taxable="{{ sp.is_taxable|yesno:'1,0' }}">
                 Edit
               </button>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="12" class="text-center text-muted py-5">
-            No services yet. <a href="#" data-bs-toggle="modal" data-bs-target="#addPriceModal">Add the first one.</a>
+          <tr><td colspan="13" class="text-center text-muted py-5">
+            No entries yet. <a href="#" data-bs-toggle="modal" data-bs-target="#addPriceModal">Add the first one.</a>
           </td></tr>
           {% endfor %}
         </tbody>
@@ -148,27 +170,41 @@
   </div>
 </div>
 
-<!-- Add Price Modal -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- ADD MODAL -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
 <div class="modal fade" id="addPriceModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content">
-      <form method="post" action="{% url 'billing:service_price_create' %}">
+      <form method="post" action="{% url 'billing:service_price_create' %}" id="addForm">
         {% csrf_token %}
         <div class="modal-header">
-          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add Service to Price Catalog</h6>
+          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add to Price Catalog</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-8">
-              <label class="form-label small fw-semibold">Service Name *</label>
-              <input type="text" name="name" class="form-control" required placeholder="e.g. General Eye Consultation">
+          <!-- Entry Type Toggle -->
+          <div class="row g-3 mb-3">
+            <div class="col-12">
+              <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="entry_type" value="SERVICE" id="addTypeService" checked autocomplete="off">
+                <label class="btn btn-outline-primary" for="addTypeService"><i class="bi bi-gear me-1"></i>Service</label>
+                <input type="radio" class="btn-check" name="entry_type" value="ITEM" id="addTypeItem" autocomplete="off">
+                <label class="btn btn-outline-success" for="addTypeItem"><i class="bi bi-box-seam me-1"></i>Item (Physical Good)</label>
+              </div>
             </div>
-            <div class="col-4">
+          </div>
+
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Name *</label>
+              <input type="text" name="name" class="form-control" required placeholder="e.g. General Eye Consultation / Frame Brand X">
+            </div>
+            <div class="col-3">
               <label class="form-label small fw-semibold">Internal Code</label>
               <input type="text" name="code" class="form-control" placeholder="e.g. CONS-STD">
             </div>
-            <div class="col-4">
+            <div class="col-3">
               <label class="form-label small fw-semibold">Category *</label>
               <select name="category" class="form-select" required id="addCategory">
                 <option value="">-- select --</option>
@@ -187,12 +223,28 @@
               </select>
             </div>
             <div class="col-4">
-              <label class="form-label small fw-semibold">Desk Tier</label>
-              <select name="tier" class="form-select">
-                {% for val, label in tiers %}
-                <option value="{{ val }}">{{ label }}</option>
-                {% endfor %}
+              <label class="form-label small fw-semibold" id="addTierLabel">Desk Tier <span class="text-danger" id="addTierReq">*</span></label>
+              <select name="tier" class="form-select" id="addTier">
+                <option value="">-- All Tiers --</option>
+                <option value="STANDARD">Standard Desk</option>
+                <option value="EXPRESS">Express Desk</option>
+                <option value="VIP">VIP Desk</option>
+                <option value="INSURED">Insured / HMO Desk</option>
               </select>
+            </div>
+            <div class="col-4 d-flex align-items-end gap-3 pb-1">
+              <div class="form-check" id="addStockableWrap">
+                <input type="checkbox" name="is_stockable" class="form-check-input" id="addStockable">
+                <label class="form-check-label small" for="addStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="is_taxable" class="form-check-input" id="addTaxable">
+                <label class="form-check-label small" for="addTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="addReqPrice">
+                <label class="form-check-label small" for="addReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
+              </div>
             </div>
 
             <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Pricing</div></div>
@@ -218,10 +270,10 @@
               <input type="number" name="insurance_price" class="form-control" min="0" step="100" placeholder="optional">
             </div>
 
-            <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Accounting & Properties</div></div>
+            <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">GL Account Linking (ERP)</div></div>
 
             <div class="col-6">
-              <label class="form-label small fw-semibold">GL Revenue Account</label>
+              <label class="form-label small fw-semibold"><i class="bi bi-cash-coin me-1 text-success"></i>Sales GL (Revenue)</label>
               <select name="gl_account" class="form-select form-select-sm">
                 <option value="">-- use sub-category / category default --</option>
                 {% for a in gl_accounts %}
@@ -229,50 +281,77 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6 d-flex align-items-end gap-4 pb-1">
-              <div class="form-check">
-                <input type="checkbox" name="is_stockable" class="form-check-input" id="addStockable">
-                <label class="form-check-label small" for="addStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
-              </div>
-              <div class="form-check">
-                <input type="checkbox" name="is_taxable" class="form-check-input" id="addTaxable">
-                <label class="form-check-label small" for="addTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
-              </div>
-              <div class="form-check">
-                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="addReqPrice">
-                <label class="form-check-label small" for="addReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
-              </div>
+            <div class="col-6" id="addPurchaseGLWrap">
+              <label class="form-label small fw-semibold"><i class="bi bi-cart me-1 text-danger"></i>Purchase GL (Expense)</label>
+              <select name="purchase_gl_account" class="form-select form-select-sm">
+                <option value="">-- none --</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6" id="addStockGLWrap">
+              <label class="form-label small fw-semibold"><i class="bi bi-building me-1 text-info"></i>Stock GL (Asset)</label>
+              <select name="stock_gl_account" class="form-select form-select-sm">
+                <option value="">-- none --</option>
+                {% for a in gl_asset_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6" id="addStockVarGLWrap">
+              <label class="form-label small fw-semibold"><i class="bi bi-arrow-left-right me-1 text-warning"></i>Stock Variation GL (COGS)</label>
+              <select name="stock_variation_gl_account" class="form-select form-select-sm">
+                <option value="">-- none --</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
             </div>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary btn-sm">Save Service</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="addSubmitBtn">Save Service</button>
         </div>
       </form>
     </div>
   </div>
 </div>
 
-<!-- Edit Price Modal -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- EDIT MODAL -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
 <div class="modal fade" id="editPriceModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-1 text-warning"></i>Edit Service Price</h6>
+        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-1 text-warning"></i>Edit Price Entry</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <!-- Entry Type Toggle -->
+        <div class="row g-3 mb-3">
+          <div class="col-12">
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" name="edit_entry_type" value="SERVICE" id="editTypeService" autocomplete="off">
+              <label class="btn btn-outline-primary" for="editTypeService"><i class="bi bi-gear me-1"></i>Service</label>
+              <input type="radio" class="btn-check" name="edit_entry_type" value="ITEM" id="editTypeItem" autocomplete="off">
+              <label class="btn btn-outline-success" for="editTypeItem"><i class="bi bi-box-seam me-1"></i>Item (Physical Good)</label>
+            </div>
+          </div>
+        </div>
+
         <div class="row g-3">
-          <div class="col-8">
-            <label class="form-label small fw-semibold">Service Name *</label>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Name *</label>
             <input type="text" id="editName" class="form-control" required>
           </div>
-          <div class="col-4">
+          <div class="col-3">
             <label class="form-label small fw-semibold">Internal Code</label>
             <input type="text" id="editCode" class="form-control">
           </div>
-          <div class="col-4">
+          <div class="col-3">
             <label class="form-label small fw-semibold">Category *</label>
             <select id="editCategory" class="form-select" required>
               {% for val, label in categories %}
@@ -290,12 +369,28 @@
             </select>
           </div>
           <div class="col-4">
-            <label class="form-label small fw-semibold">Desk Tier</label>
+            <label class="form-label small fw-semibold" id="editTierLabel">Desk Tier <span class="text-danger" id="editTierReq">*</span></label>
             <select id="editTier" class="form-select">
-              {% for val, label in tiers %}
-              <option value="{{ val }}">{{ label }}</option>
-              {% endfor %}
+              <option value="">-- All Tiers --</option>
+              <option value="STANDARD">Standard Desk</option>
+              <option value="EXPRESS">Express Desk</option>
+              <option value="VIP">VIP Desk</option>
+              <option value="INSURED">Insured / HMO Desk</option>
             </select>
+          </div>
+          <div class="col-4 d-flex align-items-end gap-3 pb-1">
+            <div class="form-check" id="editStockableWrap">
+              <input type="checkbox" id="editStockable" class="form-check-input">
+              <label class="form-check-label small" for="editStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" id="editTaxable" class="form-check-input">
+              <label class="form-check-label small" for="editTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" id="editReqPrice" class="form-check-input">
+              <label class="form-check-label small" for="editReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
+            </div>
           </div>
 
           <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Pricing</div></div>
@@ -321,10 +416,10 @@
             <input type="number" id="editIns" class="form-control" min="0" step="100">
           </div>
 
-          <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">Accounting & Properties</div></div>
+          <div class="col-12"><hr class="my-1"><div class="fw-semibold small text-muted">GL Account Linking (ERP)</div></div>
 
           <div class="col-6">
-            <label class="form-label small fw-semibold">GL Revenue Account</label>
+            <label class="form-label small fw-semibold"><i class="bi bi-cash-coin me-1 text-success"></i>Sales GL (Revenue)</label>
             <select id="editGLAccount" class="form-select form-select-sm">
               <option value="">-- default --</option>
               {% for a in gl_accounts %}
@@ -332,25 +427,38 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-6 d-flex align-items-end gap-4 pb-1">
-            <div class="form-check">
-              <input type="checkbox" id="editStockable" class="form-check-input">
-              <label class="form-check-label small" for="editStockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
-            </div>
-            <div class="form-check">
-              <input type="checkbox" id="editTaxable" class="form-check-input">
-              <label class="form-check-label small" for="editTaxable"><i class="bi bi-percent me-1"></i>Taxable</label>
-            </div>
-            <div class="form-check">
-              <input type="checkbox" id="editReqPrice" class="form-check-input">
-              <label class="form-check-label small" for="editReqPrice"><i class="bi bi-pencil me-1"></i>Manual Price</label>
-            </div>
+          <div class="col-6" id="editPurchaseGLWrap">
+            <label class="form-label small fw-semibold"><i class="bi bi-cart me-1 text-danger"></i>Purchase GL (Expense)</label>
+            <select id="editPurchaseGL" class="form-select form-select-sm">
+              <option value="">-- none --</option>
+              {% for a in gl_expense_accounts %}
+              <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6" id="editStockGLWrap">
+            <label class="form-label small fw-semibold"><i class="bi bi-building me-1 text-info"></i>Stock GL (Asset)</label>
+            <select id="editStockGL" class="form-select form-select-sm">
+              <option value="">-- none --</option>
+              {% for a in gl_asset_accounts %}
+              <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6" id="editStockVarGLWrap">
+            <label class="form-label small fw-semibold"><i class="bi bi-arrow-left-right me-1 text-warning"></i>Stock Variation GL (COGS)</label>
+            <select id="editStockVarGL" class="form-select form-select-sm">
+              <option value="">-- none --</option>
+              {% for a in gl_expense_accounts %}
+              <option value="{{ a.pk }}">{{ a.code }} - {{ a.name }}</option>
+              {% endfor %}
+            </select>
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-warning btn-sm" onclick="saveEdit()">Save Changes</button>
+        <button type="button" class="btn btn-warning btn-sm" onclick="saveEdit()" id="editSubmitBtn">Save Changes</button>
       </div>
     </div>
   </div>
@@ -361,6 +469,56 @@
 {% block extra_js %}
 <script>
 let currentEditId = null;
+
+/* ── Entry type toggle logic ── */
+function applyEntryTypeUI(prefix, isItem) {
+  // Tier: mandatory for SERVICE, optional for ITEM
+  const tierReq = document.getElementById(prefix + 'TierReq');
+  const tierSel = document.getElementById(prefix + 'Tier');
+  if (tierReq) tierReq.style.display = isItem ? 'none' : '';
+  if (tierSel) tierSel.required = !isItem;
+
+  // Stockable: auto-checked + disabled for ITEM, editable for SERVICE
+  const stockWrap = document.getElementById(prefix + 'StockableWrap');
+  const stockCb = document.getElementById(prefix + 'Stockable');
+  if (stockCb) {
+    if (isItem) { stockCb.checked = true; stockCb.disabled = true; }
+    else { stockCb.disabled = false; }
+  }
+
+  // ERP GL fields: show for items, show for services too (optional)
+  const erpWraps = [prefix + 'PurchaseGLWrap', prefix + 'StockGLWrap', prefix + 'StockVarGLWrap'];
+  erpWraps.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.opacity = isItem ? '1' : '0.6';
+  });
+
+  // Submit button label
+  const btn = document.getElementById(prefix + 'SubmitBtn');
+  if (btn) btn.textContent = isItem ? (prefix === 'add' ? 'Save Item' : 'Save Changes') : (prefix === 'add' ? 'Save Service' : 'Save Changes');
+}
+
+// Add modal toggles
+document.getElementById('addTypeService')?.addEventListener('change', () => applyEntryTypeUI('add', false));
+document.getElementById('addTypeItem')?.addEventListener('change', () => applyEntryTypeUI('add', true));
+
+// Edit modal toggles
+document.getElementById('editTypeService')?.addEventListener('change', () => applyEntryTypeUI('edit', false));
+document.getElementById('editTypeItem')?.addEventListener('change', () => applyEntryTypeUI('edit', true));
+
+// Form validation — prevent submit if service without tier
+document.getElementById('addForm')?.addEventListener('submit', function(e) {
+  const isService = document.getElementById('addTypeService').checked;
+  const tier = document.getElementById('addTier').value;
+  if (isService && !tier) {
+    e.preventDefault();
+    alert('Desk Tier is mandatory for services. Please select a tier.');
+    document.getElementById('addTier').focus();
+  }
+});
+
+// Init add modal
+applyEntryTypeUI('add', false);
 
 /* Auto-calc TTC from HT + tax */
 function calcTTC(htId, taxId, ttcId) {
@@ -386,6 +544,13 @@ document.getElementById('addCategory')?.addEventListener('change', function() {
 function openEdit(spId, btn) {
   const d = btn.dataset;
   currentEditId = spId;
+
+  // Set entry type
+  const isItem = d.entry_type === 'ITEM';
+  document.getElementById('editTypeService').checked = !isItem;
+  document.getElementById('editTypeItem').checked = isItem;
+  applyEntryTypeUI('edit', isItem);
+
   document.getElementById('editName').value     = d.name;
   document.getElementById('editCode').value     = d.code;
   document.getElementById('editCategory').value = d.category;
@@ -397,8 +562,11 @@ function openEdit(spId, btn) {
   document.getElementById('editNhis').value     = d.nhis || '';
   document.getElementById('editIns').value      = d.ins || '';
   document.getElementById('editGLAccount').value = d.gl_account || '';
+  document.getElementById('editPurchaseGL').value = d.purchase_gl || '';
+  document.getElementById('editStockGL').value    = d.stock_gl || '';
+  document.getElementById('editStockVarGL').value = d.stock_var_gl || '';
   document.getElementById('editReqPrice').checked  = d.req === '1';
-  document.getElementById('editStockable').checked = d.stockable === '1';
+  document.getElementById('editStockable').checked = isItem || d.stockable === '1';
   document.getElementById('editTaxable').checked   = d.taxable === '1';
   filterSubs(document.getElementById('editCategory'), document.getElementById('editSubCat'));
   new bootstrap.Modal(document.getElementById('editPriceModal')).show();
@@ -406,19 +574,33 @@ function openEdit(spId, btn) {
 
 function saveEdit() {
   if (!currentEditId) return;
+  const isItem = document.getElementById('editTypeItem').checked;
+  const tier = document.getElementById('editTier').value;
+
+  // Validate tier for services
+  if (!isItem && !tier) {
+    alert('Desk Tier is mandatory for services. Please select a tier.');
+    document.getElementById('editTier').focus();
+    return;
+  }
+
   const data = new FormData();
   data.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+  data.append('entry_type', isItem ? 'ITEM' : 'SERVICE');
   data.append('name',     document.getElementById('editName').value);
   data.append('code',     document.getElementById('editCode').value);
   data.append('category', document.getElementById('editCategory').value);
   data.append('sub_category', document.getElementById('editSubCat').value);
-  data.append('tier',     document.getElementById('editTier').value);
+  data.append('tier',     tier);
   data.append('price',    document.getElementById('editPrice').value);
   data.append('price_ht', document.getElementById('editHT').value);
   data.append('tax_rate', document.getElementById('editTaxRate').value);
   data.append('nhis_price',      document.getElementById('editNhis').value);
   data.append('insurance_price', document.getElementById('editIns').value);
-  data.append('gl_account', document.getElementById('editGLAccount').value);
+  data.append('gl_account',      document.getElementById('editGLAccount').value);
+  data.append('purchase_gl_account',        document.getElementById('editPurchaseGL').value);
+  data.append('stock_gl_account',           document.getElementById('editStockGL').value);
+  data.append('stock_variation_gl_account',  document.getElementById('editStockVarGL').value);
   if (document.getElementById('editReqPrice').checked)  data.append('requires_price_entry', '1');
   if (document.getElementById('editStockable').checked) data.append('is_stockable', '1');
   if (document.getElementById('editTaxable').checked)   data.append('is_taxable', '1');

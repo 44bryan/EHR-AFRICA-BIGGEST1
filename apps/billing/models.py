@@ -102,12 +102,21 @@ class ServiceSubCategory(AuditModel):
         return f"{self.get_category_display()} > {self.name}"
 
 
+class EntryType(models.TextChoices):
+    SERVICE = 'SERVICE', 'Service'
+    ITEM    = 'ITEM',    'Item (Physical Good)'
+
+
 class ServicePrice(AuditModel):
     """
     Charge Description Master (CDM) — DB-driven price list.
     Replaces hardcoded SERVICE_CATALOG in views.py.
     Managed via Django admin by Finance Manager / Super Admin.
     """
+    entry_type = models.CharField(
+        max_length=10, choices=EntryType.choices, default=EntryType.SERVICE,
+        help_text='SERVICE = intangible billable service, ITEM = physical good with stock tracking'
+    )
     name = models.CharField(max_length=200, help_text='Service/item name shown on invoice')
     code = models.CharField(
         max_length=30, blank=True,
@@ -125,10 +134,27 @@ class ServicePrice(AuditModel):
                   'Set to restrict this service to a specific desk tier only '
                   '(e.g. VIP consultation at a higher price for VIP desk).',
     )
+
+    # ── ERP GL Account Linking ──
     gl_account = models.ForeignKey(
         'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='service_prices',
-        help_text='GL revenue account for this specific item (overrides sub-category and category defaults)'
+        help_text='Sales GL — revenue account credited when sold'
+    )
+    purchase_gl_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='purchase_prices',
+        help_text='Purchase GL — expense/asset account debited when purchasing from suppliers'
+    )
+    stock_gl_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stock_prices',
+        help_text='Stock GL — asset account representing inventory on hand'
+    )
+    stock_variation_gl_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stock_variation_prices',
+        help_text='Stock Variation GL — COGS account tracking cost of goods consumed'
     )
 
     # ── Pricing ──

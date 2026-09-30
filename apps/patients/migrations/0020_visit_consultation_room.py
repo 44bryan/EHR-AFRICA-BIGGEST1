@@ -12,11 +12,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='visit',
-            name='consultation_room',
-            field=models.ForeignKey(blank=True, help_text='Consultation room the triage nurse sent this patient to', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='visits', to='departments.consultationroom'),
-        ),
+        # consultation_room already added by 0019_visit_consultation_room
         migrations.DeleteModel(
             name='PatientDocument',
         ),

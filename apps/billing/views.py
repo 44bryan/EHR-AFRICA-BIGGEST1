@@ -2929,12 +2929,16 @@ def service_price_list(request):
     if not _can_view_financial_reports(request.user):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
-    from .models import ServiceTierFilter, ServiceSubCategory, GLAccount
+    from .models import ServiceTierFilter, ServiceSubCategory, GLAccount, EntryType
     q = request.GET.get('q', '')
     cat = request.GET.get('cat', '')
     sub = request.GET.get('sub', '')
     tier = request.GET.get('tier', '')
-    prices = ServicePrice.objects.select_related('sub_category', 'gl_account').filter(is_deleted=False)
+    etype = request.GET.get('etype', '')
+    prices = ServicePrice.objects.select_related(
+        'sub_category', 'gl_account', 'purchase_gl_account',
+        'stock_gl_account', 'stock_variation_gl_account',
+    ).filter(is_deleted=False)
     if q:
         prices = prices.filter(Q(name__icontains=q) | Q(code__icontains=q))
     if cat:
@@ -2943,24 +2947,33 @@ def service_price_list(request):
         prices = prices.filter(sub_category_id=sub)
     if tier != '':
         prices = prices.filter(tier=tier)
-    prices = prices.order_by('category', 'sub_category__sort_order', 'name')
+    if etype:
+        prices = prices.filter(entry_type=etype)
+    prices = prices.order_by('entry_type', 'category', 'sub_category__sort_order', 'name')
     sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).select_related('gl_account').order_by('category', 'sort_order')
-    gl_accounts = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
+    gl_revenue  = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
+    gl_expense  = GLAccount.objects.filter(is_active=True, account_type='EXPENSE').order_by('code')
+    gl_asset    = GLAccount.objects.filter(is_active=True, account_type='ASSET').order_by('code')
+    tier_choices = [('', 'All Tiers')] + [(k, v) for k, v in [
+        ('STANDARD', 'Standard Desk'),
+        ('EXPRESS', 'Express Desk'),
+        ('VIP', 'VIP Desk'),
+        ('INSURED', 'Insured / HMO Desk'),
+    ]]
     return render(request, 'billing/service_prices.html', {
         'prices': prices,
         'categories': ServiceCategory.choices,
+        'entry_types': EntryType.choices,
         'sub_categories': sub_categories,
-        'gl_accounts': gl_accounts,
-        'tiers': [('', 'All Tiers')] + [(k, v) for k, v in [
-            ('STANDARD', 'Standard Desk'),
-            ('EXPRESS', 'Express Desk'),
-            ('VIP', 'VIP Desk'),
-            ('INSURED', 'Insured / HMO Desk'),
-        ]],
+        'gl_accounts': gl_revenue,
+        'gl_expense_accounts': gl_expense,
+        'gl_asset_accounts': gl_asset,
+        'tiers': tier_choices,
         'search': q,
         'filter_cat': cat,
         'filter_sub': sub,
         'filter_tier': tier,
+        'filter_etype': etype,
     })
 
 
@@ -2974,9 +2987,18 @@ def service_price_create(request):
     name = request.POST.get('name', '').strip()
     category = request.POST.get('category', '').strip()
     price_str = request.POST.get('price', '').strip()
+    entry_type = request.POST.get('entry_type', 'SERVICE').strip()
+    tier_val = request.POST.get('tier', '').strip()
+
     if not name or not category or not price_str:
         messages.error(request, 'Name, category and price are required.')
         return redirect('billing:service_price_list')
+
+    # Tier is mandatory for services, optional for items
+    if entry_type == 'SERVICE' and not tier_val:
+        messages.error(request, 'Desk Tier is mandatory for services. Please select a tier.')
+        return redirect('billing:service_price_list')
+
     try:
         price = Decimal(price_str)
     except InvalidOperation:
@@ -2989,25 +3011,35 @@ def service_price_create(request):
     tax_rate_str = request.POST.get('tax_rate', '').strip()
     sub_cat_id = request.POST.get('sub_category', '').strip()
     gl_acct_id = request.POST.get('gl_account', '').strip()
+    purchase_gl = request.POST.get('purchase_gl_account', '').strip()
+    stock_gl = request.POST.get('stock_gl_account', '').strip()
+    stock_var_gl = request.POST.get('stock_variation_gl_account', '').strip()
+
+    is_item = entry_type == 'ITEM'
     ServicePrice.objects.create(
+        entry_type=entry_type,
         name=name,
         code=request.POST.get('code', '').strip(),
         category=category,
         sub_category_id=sub_cat_id or None,
-        tier=request.POST.get('tier', '').strip(),
+        tier=tier_val,
         gl_account_id=gl_acct_id or None,
+        purchase_gl_account_id=purchase_gl or None,
+        stock_gl_account_id=stock_gl or None,
+        stock_variation_gl_account_id=stock_var_gl or None,
         price_ht=Decimal(price_ht_str) if price_ht_str else Decimal('0'),
         tax_rate=Decimal(tax_rate_str) if tax_rate_str else Decimal('0'),
         price=price,
         nhis_price=Decimal(nhis) if nhis else None,
         insurance_price=Decimal(ins) if ins else None,
-        is_stockable=bool(request.POST.get('is_stockable')),
+        is_stockable=is_item or bool(request.POST.get('is_stockable')),
         is_taxable=bool(request.POST.get('is_taxable')),
         requires_price_entry=bool(request.POST.get('requires_price_entry')),
         is_active=True,
         created_by=request.user,
     )
-    messages.success(request, f'Service "{name}" added to price list.')
+    label = 'Item' if is_item else 'Service'
+    messages.success(request, f'{label} "{name}" added to price list.')
     return redirect('billing:service_price_list')
 
 
@@ -3019,9 +3051,17 @@ def service_price_edit(request, price_id):
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
     sp = get_object_or_404(ServicePrice, id=price_id, is_deleted=False)
     try:
+        entry_type = request.POST.get('entry_type', sp.entry_type).strip()
+        tier_val = request.POST.get('tier', sp.tier).strip()
+
+        # Tier is mandatory for services
+        if entry_type == 'SERVICE' and not tier_val:
+            return JsonResponse({'success': False, 'error': 'Desk Tier is mandatory for services.'}, status=400)
+
+        sp.entry_type = entry_type
         sp.name     = request.POST.get('name', sp.name).strip()
         sp.category = request.POST.get('category', sp.category).strip()
-        sp.tier     = request.POST.get('tier', sp.tier).strip()
+        sp.tier     = tier_val
         sp.price    = Decimal(request.POST.get('price', str(sp.price)))
         nhis = request.POST.get('nhis_price', '').strip()
         ins  = request.POST.get('insurance_price', '').strip()
@@ -3029,7 +3069,7 @@ def service_price_edit(request, price_id):
         sp.insurance_price = Decimal(ins) if ins else None
         sp.code            = request.POST.get('code', sp.code).strip()
         sp.requires_price_entry = bool(request.POST.get('requires_price_entry'))
-        # New fields
+        # Pricing fields
         price_ht = request.POST.get('price_ht', '').strip()
         tax_rate = request.POST.get('tax_rate', '').strip()
         sub_cat  = request.POST.get('sub_category', '').strip()
@@ -3038,7 +3078,15 @@ def service_price_edit(request, price_id):
         sp.tax_rate = Decimal(tax_rate) if tax_rate else Decimal('0')
         sp.sub_category_id = sub_cat or None
         sp.gl_account_id = gl_acct or None
-        sp.is_stockable = bool(request.POST.get('is_stockable'))
+        # ERP GL accounts
+        purchase_gl = request.POST.get('purchase_gl_account', '').strip()
+        stock_gl = request.POST.get('stock_gl_account', '').strip()
+        stock_var_gl = request.POST.get('stock_variation_gl_account', '').strip()
+        sp.purchase_gl_account_id = purchase_gl or None
+        sp.stock_gl_account_id = stock_gl or None
+        sp.stock_variation_gl_account_id = stock_var_gl or None
+        # Items are always stockable
+        sp.is_stockable = (entry_type == 'ITEM') or bool(request.POST.get('is_stockable'))
         sp.is_taxable   = bool(request.POST.get('is_taxable'))
         sp.save()
         return JsonResponse({'success': True})
