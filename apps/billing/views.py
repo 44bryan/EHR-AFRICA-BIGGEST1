@@ -906,7 +906,9 @@ def _get_service_catalog(cashier_station=None):
         return list(
             qs.order_by('tier', 'category', 'name')
             .values('id', 'name', 'category', 'tier', 'price', 'nhis_price',
-                    'insurance_price', 'requires_price_entry', 'code')
+                    'insurance_price', 'requires_price_entry', 'code',
+                    'gl_account__code', 'sub_category__gl_account__code',
+                    'tax_rate', 'is_taxable', 'price_ht')
         )
     except Exception:
         return []
@@ -1293,12 +1295,30 @@ def pos_add_item(request, invoice_id):
             'error': f'Duplicate — "{description}" is already on this invoice.'
         }, status=400)
 
+    # ── Resolve ServicePrice link and GL account code ───────────────────
+    sp = None
+    sp_id = request.POST.get('service_price_id', '').strip()
+    if sp_id:
+        sp = ServicePrice.objects.filter(pk=sp_id, is_active=True, is_deleted=False).first()
+    gl_code = ''
+    tax_amount = Decimal('0')
+    if sp:
+        gl_code = sp.get_gl_code()
+        if sp.is_taxable and sp.tax_rate:
+            tax_amount = (unit_price * quantity * sp.tax_rate / 100).quantize(Decimal('0.01'))
+    elif not gl_code:
+        from apps.billing.gl_service import get_revenue_code
+        gl_code = get_revenue_code(category)
+
     item = InvoiceItem.objects.create(
         invoice=invoice,
+        service_price=sp,
         description=description,
         category=category,
         quantity=quantity,
         unit_price=unit_price,
+        gl_account_code=gl_code,
+        tax_amount=tax_amount,
         created_by=request.user,
     )
 
