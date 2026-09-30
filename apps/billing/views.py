@@ -9059,6 +9059,61 @@ def finance_director_dashboard(request):
     invoices_unpaid = inv_counts.get(InvoiceStatus.ISSUED, 0)
     invoices_void = inv_counts.get(InvoiceStatus.CANCELLED, 0) + inv_counts.get(InvoiceStatus.WAIVED, 0)
 
+    # ── Collection Rate (billed vs collected this month) ──
+    billed_month = Invoice.objects.filter(
+        is_deleted=False, created_at__date__gte=first_of_month,
+    ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    collection_rate = 0
+    if billed_month > 0:
+        collection_rate = round(float(revenue_month) / float(billed_month) * 100, 1)
+
+    # ── Revenue by Payment Method (this month) ──
+    pay_method_data = list(
+        Payment.objects.filter(is_deleted=False, payment_date__date__gte=first_of_month)
+        .values('payment_method')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+    pm_labels = [dict(PaymentMethod.choices).get(r['payment_method'], r['payment_method']) for r in pay_method_data]
+    pm_data = [float(r['total']) for r in pay_method_data]
+
+    # ── Budget vs Actual (current month) ──
+    from .models import Budget, BudgetType
+    budget_revenue = Budget.objects.filter(
+        is_deleted=False, year=today.year, month=today.month, budget_type=BudgetType.REVENUE,
+    ).aggregate(t=Sum('budgeted_amount'))['t'] or Decimal('0')
+    budget_expense = Budget.objects.filter(
+        is_deleted=False, year=today.year, month=today.month, budget_type=BudgetType.EXPENSE,
+    ).aggregate(t=Sum('budgeted_amount'))['t'] or Decimal('0')
+    rev_variance = revenue_month - budget_revenue
+    exp_variance = expenses_month - budget_expense
+
+    # ── Patient Volume (today + this month) ──
+    from apps.patients.models import Visit
+    visits_today = Visit.objects.filter(is_deleted=False, created_at__date=today).count()
+    visits_month = Visit.objects.filter(is_deleted=False, created_at__date__gte=first_of_month).count()
+
+    # ── Insurance Receivables by Scheme ──
+    from apps.hmo.models import Claim, ClaimStatus
+    insurance_receivables = list(
+        Claim.objects.filter(
+            is_deleted=False,
+            status__in=[ClaimStatus.SUBMITTED, ClaimStatus.APPROVED, ClaimStatus.PARTIAL],
+        )
+        .values(scheme_name=F('member__scheme__name'))
+        .annotate(owed=Sum(F('claimed_amount') - F('paid_amount')))
+        .order_by('-owed')[:5]
+    )
+    insurance_total_owed = sum(r['owed'] for r in insurance_receivables) if insurance_receivables else Decimal('0')
+
+    # ── Today's Cashier Desk Performance ──
+    desk_performance = list(
+        Payment.objects.filter(is_deleted=False, payment_date__date=today)
+        .values(cashier=F('received_by__first_name'))
+        .annotate(collected=Sum('amount'), txn_count=Count('id'))
+        .order_by('-collected')[:6]
+    )
+
     # ── Pending Approvals ──
     pending_expenses = Expense.objects.filter(
         is_deleted=False, approved_by__isnull=True,
@@ -9104,6 +9159,19 @@ def finance_director_dashboard(request):
         'invoices_partial': invoices_partial,
         'invoices_unpaid': invoices_unpaid,
         'invoices_void': invoices_void,
+        'collection_rate': collection_rate,
+        'billed_month': billed_month,
+        'pm_labels': json.dumps(pm_labels),
+        'pm_data': json.dumps(pm_data),
+        'budget_revenue': budget_revenue,
+        'budget_expense': budget_expense,
+        'rev_variance': rev_variance,
+        'exp_variance': exp_variance,
+        'visits_today': visits_today,
+        'visits_month': visits_month,
+        'insurance_receivables': insurance_receivables,
+        'insurance_total_owed': insurance_total_owed,
+        'desk_performance': desk_performance,
         'pending_expenses': pending_expenses,
         'pending_advances': pending_advances,
         'overdue_advances': overdue_advances,
