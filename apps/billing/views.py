@@ -9060,9 +9060,10 @@ def finance_director_dashboard(request):
     invoices_void = inv_counts.get(InvoiceStatus.CANCELLED, 0) + inv_counts.get(InvoiceStatus.WAIVED, 0)
 
     # ── Collection Rate (billed vs collected this month) ──
-    billed_month = Invoice.objects.filter(
-        is_deleted=False, created_at__date__gte=first_of_month,
-    ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+    from django.db.models import F as _F
+    billed_month = InvoiceItem.objects.filter(
+        is_deleted=False, invoice__is_deleted=False, invoice__created_at__date__gte=first_of_month,
+    ).aggregate(t=Sum(_F('quantity') * _F('unit_price')))['t'] or Decimal('0')
     collection_rate = 0
     if billed_month > 0:
         collection_rate = round(float(revenue_month) / float(billed_month) * 100, 1)
