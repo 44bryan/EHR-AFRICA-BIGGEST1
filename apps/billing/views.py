@@ -9040,11 +9040,11 @@ def finance_director_dashboard(request):
             invoice__status__in=[InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.ISSUED],
             invoice__created_at__date__gte=first_of_month,
         )
-        .values(name=F('service__category'))
-        .annotate(total=Sum('line_total'))
+        .values('category')
+        .annotate(total=Sum(F('quantity') * F('unit_price')))
         .order_by('-total')[:5]
     )
-    cat_labels = [r['name'] or 'Uncategorized' for r in top_categories]
+    cat_labels = [r['category'] or 'Uncategorized' for r in top_categories]
     cat_data = [float(r['total']) for r in top_categories]
 
     # ── Invoice counts by status (this month) ──
