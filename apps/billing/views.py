@@ -9057,7 +9057,7 @@ def finance_director_dashboard(request):
     invoices_paid = inv_counts.get(InvoiceStatus.PAID, 0)
     invoices_partial = inv_counts.get(InvoiceStatus.PARTIALLY_PAID, 0)
     invoices_unpaid = inv_counts.get(InvoiceStatus.ISSUED, 0)
-    invoices_void = inv_counts.get(InvoiceStatus.VOID, 0) + inv_counts.get(InvoiceStatus.CANCELLED, 0)
+    invoices_void = inv_counts.get(InvoiceStatus.CANCELLED, 0) + inv_counts.get(InvoiceStatus.WAIVED, 0)
 
     # ── Pending Approvals ──
     pending_expenses = Expense.objects.filter(
