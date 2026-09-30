@@ -1,0 +1,71 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Lens Exit Notes{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-box-arrow-right me-2"></i>Lens Exit Notes</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:lens_exit_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Lens Exit
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Exit #</th>
+          <th>Order #</th>
+          <th>Store</th>
+          <th>Issued By</th>
+          <th>Validated</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for le in lens_exits %}
+        <tr>
+          <td>{{ le.created_at|date:"d M Y" }}</td>
+          <td class="fw-semibold">{{ le.exit_number|default:le.pk }}</td>
+          <td>
+            <a href="{% url 'opticals:optical_order_detail' le.order.pk %}" class="text-decoration-none">
+              {{ le.order.order_number }}
+            </a>
+          </td>
+          <td>{{ le.store|default:"-" }}</td>
+          <td>{{ le.issued_by.get_full_name|default:"-" }}</td>
+          <td>
+            {% if le.is_validated %}
+              <span class="badge bg-success">Validated</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if not le.is_validated %}
+            <form method="post" action="{% url 'opticals:lens_exit_validate' le.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-success" title="Validate"
+                      onclick="return confirm('Validate this lens exit?')">
+                <i class="bi bi-check2-circle"></i>
+              </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'opticals:lens_exit_edit' le.pk %}" class="btn btn-sm btn-outline-primary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">No lens exit notes found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

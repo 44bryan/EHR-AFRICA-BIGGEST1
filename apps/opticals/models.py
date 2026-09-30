@@ -624,3 +624,282 @@ class FrameMinStockAlert(AuditModel):
     @property
     def is_triggered(self):
         return self.frame.quantity_in_stock <= self.min_quantity
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPTICAL WORKFLOW — TurboClinic Parity
+# ══════════════════════════════════════════════════════════════════════════════
+
+class FrameMeasurement(AuditModel):
+    """
+    Frame measurement record — PD, segment heights, and other measurements
+    taken by the optical dispenser before ordering lenses.
+    """
+    order = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='frame_measurement')
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='frame_measurements')
+    measured_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='frame_measurements_done')
+    measurement_date = models.DateField(default=timezone.now)
+    # PD measurements
+    pd_re = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='PD Right Eye (mm)')
+    pd_le = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='PD Left Eye (mm)')
+    # Segment heights
+    segment_height_re = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Segment Height RE (mm)')
+    segment_height_le = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Segment Height LE (mm)')
+    # Other measurements
+    other_re = models.CharField(max_length=100, blank=True, help_text='Other measurement RE')
+    other_le = models.CharField(max_length=100, blank=True, help_text='Other measurement LE')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-measurement_date']
+
+    def __str__(self):
+        return f"Frame Measurement — {self.patient.full_name} ({self.measurement_date})"
+
+
+class ExternalPrescription(AuditModel):
+    """
+    Optical prescription brought by a patient from an external doctor/clinic.
+    Used when the patient was not examined at AEF but wants to purchase glasses.
+    """
+    prescription_number = models.CharField(max_length=30, unique=True)
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='external_prescriptions')
+    received_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='external_rx_received')
+    received_date = models.DateField(default=timezone.now)
+    prescriber_name = models.CharField(max_length=200, help_text='Name of external prescribing doctor')
+    prescriber_clinic = models.CharField(max_length=200, blank=True, help_text='External clinic/hospital name')
+    prescription_date = models.DateField(null=True, blank=True, help_text='Date on the external prescription')
+    # Right eye
+    re_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_axis = models.PositiveSmallIntegerField(null=True, blank=True)
+    re_add = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    re_prism = models.CharField(max_length=30, blank=True)
+    re_va = models.CharField(max_length=20, blank=True, help_text='VA achieved')
+    # Left eye
+    le_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_axis = models.PositiveSmallIntegerField(null=True, blank=True)
+    le_add = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    le_prism = models.CharField(max_length=30, blank=True)
+    le_va = models.CharField(max_length=20, blank=True, help_text='VA achieved')
+    # Lens options from prescription
+    lens_type_prescribed = models.CharField(max_length=20, choices=LensType.choices, blank=True)
+    anti_reflective = models.BooleanField(default=False)
+    photochromic = models.BooleanField(default=False)
+    high_index = models.BooleanField(default=False)
+    polycarbonate = models.BooleanField(default=False)
+    bifocal = models.BooleanField(default=False)
+    tint = models.BooleanField(default=False)
+    organic = models.BooleanField(default=False)
+    trifocal = models.BooleanField(default=False)
+    progressive_no_line = models.BooleanField(default=False)
+    permanent_wear = models.BooleanField(default=False)
+    other_options = models.CharField(max_length=200, blank=True)
+    observations = models.TextField(blank=True)
+    # Link to optical order when dispensed
+    order = models.ForeignKey(OpticalOrder, null=True, blank=True, on_delete=models.SET_NULL, related_name='external_prescriptions')
+
+    class Meta:
+        ordering = ['-received_date']
+
+    def __str__(self):
+        return f"Ext Rx {self.prescription_number} — {self.patient.full_name}"
+
+    def save(self, *args, **kwargs):
+        if not self.prescription_number:
+            today = timezone.localdate()
+            count = ExternalPrescription.objects.filter(received_date__year=today.year).count() + 1
+            self.prescription_number = f"EXT-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class GlassOrderStatus(models.TextChoices):
+    DRAFT = 'DRAFT', 'Draft'
+    ORDERED = 'ORDERED', 'Ordered from Supplier'
+    RECEIVED = 'RECEIVED', 'Received'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
+
+class GlassOrder(AuditModel):
+    """
+    Lens/glass order to an external supplier (Commande Verre).
+    Created when lenses need to be ordered from a supplier for a patient's optical order.
+    """
+    order_number = models.CharField(max_length=30, unique=True)
+    optical_order = models.ForeignKey(OpticalOrder, on_delete=models.CASCADE, related_name='glass_orders')
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='glass_orders')
+    supplier = models.ForeignKey(FrameSupplier, null=True, blank=True, on_delete=models.SET_NULL, related_name='glass_orders')
+    status = models.CharField(max_length=15, choices=GlassOrderStatus.choices, default=GlassOrderStatus.DRAFT)
+    order_date = models.DateField(default=timezone.now)
+    expected_date = models.DateField(null=True, blank=True)
+    received_date = models.DateField(null=True, blank=True)
+    # RE lens specs
+    re_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    re_axis = models.PositiveSmallIntegerField(null=True, blank=True)
+    re_add = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    # LE lens specs
+    le_sphere = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_cylinder = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    le_axis = models.PositiveSmallIntegerField(null=True, blank=True)
+    le_add = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    # Lens details
+    lens_type = models.CharField(max_length=20, choices=LensType.choices, blank=True)
+    lens_material = models.CharField(max_length=100, blank=True)
+    lens_coating = models.CharField(max_length=200, blank=True)
+    refractive_index = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+    ordered_by = models.ForeignKey('accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='glass_orders_placed')
+    received_by = models.ForeignKey('accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='glass_orders_received')
+
+    class Meta:
+        ordering = ['-order_date']
+
+    def __str__(self):
+        return f"Glass Order {self.order_number} — {self.patient.full_name}"
+
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            today = timezone.localdate()
+            count = GlassOrder.objects.filter(order_date__year=today.year).count() + 1
+            self.order_number = f"GO-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class LensExitNote(AuditModel):
+    """
+    Lens exit from optical store — tracks when lenses leave the store for
+    cutting/glazing or direct dispensing. Requires validation.
+    """
+    exit_number = models.CharField(max_length=30, unique=True)
+    optical_order = models.ForeignKey(OpticalOrder, on_delete=models.CASCADE, related_name='lens_exits')
+    store = models.CharField(max_length=100, default='Optical Store', help_text='Store from which lenses exit')
+    exit_date = models.DateField(default=timezone.now)
+    # Lens details
+    lens_re = models.CharField(max_length=200, blank=True, help_text='RE lens description')
+    lens_le = models.CharField(max_length=200, blank=True, help_text='LE lens description')
+    quantity = models.PositiveIntegerField(default=2, help_text='Number of lenses (usually 2)')
+    # Workflow
+    issued_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='lens_exits_issued')
+    validated = models.BooleanField(default=False)
+    validated_by = models.ForeignKey('accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='lens_exits_validated')
+    validated_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-exit_date']
+
+    def __str__(self):
+        return f"Lens Exit {self.exit_number} — {self.optical_order.order_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.exit_number:
+            today = timezone.localdate()
+            count = LensExitNote.objects.filter(exit_date__year=today.year).count() + 1
+            self.exit_number = f"LEX-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class QCChecklistStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending QC'
+    PASSED = 'PASSED', 'QC Passed'
+    FAILED = 'FAILED', 'QC Failed'
+
+
+class QCChecklist(AuditModel):
+    """
+    Quality Control Checklist — detailed QC inspection of completed glasses.
+    Separate from the simple qc_verified flag on OpticalOrder.
+    Covers control levels, results, and validation.
+    """
+    order = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='qc_checklist')
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='optical_qc_checklists')
+    qc_date = models.DateField(default=timezone.now)
+    checked_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='qc_checklists_done')
+    status = models.CharField(max_length=10, choices=QCChecklistStatus.choices, default=QCChecklistStatus.PENDING)
+    # Control checks
+    power_re_ok = models.BooleanField(default=False, help_text='RE power within tolerance')
+    power_le_ok = models.BooleanField(default=False, help_text='LE power within tolerance')
+    axis_alignment_ok = models.BooleanField(default=False, help_text='Axis alignment correct')
+    pd_ok = models.BooleanField(default=False, help_text='PD matches prescription')
+    segment_height_ok = models.BooleanField(default=False, help_text='Segment / fitting height correct')
+    lens_centering_ok = models.BooleanField(default=False, help_text='Lens properly centered in frame')
+    coating_ok = models.BooleanField(default=False, help_text='Coating applied as ordered')
+    cosmetic_ok = models.BooleanField(default=False, help_text='No scratches, chips, defects')
+    frame_alignment_ok = models.BooleanField(default=False, help_text='Frame alignment and fit')
+    # Results
+    control_level = models.CharField(max_length=50, blank=True, help_text='QC control level')
+    results = models.TextField(blank=True, help_text='QC results summary')
+    comments = models.TextField(blank=True, help_text='QC comments and observations')
+    # Validation
+    validated = models.BooleanField(default=False)
+    validated_by = models.ForeignKey('accounts.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='qc_checklists_validated')
+    validated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-qc_date']
+        verbose_name = 'QC Checklist'
+
+    def __str__(self):
+        return f"QC — {self.order.order_number} ({self.get_status_display()})"
+
+
+class MountingStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    COMPLETED = 'COMPLETED', 'Completed'
+    FAILED = 'FAILED', 'Failed — Redo'
+
+
+class MountingRecord(AuditModel):
+    """
+    Lens mounting / glazing record — tracks the mounting of lenses into frames.
+    """
+    order = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='mounting')
+    mounted_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='mountings_done')
+    mounting_date = models.DateField(default=timezone.now)
+    status = models.CharField(max_length=15, choices=MountingStatus.choices, default=MountingStatus.PENDING)
+    # Mounting details
+    frame_adjusted = models.BooleanField(default=False, help_text='Frame adjustment done')
+    lenses_cut = models.BooleanField(default=False, help_text='Lenses cut to frame shape')
+    lenses_fitted = models.BooleanField(default=False, help_text='Lenses fitted into frame')
+    alignment_checked = models.BooleanField(default=False, help_text='Optical alignment verified')
+    cosmetic_inspection = models.BooleanField(default=False, help_text='Cosmetic inspection passed')
+    notes = models.TextField(blank=True)
+    completion_time = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-mounting_date']
+
+    def __str__(self):
+        return f"Mounting — {self.order.order_number} ({self.get_status_display()})"
+
+
+class ValidationDataChecklist(AuditModel):
+    """
+    Validation Data Checklist — summary review that ensures all frame/case data
+    and frame measurements are complete and correct before proceeding.
+    """
+    order = models.OneToOneField(OpticalOrder, on_delete=models.CASCADE, related_name='validation_checklist')
+    patient = models.ForeignKey('patients.Patient', on_delete=models.PROTECT, related_name='optical_validation_checklists')
+    validated_by = models.ForeignKey('accounts.User', on_delete=models.PROTECT, related_name='optical_validations_done')
+    validation_date = models.DateField(default=timezone.now)
+    # Checklist items
+    frame_data_complete = models.BooleanField(default=False, help_text='Frame/case data fully entered')
+    measurements_complete = models.BooleanField(default=False, help_text='Frame measurements recorded')
+    prescription_verified = models.BooleanField(default=False, help_text='Prescription data verified')
+    patient_confirmed = models.BooleanField(default=False, help_text='Patient identity confirmed')
+    lens_selection_ok = models.BooleanField(default=False, help_text='Lens type/material selection appropriate')
+    # Result
+    is_approved = models.BooleanField(default=False, help_text='All checks passed — approved to proceed')
+    rejection_reason = models.TextField(blank=True, help_text='Reason for rejection if not approved')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-validation_date']
+        verbose_name = 'Validation Data Checklist'
+
+    def __str__(self):
+        return f"Validation — {self.order.order_number} ({'Approved' if self.is_approved else 'Rejected'})"

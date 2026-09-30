@@ -86,4 +86,40 @@ urlpatterns = [
 
     # Patient optical history
     path('patient/<uuid:patient_id>/history/', views.patient_optical_history, name='patient_optical_history'),
+
+    # ── Optical Workflow (TurboClinic parity) ──
+    # Frame Measurement
+    path('frame-measurement/', views.frame_measurement_list, name='frame_measurement_list'),
+    path('orders/<uuid:order_id>/frame-measurement/', views.frame_measurement_create, name='frame_measurement_create'),
+    path('orders/<uuid:order_id>/frame-measurement/edit/', views.frame_measurement_edit, name='frame_measurement_edit'),
+    path('orders/<uuid:order_id>/frame-measurement/delete/', views.frame_measurement_delete, name='frame_measurement_delete'),
+
+    # External Prescriptions
+    path('external-prescriptions/', views.external_prescription_list, name='external_prescription_list'),
+    path('external-prescriptions/new/', views.external_prescription_create, name='external_prescription_create'),
+    path('external-prescriptions/<uuid:rx_id>/', views.external_prescription_detail, name='external_prescription_detail'),
+
+    # Glass Ordering (Lens order to supplier)
+    path('glass-orders/', views.glass_order_list, name='glass_order_list'),
+    path('orders/<uuid:order_id>/glass-order/', views.glass_order_create, name='glass_order_create'),
+    path('glass-orders/<uuid:go_id>/action/', views.glass_order_action, name='glass_order_action'),
+
+    # Lens Exit from Store
+    path('lens-exits/', views.lens_exit_list, name='lens_exit_list'),
+    path('orders/<uuid:order_id>/lens-exit/', views.lens_exit_create, name='lens_exit_create'),
+    path('lens-exits/<uuid:exit_id>/validate/', views.lens_exit_validate, name='lens_exit_validate'),
+
+    # QC Checklist
+    path('qc-checklists/', views.qc_checklist_list, name='qc_checklist_list'),
+    path('orders/<uuid:order_id>/qc-checklist/', views.qc_checklist_create, name='qc_checklist_create'),
+    path('orders/<uuid:order_id>/qc-checklist/edit/', views.qc_checklist_edit, name='qc_checklist_edit'),
+    path('orders/<uuid:order_id>/qc-checklist/validate/', views.qc_checklist_validate, name='qc_checklist_validate'),
+
+    # Mounting
+    path('mounting/', views.mounting_list, name='mounting_list'),
+    path('orders/<uuid:order_id>/mounting/', views.mounting_create, name='mounting_create'),
+    path('orders/<uuid:order_id>/mounting/edit/', views.mounting_edit, name='mounting_edit'),
+
+    # Validation Data Checklist
+    path('orders/<uuid:order_id>/validation-checklist/', views.validation_checklist_create, name='validation_checklist_create'),
 ]

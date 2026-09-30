@@ -15,7 +15,7 @@
       Back to Dashboard
     </a>
     <a href="{% url 'inventory:store_location_create' %}" class="btn btn-primary btn-sm">
-      Add Location
+      <i class="bi bi-plus-lg me-1"></i>Add Store
     </a>
   </div>
 </div>
@@ -28,22 +28,24 @@
       <table class="table table-hover align-middle mb-0 small">
         <thead class="table-light">
           <tr>
+            <th>Code</th>
             <th>Name</th>
             <th>Type</th>
             <th>GL Account</th>
             <th>Address</th>
             <th class="text-center">Items</th>
             <th class="text-center">Active</th>
-            <th></th>
+            <th class="text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for loc in locations %}
           <tr>
+            <td><code class="text-info fw-bold" style="font-size:.85rem;">{{ loc.store_code|default:"--" }}</code></td>
             <td class="fw-semibold">{{ loc.name }}</td>
             <td><span class="badge bg-light text-dark border">{{ loc.get_location_type_display }}</span></td>
             <td><code class="text-primary" style="font-size:.78rem;">{{ loc.gl_account_code|default:"--" }}</code></td>
-            <td class="text-muted">{{ loc.address|default:"--" }}</td>
+            <td class="text-muted">{{ loc.address|default:"--"|truncatewords:8 }}</td>
             <td class="text-center">
               <span class="badge bg-primary rounded-pill">{{ loc.items.count }}</span>
             </td>
@@ -54,18 +56,27 @@
                 <span class="badge bg-secondary">Inactive</span>
               {% endif %}
             </td>
-            <td>
-              <a href="{% url 'inventory:store_location_edit' loc.id %}" class="btn btn-sm btn-outline-secondary py-0 px-2">
-                <i class="bi bi-pencil me-1"></i>Edit
-              </a>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="{% url 'inventory:store_location_edit' loc.id %}" class="btn btn-outline-secondary py-0 px-2">
+                  <i class="bi bi-pencil me-1"></i>Edit
+                </a>
+                <button type="button" class="btn btn-outline-danger py-0 px-2"
+                        onclick="if(confirm('Delete store &quot;{{ loc.store_code }}: {{ loc.name }}&quot;? This cannot be undone.')){document.getElementById('del-{{ loc.id }}').submit();}">
+                  <i class="bi bi-trash me-1"></i>Delete
+                </button>
+              </div>
+              <form id="del-{{ loc.id }}" method="post" action="{% url 'inventory:store_location_delete' loc.id %}" class="d-none">
+                {% csrf_token %}
+              </form>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7" class="text-center text-muted py-5">
+            <td colspan="8" class="text-center text-muted py-5">
               <i class="bi bi-geo-alt fs-3 d-block mb-2"></i>
               No store locations found.
-              <a href="{% url 'inventory:store_location_create' %}" class="d-block mt-1">Add your first location &rarr;</a>
+              <a href="{% url 'inventory:store_location_create' %}" class="d-block mt-1">Add your first store &rarr;</a>
             </td>
           </tr>
           {% endfor %}

@@ -1,0 +1,154 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ action }} Glass Order{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2"></i>{{ action }} Glass Order</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:glass_order_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    {% if optical_order %}
+    <div class="alert alert-info small mb-3">
+      <i class="bi bi-info-circle me-1"></i>
+      Optical Order <strong>{{ optical_order.order_number }}</strong> &mdash;
+      Patient: <strong>{{ optical_order.patient.get_full_name }}</strong>
+    </div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+
+      <!-- Supplier & Date -->
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Supplier <span class="text-danger">*</span></label>
+          <select name="supplier" class="form-select" required>
+            <option value="">-- Select Supplier --</option>
+            {% for s in suppliers %}
+            <option value="{{ s.pk }}" {% if glass_order.supplier_id == s.pk %}selected{% endif %}>
+              {{ s.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Expected Delivery Date</label>
+          <input type="date" name="expected_date" class="form-control"
+                 value="{{ glass_order.expected_date|date:'Y-m-d'|default:'' }}">
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <!-- Right Eye -->
+      <h6 class="fw-bold text-primary mb-3">Right Eye (RE)</h6>
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Sphere</label>
+          <input type="number" step="0.25" name="sphere_re" class="form-control"
+                 value="{{ glass_order.sphere_re|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Cylinder</label>
+          <input type="number" step="0.25" name="cylinder_re" class="form-control"
+                 value="{{ glass_order.cylinder_re|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Axis</label>
+          <input type="number" step="1" min="0" max="180" name="axis_re" class="form-control"
+                 value="{{ glass_order.axis_re|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Add</label>
+          <input type="number" step="0.25" name="add_re" class="form-control"
+                 value="{{ glass_order.add_re|default:'' }}">
+        </div>
+      </div>
+
+      <!-- Left Eye -->
+      <h6 class="fw-bold text-primary mb-3">Left Eye (LE)</h6>
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Sphere</label>
+          <input type="number" step="0.25" name="sphere_le" class="form-control"
+                 value="{{ glass_order.sphere_le|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Cylinder</label>
+          <input type="number" step="0.25" name="cylinder_le" class="form-control"
+                 value="{{ glass_order.cylinder_le|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Axis</label>
+          <input type="number" step="1" min="0" max="180" name="axis_le" class="form-control"
+                 value="{{ glass_order.axis_le|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Add</label>
+          <input type="number" step="0.25" name="add_le" class="form-control"
+                 value="{{ glass_order.add_le|default:'' }}">
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <!-- Lens Specs -->
+      <h6 class="fw-bold text-primary mb-3">Lens Specifications</h6>
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Lens Type</label>
+          <select name="lens_type" class="form-select">
+            <option value="">-- Select --</option>
+            {% for lt in lens_types %}
+            <option value="{{ lt.pk }}" {% if glass_order.lens_type_id == lt.pk %}selected{% endif %}>
+              {{ lt.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Lens Material</label>
+          <input type="text" name="lens_material" class="form-control"
+                 value="{{ glass_order.lens_material|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Lens Coating</label>
+          <input type="text" name="lens_coating" class="form-control"
+                 value="{{ glass_order.lens_coating|default:'' }}">
+        </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Refractive Index</label>
+          <input type="number" step="0.01" name="refractive_index" class="form-control"
+                 value="{{ glass_order.refractive_index|default:'' }}">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label">Cost Price (FCFA)</label>
+          <input type="number" step="1" name="cost_price" class="form-control"
+                 value="{{ glass_order.cost_price|default:'' }}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Notes</label>
+        <textarea name="notes" class="form-control" rows="3">{{ glass_order.notes|default:'' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Save Glass Order
+        </button>
+        <a href="{% url 'opticals:glass_order_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

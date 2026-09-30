@@ -1,0 +1,219 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{{ action }} External Prescription{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-file-earmark-medical me-2"></i>{{ action }} External Prescription</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:external_prescription_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="patient_id" value="{{ patient.pk }}">
+
+      <!-- Prescriber Info -->
+      <h6 class="fw-bold text-primary mb-3">Prescriber Information</h6>
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label">Prescriber Name</label>
+          <input type="text" name="prescriber_name" class="form-control"
+                 value="{{ rx.prescriber_name|default:'' }}" required>
+        </div>
+        <div class="col-md-4 mb-3">
+          <label class="form-label">Prescriber Clinic</label>
+          <input type="text" name="prescriber_clinic" class="form-control"
+                 value="{{ rx.prescriber_clinic|default:'' }}">
+        </div>
+        <div class="col-md-4 mb-3">
+          <label class="form-label">Prescription Date</label>
+          <input type="date" name="prescription_date" class="form-control"
+                 value="{{ rx.prescription_date|date:'Y-m-d'|default:'' }}" required>
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <!-- Right Eye -->
+      <h6 class="fw-bold text-primary mb-3">Right Eye (RE)</h6>
+      <div class="row">
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Sphere</label>
+          <input type="number" step="0.25" name="sphere_re" class="form-control"
+                 value="{{ rx.sphere_re|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Cylinder</label>
+          <input type="number" step="0.25" name="cylinder_re" class="form-control"
+                 value="{{ rx.cylinder_re|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Axis</label>
+          <input type="number" step="1" min="0" max="180" name="axis_re" class="form-control"
+                 value="{{ rx.axis_re|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Add</label>
+          <input type="number" step="0.25" name="add_re" class="form-control"
+                 value="{{ rx.add_re|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Prism</label>
+          <input type="text" name="prism_re" class="form-control"
+                 value="{{ rx.prism_re|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">VA</label>
+          <input type="text" name="va_re" class="form-control"
+                 value="{{ rx.va_re|default:'' }}">
+        </div>
+      </div>
+
+      <!-- Left Eye -->
+      <h6 class="fw-bold text-primary mb-3">Left Eye (LE)</h6>
+      <div class="row">
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Sphere</label>
+          <input type="number" step="0.25" name="sphere_le" class="form-control"
+                 value="{{ rx.sphere_le|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Cylinder</label>
+          <input type="number" step="0.25" name="cylinder_le" class="form-control"
+                 value="{{ rx.cylinder_le|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Axis</label>
+          <input type="number" step="1" min="0" max="180" name="axis_le" class="form-control"
+                 value="{{ rx.axis_le|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Add</label>
+          <input type="number" step="0.25" name="add_le" class="form-control"
+                 value="{{ rx.add_le|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">Prism</label>
+          <input type="text" name="prism_le" class="form-control"
+                 value="{{ rx.prism_le|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-3">
+          <label class="form-label">VA</label>
+          <input type="text" name="va_le" class="form-control"
+                 value="{{ rx.va_le|default:'' }}">
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <!-- Lens Type -->
+      <h6 class="fw-bold text-primary mb-3">Lens Specifications</h6>
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label">Lens Type Prescribed</label>
+          <select name="lens_type_prescribed" class="form-select">
+            <option value="">-- Select --</option>
+            {% for lt in lens_types %}
+            <option value="{{ lt.pk }}" {% if rx.lens_type_prescribed_id == lt.pk %}selected{% endif %}>
+              {{ lt.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Lens Options -->
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="anti_reflective" class="form-check-input" id="anti_reflective"
+                   {% if rx.anti_reflective %}checked{% endif %}>
+            <label class="form-check-label" for="anti_reflective">Anti-Reflective</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="photochromic" class="form-check-input" id="photochromic"
+                   {% if rx.photochromic %}checked{% endif %}>
+            <label class="form-check-label" for="photochromic">Photochromic</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="high_index" class="form-check-input" id="high_index"
+                   {% if rx.high_index %}checked{% endif %}>
+            <label class="form-check-label" for="high_index">High Index</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="polycarbonate" class="form-check-input" id="polycarbonate"
+                   {% if rx.polycarbonate %}checked{% endif %}>
+            <label class="form-check-label" for="polycarbonate">Polycarbonate</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="bifocal" class="form-check-input" id="bifocal"
+                   {% if rx.bifocal %}checked{% endif %}>
+            <label class="form-check-label" for="bifocal">Bifocal</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="tint" class="form-check-input" id="tint"
+                   {% if rx.tint %}checked{% endif %}>
+            <label class="form-check-label" for="tint">Tint</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="organic" class="form-check-input" id="organic"
+                   {% if rx.organic %}checked{% endif %}>
+            <label class="form-check-label" for="organic">Organic</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="trifocal" class="form-check-input" id="trifocal"
+                   {% if rx.trifocal %}checked{% endif %}>
+            <label class="form-check-label" for="trifocal">Trifocal</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="progressive_no_line" class="form-check-input" id="progressive_no_line"
+                   {% if rx.progressive_no_line %}checked{% endif %}>
+            <label class="form-check-label" for="progressive_no_line">Progressive (No Line)</label>
+          </div>
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check">
+            <input type="checkbox" name="permanent_wear" class="form-check-input" id="permanent_wear"
+                   {% if rx.permanent_wear %}checked{% endif %}>
+            <label class="form-check-label" for="permanent_wear">Permanent Wear</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Observations -->
+      <div class="mb-3">
+        <label class="form-label">Observations</label>
+        <textarea name="observations" class="form-control" rows="3">{{ rx.observations|default:'' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Save Prescription
+        </button>
+        <a href="{% url 'opticals:external_prescription_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

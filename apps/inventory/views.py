@@ -1064,6 +1064,7 @@ def store_location_create(request):
         return HttpResponseForbidden('Access denied.')
     if request.method == 'POST':
         StoreLocation.objects.create(
+            store_code=request.POST.get('store_code', '').strip() or '',
             name=request.POST.get('name', '').strip(),
             location_type=request.POST.get('location_type', 'CENTRAL'),
             address=request.POST.get('address', '').strip(),
@@ -1080,6 +1081,9 @@ def store_location_edit(request, loc_id):
         return HttpResponseForbidden('Access denied.')
     loc = get_object_or_404(StoreLocation, pk=loc_id, is_deleted=False)
     if request.method == 'POST':
+        code = request.POST.get('store_code', '').strip()
+        if code:
+            loc.store_code = code
         loc.name = request.POST.get('name', loc.name).strip()
         loc.location_type = request.POST.get('location_type', loc.location_type)
         loc.address = request.POST.get('address', '').strip()
@@ -1088,6 +1092,23 @@ def store_location_edit(request, loc_id):
         messages.success(request, f'Location "{loc.name}" updated.')
         return redirect('inventory:store_location_list')
     return render(request, 'inventory/store_location_form.html', {'location': loc, 'action': 'Edit'})
+
+
+@login_required
+@require_POST
+def store_location_delete(request, loc_id):
+    if not _can_manage_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    loc = get_object_or_404(StoreLocation, pk=loc_id, is_deleted=False)
+    # Check if store has items assigned
+    item_count = loc.items.filter(is_deleted=False).count() if hasattr(loc, 'items') else 0
+    if item_count > 0:
+        messages.error(request, f'Cannot delete "{loc.name}" — {item_count} items are assigned to this store.')
+        return redirect('inventory:store_location_list')
+    loc.is_deleted = True
+    loc.save()
+    messages.success(request, f'Store "{loc.name}" deleted.')
+    return redirect('inventory:store_location_list')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

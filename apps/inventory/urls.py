@@ -40,6 +40,7 @@ urlpatterns = [
     path('locations/', views.store_location_list, name='store_location_list'),
     path('locations/create/', views.store_location_create, name='store_location_create'),
     path('locations/<uuid:loc_id>/edit/', views.store_location_edit, name='store_location_edit'),
+    path('locations/<uuid:loc_id>/delete/', views.store_location_delete, name='store_location_delete'),
 
     # Physical Stock Count
     path('stock-count/', views.stock_count_list, name='stock_count_list'),

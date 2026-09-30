@@ -1,0 +1,87 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Glass Orders{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2"></i>Glass Orders</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:glass_order_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Glass Order
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Order #</th>
+          <th>Optical Order #</th>
+          <th>Patient</th>
+          <th>Supplier</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for go in glass_orders %}
+        <tr>
+          <td>{{ go.created_at|date:"d M Y" }}</td>
+          <td class="fw-semibold">{{ go.order_number|default:go.pk }}</td>
+          <td>
+            <a href="{% url 'opticals:optical_order_detail' go.optical_order.pk %}" class="text-decoration-none">
+              {{ go.optical_order.order_number }}
+            </a>
+          </td>
+          <td>{{ go.optical_order.patient.get_full_name }}</td>
+          <td>{{ go.supplier.name|default:"-" }}</td>
+          <td>
+            {% if go.status == 'ORDERED' %}
+              <span class="badge bg-warning text-dark">Ordered</span>
+            {% elif go.status == 'RECEIVED' %}
+              <span class="badge bg-success">Received</span>
+            {% elif go.status == 'CANCELLED' %}
+              <span class="badge bg-secondary">Cancelled</span>
+            {% elif go.status == 'DRAFT' %}
+              <span class="badge bg-secondary">Draft</span>
+            {% else %}
+              <span class="badge bg-info text-dark">{{ go.status }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if go.status == 'DRAFT' or go.status == 'ORDERED' %}
+            <form method="post" action="{% url 'opticals:glass_order_action' go.pk %}" class="d-inline">
+              {% csrf_token %}
+              {% if go.status == 'DRAFT' %}
+              <button type="submit" name="action" value="order" class="btn btn-sm btn-outline-primary" title="Place Order">
+                <i class="bi bi-send"></i>
+              </button>
+              {% endif %}
+              {% if go.status == 'ORDERED' %}
+              <button type="submit" name="action" value="receive" class="btn btn-sm btn-outline-success" title="Mark Received">
+                <i class="bi bi-check2-circle"></i>
+              </button>
+              {% endif %}
+              <button type="submit" name="action" value="cancel" class="btn btn-sm btn-outline-danger" title="Cancel"
+                      onclick="return confirm('Cancel this glass order?')">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'opticals:glass_order_edit' go.pk %}" class="btn btn-sm btn-outline-primary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">No glass orders found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

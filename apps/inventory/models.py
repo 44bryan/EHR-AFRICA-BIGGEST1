@@ -403,6 +403,10 @@ class StoreLocation(AuditModel):
       - Theatre Store  → 323 (Fournitures chirurgicales)
       - Ward/Emergency → 331 (Autres approvisionnements)
     """
+    store_code = models.CharField(
+        max_length=10, unique=True, blank=True,
+        help_text='Short code e.g. FD01, OP01, PH2 — auto-generated if blank'
+    )
     name = models.CharField(max_length=100, unique=True)
     location_type = models.CharField(max_length=20, choices=[
         ('GENERAL', 'General Store'),
@@ -447,16 +451,30 @@ class StoreLocation(AuditModel):
         'OTN':         '335000',   # Stock — OTN
     }
 
+    # Prefix map for auto-generating store_code
+    CODE_PREFIX_MAP = {
+        'GENERAL': 'GS', 'PHARMACY': 'PH', 'OPTICAL': 'OP', 'SHOWROOM': 'OP',
+        'THEATRE': 'OT', 'CENTRAL': 'CS', 'SUB': 'SS', 'WARD': 'WD',
+        'EMERGENCY': 'EM', 'FRONT_DESK': 'FD', 'NON_MEDICAL': 'NM',
+        'OUTREACH': 'OR', 'OTN': 'OT',
+    }
+
     def save(self, *args, **kwargs):
         if not self.gl_account_code:
             self.gl_account_code = self.STORE_GL_MAP.get(self.location_type, '331000')
+        if not self.store_code:
+            prefix = self.CODE_PREFIX_MAP.get(self.location_type, 'ST')
+            existing = StoreLocation.objects.filter(
+                store_code__startswith=prefix
+            ).count()
+            self.store_code = f"{prefix}{existing + 1:02d}"
         super().save(*args, **kwargs)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['store_code', 'name']
 
     def __str__(self):
-        return f"{self.name} ({self.get_location_type_display()})"
+        return f"{self.store_code}: {self.name}"
 
 
 # ── Physical Stock Count ─────────────────────────────────────────────────────

@@ -1,0 +1,70 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}QC Checklists{% endblock %}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard-check me-2"></i>QC Checklists</h5>
+  <div class="d-flex gap-2">
+    <a href="{% url 'opticals:qc_checklist_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New QC Checklist
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Order #</th>
+          <th>Patient</th>
+          <th>Checked By</th>
+          <th>Status</th>
+          <th>Validated</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for qc in checklists %}
+        <tr>
+          <td>{{ qc.created_at|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'opticals:optical_order_detail' qc.order.pk %}" class="text-decoration-none fw-semibold">
+              {{ qc.order.order_number }}
+            </a>
+          </td>
+          <td>{{ qc.order.patient.get_full_name }}</td>
+          <td>{{ qc.checked_by.get_full_name|default:"-" }}</td>
+          <td>
+            {% if qc.status == 'PASSED' %}
+              <span class="badge bg-success">Passed</span>
+            {% elif qc.status == 'FAILED' %}
+              <span class="badge bg-danger">Failed</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if qc.is_validated %}
+              <span class="badge bg-success">Yes</span>
+            {% else %}
+              <span class="badge bg-secondary">No</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'opticals:qc_checklist_edit' qc.pk %}" class="btn btn-sm btn-outline-primary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">No QC checklists found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

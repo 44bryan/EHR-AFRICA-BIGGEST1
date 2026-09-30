@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.db.models import F
+from django.http import HttpResponseForbidden
 from django.utils import timezone
 from .models import (
     Frame, Lens, LensType, OpticalOrder, OpticalOrderStatus,
@@ -2193,3 +2194,490 @@ def patient_optical_history(request, patient_id):
         context['pdf_filename'] = f'optical-history-{patient.patient_id}.pdf'
         return render_pdf('opticals/patient_optical_history.html', context)
     return render(request, 'opticals/patient_optical_history.html', context)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPTICAL WORKFLOW — Frame Measurement, Glass Ordering, QC, Mounting, etc.
+# ══════════════════════════════════════════════════════════════════════════════
+
+from .models import (
+    FrameMeasurement, ExternalPrescription, GlassOrder, GlassOrderStatus,
+    LensExitNote, QCChecklist, QCChecklistStatus, MountingRecord, MountingStatus,
+    ValidationDataChecklist,
+)
+
+
+# ── Frame Measurement ──────────────────────────────────────────────────────
+
+@login_required
+def frame_measurement_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    measurements = FrameMeasurement.objects.filter(
+        is_deleted=False
+    ).select_related('order', 'patient', 'measured_by').order_by('-measurement_date')[:200]
+    return render(request, 'opticals/frame_measurement_list.html', {'measurements': measurements})
+
+
+@login_required
+def frame_measurement_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    if hasattr(order, 'frame_measurement'):
+        messages.info(request, 'Frame measurement already exists for this order.')
+        return redirect('opticals:frame_measurement_edit', order_id=order_id)
+    if request.method == 'POST':
+        FrameMeasurement.objects.create(
+            order=order,
+            patient=order.patient,
+            measured_by=request.user,
+            pd_re=request.POST.get('pd_re') or None,
+            pd_le=request.POST.get('pd_le') or None,
+            segment_height_re=request.POST.get('segment_height_re') or None,
+            segment_height_le=request.POST.get('segment_height_le') or None,
+            other_re=request.POST.get('other_re', '').strip(),
+            other_le=request.POST.get('other_le', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        messages.success(request, 'Frame measurement recorded.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/frame_measurement_form.html', {
+        'order': order, 'patient': order.patient, 'action': 'Record',
+    })
+
+
+@login_required
+def frame_measurement_edit(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    fm = get_object_or_404(FrameMeasurement, order=order, is_deleted=False)
+    if request.method == 'POST':
+        fm.pd_re = request.POST.get('pd_re') or None
+        fm.pd_le = request.POST.get('pd_le') or None
+        fm.segment_height_re = request.POST.get('segment_height_re') or None
+        fm.segment_height_le = request.POST.get('segment_height_le') or None
+        fm.other_re = request.POST.get('other_re', '').strip()
+        fm.other_le = request.POST.get('other_le', '').strip()
+        fm.notes = request.POST.get('notes', '').strip()
+        fm.save()
+        messages.success(request, 'Frame measurement updated.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/frame_measurement_form.html', {
+        'order': order, 'patient': order.patient, 'measurement': fm, 'action': 'Modify',
+    })
+
+
+@login_required
+@require_POST
+def frame_measurement_delete(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    fm = get_object_or_404(FrameMeasurement, order_id=order_id, is_deleted=False)
+    fm.is_deleted = True
+    fm.save()
+    messages.success(request, 'Frame measurement deleted.')
+    return redirect('opticals:order_detail', order_id=order_id)
+
+
+# ── External Prescription ──────────────────────────────────────────────────
+
+@login_required
+def external_prescription_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    prescriptions = ExternalPrescription.objects.filter(
+        is_deleted=False
+    ).select_related('patient', 'received_by').order_by('-received_date')[:200]
+    return render(request, 'opticals/external_prescription_list.html', {'prescriptions': prescriptions})
+
+
+@login_required
+def external_prescription_create(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        from apps.patients.models import Patient
+        patient = get_object_or_404(Patient, pk=request.POST.get('patient_id'))
+        rx = ExternalPrescription(
+            patient=patient,
+            received_by=request.user,
+            prescriber_name=request.POST.get('prescriber_name', '').strip(),
+            prescriber_clinic=request.POST.get('prescriber_clinic', '').strip(),
+            prescription_date=request.POST.get('prescription_date') or None,
+            re_sphere=request.POST.get('re_sphere') or None,
+            re_cylinder=request.POST.get('re_cylinder') or None,
+            re_axis=request.POST.get('re_axis') or None,
+            re_add=request.POST.get('re_add') or None,
+            re_prism=request.POST.get('re_prism', '').strip(),
+            re_va=request.POST.get('re_va', '').strip(),
+            le_sphere=request.POST.get('le_sphere') or None,
+            le_cylinder=request.POST.get('le_cylinder') or None,
+            le_axis=request.POST.get('le_axis') or None,
+            le_add=request.POST.get('le_add') or None,
+            le_prism=request.POST.get('le_prism', '').strip(),
+            le_va=request.POST.get('le_va', '').strip(),
+            lens_type_prescribed=request.POST.get('lens_type_prescribed', ''),
+            anti_reflective='anti_reflective' in request.POST,
+            photochromic='photochromic' in request.POST,
+            high_index='high_index' in request.POST,
+            polycarbonate='polycarbonate' in request.POST,
+            bifocal='bifocal' in request.POST,
+            tint='tint' in request.POST,
+            organic='organic' in request.POST,
+            trifocal='trifocal' in request.POST,
+            progressive_no_line='progressive_no_line' in request.POST,
+            permanent_wear='permanent_wear' in request.POST,
+            observations=request.POST.get('observations', '').strip(),
+            created_by=request.user,
+        )
+        rx.save()
+        messages.success(request, f'External prescription {rx.prescription_number} recorded.')
+        return redirect('opticals:external_prescription_list')
+    return render(request, 'opticals/external_prescription_form.html', {
+        'action': 'Record', 'lens_types': LensType.choices,
+    })
+
+
+@login_required
+def external_prescription_detail(request, rx_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    rx = get_object_or_404(ExternalPrescription, pk=rx_id, is_deleted=False)
+    return render(request, 'opticals/external_prescription_detail.html', {'rx': rx})
+
+
+# ── Glass Ordering (Lens order to supplier) ────────────────────────────────
+
+@login_required
+def glass_order_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    orders = GlassOrder.objects.filter(
+        is_deleted=False
+    ).select_related('optical_order', 'patient', 'supplier').order_by('-order_date')[:200]
+    return render(request, 'opticals/glass_order_list.html', {'glass_orders': orders})
+
+
+@login_required
+def glass_order_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    optical_order = get_object_or_404(OpticalOrder, pk=order_id)
+    suppliers = FrameSupplier.objects.filter(is_active=True, is_deleted=False)
+    if request.method == 'POST':
+        go = GlassOrder(
+            optical_order=optical_order,
+            patient=optical_order.patient,
+            supplier_id=request.POST.get('supplier') or None,
+            expected_date=request.POST.get('expected_date') or None,
+            re_sphere=request.POST.get('re_sphere') or None,
+            re_cylinder=request.POST.get('re_cylinder') or None,
+            re_axis=request.POST.get('re_axis') or None,
+            re_add=request.POST.get('re_add') or None,
+            le_sphere=request.POST.get('le_sphere') or None,
+            le_cylinder=request.POST.get('le_cylinder') or None,
+            le_axis=request.POST.get('le_axis') or None,
+            le_add=request.POST.get('le_add') or None,
+            lens_type=request.POST.get('lens_type', ''),
+            lens_material=request.POST.get('lens_material', '').strip(),
+            lens_coating=request.POST.get('lens_coating', '').strip(),
+            refractive_index=request.POST.get('refractive_index') or None,
+            cost_price=request.POST.get('cost_price') or 0,
+            notes=request.POST.get('notes', '').strip(),
+            ordered_by=request.user,
+            created_by=request.user,
+        )
+        go.save()
+        messages.success(request, f'Glass order {go.order_number} created.')
+        return redirect('opticals:glass_order_list')
+    return render(request, 'opticals/glass_order_form.html', {
+        'optical_order': optical_order, 'suppliers': suppliers,
+        'lens_types': LensType.choices, 'action': 'Create',
+    })
+
+
+@login_required
+@require_POST
+def glass_order_action(request, go_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    go = get_object_or_404(GlassOrder, pk=go_id, is_deleted=False)
+    action = request.POST.get('action')
+    if action == 'order' and go.status == GlassOrderStatus.DRAFT:
+        go.status = GlassOrderStatus.ORDERED
+        go.save()
+        messages.success(request, f'Glass order {go.order_number} sent to supplier.')
+    elif action == 'receive' and go.status == GlassOrderStatus.ORDERED:
+        go.status = GlassOrderStatus.RECEIVED
+        go.received_date = timezone.localdate()
+        go.received_by = request.user
+        go.save()
+        messages.success(request, f'Glass order {go.order_number} marked as received.')
+    elif action == 'cancel' and go.status in (GlassOrderStatus.DRAFT, GlassOrderStatus.ORDERED):
+        go.status = GlassOrderStatus.CANCELLED
+        go.save()
+        messages.success(request, f'Glass order {go.order_number} cancelled.')
+    return redirect('opticals:glass_order_list')
+
+
+# ── Lens Exit from Store ───────────────────────────────────────────────────
+
+@login_required
+def lens_exit_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    exits = LensExitNote.objects.filter(
+        is_deleted=False
+    ).select_related('optical_order', 'issued_by', 'validated_by').order_by('-exit_date')[:200]
+    return render(request, 'opticals/lens_exit_list.html', {'exits': exits})
+
+
+@login_required
+def lens_exit_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    optical_order = get_object_or_404(OpticalOrder, pk=order_id)
+    if request.method == 'POST':
+        lex = LensExitNote(
+            optical_order=optical_order,
+            store=request.POST.get('store', 'Optical Store'),
+            lens_re=request.POST.get('lens_re', '').strip(),
+            lens_le=request.POST.get('lens_le', '').strip(),
+            quantity=request.POST.get('quantity') or 2,
+            issued_by=request.user,
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        lex.save()
+        messages.success(request, f'Lens exit {lex.exit_number} created.')
+        return redirect('opticals:lens_exit_list')
+    return render(request, 'opticals/lens_exit_form.html', {
+        'optical_order': optical_order, 'action': 'Create',
+    })
+
+
+@login_required
+@require_POST
+def lens_exit_validate(request, exit_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    lex = get_object_or_404(LensExitNote, pk=exit_id, is_deleted=False)
+    if not lex.validated:
+        lex.validated = True
+        lex.validated_by = request.user
+        lex.validated_at = timezone.now()
+        lex.save()
+        messages.success(request, f'Lens exit {lex.exit_number} validated.')
+    return redirect('opticals:lens_exit_list')
+
+
+# ── QC Checklist ───────────────────────────────────────────────────────────
+
+@login_required
+def qc_checklist_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    checklists = QCChecklist.objects.filter(
+        is_deleted=False
+    ).select_related('order', 'patient', 'checked_by').order_by('-qc_date')[:200]
+    return render(request, 'opticals/qc_checklist_list.html', {'checklists': checklists})
+
+
+@login_required
+def qc_checklist_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    if hasattr(order, 'qc_checklist'):
+        messages.info(request, 'QC checklist already exists for this order.')
+        return redirect('opticals:qc_checklist_edit', order_id=order_id)
+    if request.method == 'POST':
+        qc = QCChecklist(
+            order=order,
+            patient=order.patient,
+            checked_by=request.user,
+            power_re_ok='power_re_ok' in request.POST,
+            power_le_ok='power_le_ok' in request.POST,
+            axis_alignment_ok='axis_alignment_ok' in request.POST,
+            pd_ok='pd_ok' in request.POST,
+            segment_height_ok='segment_height_ok' in request.POST,
+            lens_centering_ok='lens_centering_ok' in request.POST,
+            coating_ok='coating_ok' in request.POST,
+            cosmetic_ok='cosmetic_ok' in request.POST,
+            frame_alignment_ok='frame_alignment_ok' in request.POST,
+            control_level=request.POST.get('control_level', '').strip(),
+            results=request.POST.get('results', '').strip(),
+            comments=request.POST.get('comments', '').strip(),
+            created_by=request.user,
+        )
+        # Determine pass/fail
+        all_ok = all([
+            qc.power_re_ok, qc.power_le_ok, qc.axis_alignment_ok,
+            qc.pd_ok, qc.segment_height_ok, qc.lens_centering_ok,
+            qc.coating_ok, qc.cosmetic_ok, qc.frame_alignment_ok,
+        ])
+        qc.status = QCChecklistStatus.PASSED if all_ok else QCChecklistStatus.FAILED
+        qc.save()
+        messages.success(request, f'QC checklist {"passed" if all_ok else "failed"} for {order.order_number}.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/qc_checklist_form.html', {
+        'order': order, 'patient': order.patient, 'action': 'Record',
+    })
+
+
+@login_required
+def qc_checklist_edit(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    qc = get_object_or_404(QCChecklist, order=order, is_deleted=False)
+    if request.method == 'POST':
+        qc.power_re_ok = 'power_re_ok' in request.POST
+        qc.power_le_ok = 'power_le_ok' in request.POST
+        qc.axis_alignment_ok = 'axis_alignment_ok' in request.POST
+        qc.pd_ok = 'pd_ok' in request.POST
+        qc.segment_height_ok = 'segment_height_ok' in request.POST
+        qc.lens_centering_ok = 'lens_centering_ok' in request.POST
+        qc.coating_ok = 'coating_ok' in request.POST
+        qc.cosmetic_ok = 'cosmetic_ok' in request.POST
+        qc.frame_alignment_ok = 'frame_alignment_ok' in request.POST
+        qc.control_level = request.POST.get('control_level', '').strip()
+        qc.results = request.POST.get('results', '').strip()
+        qc.comments = request.POST.get('comments', '').strip()
+        all_ok = all([
+            qc.power_re_ok, qc.power_le_ok, qc.axis_alignment_ok,
+            qc.pd_ok, qc.segment_height_ok, qc.lens_centering_ok,
+            qc.coating_ok, qc.cosmetic_ok, qc.frame_alignment_ok,
+        ])
+        qc.status = QCChecklistStatus.PASSED if all_ok else QCChecklistStatus.FAILED
+        qc.save()
+        messages.success(request, 'QC checklist updated.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/qc_checklist_form.html', {
+        'order': order, 'patient': order.patient, 'qc': qc, 'action': 'Modify',
+    })
+
+
+@login_required
+@require_POST
+def qc_checklist_validate(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    qc = get_object_or_404(QCChecklist, order_id=order_id, is_deleted=False)
+    if not qc.validated:
+        qc.validated = True
+        qc.validated_by = request.user
+        qc.validated_at = timezone.now()
+        qc.save()
+        messages.success(request, 'QC checklist validated.')
+    return redirect('opticals:order_detail', order_id=order_id)
+
+
+# ── Mounting ───────────────────────────────────────────────────────────────
+
+@login_required
+def mounting_list(request):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    mountings = MountingRecord.objects.filter(
+        is_deleted=False
+    ).select_related('order', 'mounted_by').order_by('-mounting_date')[:200]
+    return render(request, 'opticals/mounting_list.html', {'mountings': mountings})
+
+
+@login_required
+def mounting_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    if hasattr(order, 'mounting'):
+        messages.info(request, 'Mounting record already exists for this order.')
+        return redirect('opticals:mounting_edit', order_id=order_id)
+    if request.method == 'POST':
+        mt = MountingRecord(
+            order=order,
+            mounted_by=request.user,
+            frame_adjusted='frame_adjusted' in request.POST,
+            lenses_cut='lenses_cut' in request.POST,
+            lenses_fitted='lenses_fitted' in request.POST,
+            alignment_checked='alignment_checked' in request.POST,
+            cosmetic_inspection='cosmetic_inspection' in request.POST,
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        all_done = all([mt.frame_adjusted, mt.lenses_cut, mt.lenses_fitted,
+                        mt.alignment_checked, mt.cosmetic_inspection])
+        mt.status = MountingStatus.COMPLETED if all_done else MountingStatus.IN_PROGRESS
+        if all_done:
+            mt.completion_time = timezone.now()
+        mt.save()
+        messages.success(request, f'Mounting record {"completed" if all_done else "started"} for {order.order_number}.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/mounting_form.html', {
+        'order': order, 'action': 'Record',
+    })
+
+
+@login_required
+def mounting_edit(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    mt = get_object_or_404(MountingRecord, order=order, is_deleted=False)
+    if request.method == 'POST':
+        mt.frame_adjusted = 'frame_adjusted' in request.POST
+        mt.lenses_cut = 'lenses_cut' in request.POST
+        mt.lenses_fitted = 'lenses_fitted' in request.POST
+        mt.alignment_checked = 'alignment_checked' in request.POST
+        mt.cosmetic_inspection = 'cosmetic_inspection' in request.POST
+        mt.notes = request.POST.get('notes', '').strip()
+        all_done = all([mt.frame_adjusted, mt.lenses_cut, mt.lenses_fitted,
+                        mt.alignment_checked, mt.cosmetic_inspection])
+        mt.status = MountingStatus.COMPLETED if all_done else MountingStatus.IN_PROGRESS
+        if all_done and not mt.completion_time:
+            mt.completion_time = timezone.now()
+        mt.save()
+        messages.success(request, 'Mounting record updated.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/mounting_form.html', {
+        'order': order, 'mounting': mt, 'action': 'Modify',
+    })
+
+
+# ── Validation Data Checklist ──────────────────────────────────────────────
+
+@login_required
+def validation_checklist_create(request, order_id):
+    if not _can_access_optical(request.user):
+        return HttpResponseForbidden()
+    order = get_object_or_404(OpticalOrder, pk=order_id)
+    if hasattr(order, 'validation_checklist'):
+        messages.info(request, 'Validation checklist already exists for this order.')
+        return redirect('opticals:order_detail', order_id=order_id)
+    if request.method == 'POST':
+        vc = ValidationDataChecklist(
+            order=order,
+            patient=order.patient,
+            validated_by=request.user,
+            frame_data_complete='frame_data_complete' in request.POST,
+            measurements_complete='measurements_complete' in request.POST,
+            prescription_verified='prescription_verified' in request.POST,
+            patient_confirmed='patient_confirmed' in request.POST,
+            lens_selection_ok='lens_selection_ok' in request.POST,
+            notes=request.POST.get('notes', '').strip(),
+            created_by=request.user,
+        )
+        all_ok = all([vc.frame_data_complete, vc.measurements_complete,
+                       vc.prescription_verified, vc.patient_confirmed, vc.lens_selection_ok])
+        vc.is_approved = all_ok
+        if not all_ok:
+            vc.rejection_reason = request.POST.get('rejection_reason', '').strip()
+        vc.save()
+        messages.success(request, f'Validation checklist {"approved" if all_ok else "rejected"} for {order.order_number}.')
+        return redirect('opticals:order_detail', order_id=order.id)
+    return render(request, 'opticals/validation_checklist_form.html', {
+        'order': order, 'patient': order.patient, 'action': 'Create',
+    })
