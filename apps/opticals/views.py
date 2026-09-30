@@ -201,6 +201,19 @@ def frame_edit(request, frame_id):
 
 
 @login_required
+def frame_delete(request, frame_id):
+    if not _can_manage_optical_stock(request.user):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    if request.method == 'POST':
+        frame = get_object_or_404(Frame, id=frame_id, is_deleted=False)
+        frame.is_deleted = True
+        frame.save(update_fields=['is_deleted'])
+        messages.success(request, f'Frame "{frame}" deleted.')
+    return redirect('opticals:frame_list')
+
+
+@login_required
 def lens_list(request):
     lenses = Lens.objects.filter(is_deleted=False).order_by('name')
     return render(request, 'opticals/lens_list.html', {'lenses': lenses})
@@ -262,6 +275,19 @@ def lens_edit(request, lens_id):
         messages.success(request, f'Lens "{lens}" updated.')
         return redirect('opticals:lens_list')
     return render(request, 'opticals/lens_form.html', {'lens': lens, 'lens_types': LensType.choices})
+
+
+@login_required
+def lens_delete(request, lens_id):
+    if not _can_manage_optical_stock(request.user):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    if request.method == 'POST':
+        lens = get_object_or_404(Lens, id=lens_id, is_deleted=False)
+        lens.is_deleted = True
+        lens.save(update_fields=['is_deleted'])
+        messages.success(request, f'Lens "{lens}" deleted.')
+    return redirect('opticals:lens_list')
 
 
 @login_required
@@ -1717,6 +1743,19 @@ def supplier_edit(request, supplier_id):
         messages.success(request, f'Supplier "{supplier.name}" updated.')
         return redirect('opticals:supplier_list')
     return render(request, 'opticals/supplier_form.html', {'supplier': supplier})
+
+
+@login_required
+def supplier_delete(request, supplier_id):
+    if not _can_manage_optical_stock(request.user):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        supplier = get_object_or_404(FrameSupplier, id=supplier_id, is_deleted=False)
+        supplier.is_deleted = True
+        supplier.save(update_fields=['is_deleted'])
+        messages.success(request, f'Supplier "{supplier.name}" deleted.')
+    return redirect('opticals:supplier_list')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

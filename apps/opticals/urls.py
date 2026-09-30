@@ -8,10 +8,12 @@ urlpatterns = [
     path('frames/', views.frame_list, name='frame_list'),
     path('frames/new/', views.frame_create, name='frame_create'),
     path('frames/<uuid:frame_id>/edit/', views.frame_edit, name='frame_edit'),
+    path('frames/<uuid:frame_id>/delete/', views.frame_delete, name='frame_delete'),
     path('frames/<uuid:frame_id>/receive/', views.frame_receive_stock, name='frame_receive_stock'),
     path('lenses/', views.lens_list, name='lens_list'),
     path('lenses/new/', views.lens_create, name='lens_create'),
     path('lenses/<uuid:lens_id>/edit/', views.lens_edit, name='lens_edit'),
+    path('lenses/<uuid:lens_id>/delete/', views.lens_delete, name='lens_delete'),
     path('orders/', views.order_list, name='order_list'),
     path('orders/outstanding/', views.order_list_unpaid, name='order_list_unpaid'),
     path('orders/new/', views.create_order, name='create_order'),
@@ -62,6 +64,7 @@ urlpatterns = [
     path('suppliers/', views.supplier_list, name='supplier_list'),
     path('suppliers/new/', views.supplier_create, name='supplier_create'),
     path('suppliers/<uuid:supplier_id>/edit/', views.supplier_edit, name='supplier_edit'),
+    path('suppliers/<uuid:supplier_id>/delete/', views.supplier_delete, name='supplier_delete'),
 
     # Goods Received Notes
     path('grn/', views.grn_list, name='grn_list'),
