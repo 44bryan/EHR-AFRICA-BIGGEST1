@@ -9000,24 +9000,64 @@ def finance_director_dashboard(request):
 
     total_liquidity = safe_balance + bank_total
 
-    # ── Monthly Revenue Trend (last 12 months) ──
+    # ── Monthly Revenue & Expense Trend (last 12 months) ──
     import calendar
-    from django.db.models.functions import TruncMonth, ExtractMonth, ExtractYear
+    from django.db.models.functions import TruncMonth
+    twelve_months_ago = first_of_year.replace(year=today.year - 1)
     monthly_revenue = (
-        Payment.objects.filter(is_deleted=False, payment_date__date__gte=first_of_year.replace(year=today.year - 1))
+        Payment.objects.filter(is_deleted=False, payment_date__date__gte=twelve_months_ago)
         .annotate(m=TruncMonth('payment_date'))
         .values('m')
         .annotate(total=Sum('amount'))
         .order_by('m')
     )
+    monthly_expenses = dict(
+        Expense.objects.filter(is_deleted=False, approved_by__isnull=False, date__gte=twelve_months_ago)
+        .annotate(m=TruncMonth('date'))
+        .values('m')
+        .annotate(total=Sum('amount'))
+        .order_by('m')
+        .values_list('m', 'total')
+    )
     trend_labels = []
     trend_data = []
+    trend_expenses = []
     for row in monthly_revenue:
         dt = row['m']
         if hasattr(dt, 'date'):
             dt = dt.date()
         trend_labels.append(f"{calendar.month_abbr[dt.month]} {dt.year}")
         trend_data.append(float(row['total']))
+        exp_val = monthly_expenses.get(row['m'], Decimal('0'))
+        trend_expenses.append(float(exp_val))
+
+    # ── Top 5 Revenue Categories (this month) ──
+    from django.db.models import F, Count
+    top_categories = list(
+        InvoiceItem.objects.filter(
+            is_deleted=False,
+            invoice__is_deleted=False,
+            invoice__status__in=[InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.ISSUED],
+            invoice__created_at__date__gte=first_of_month,
+        )
+        .values(name=F('service__category'))
+        .annotate(total=Sum('line_total'))
+        .order_by('-total')[:5]
+    )
+    cat_labels = [r['name'] or 'Uncategorized' for r in top_categories]
+    cat_data = [float(r['total']) for r in top_categories]
+
+    # ── Invoice counts by status (this month) ──
+    inv_counts = dict(
+        Invoice.objects.filter(is_deleted=False, created_at__date__gte=first_of_month)
+        .values_list('status')
+        .annotate(c=Count('id'))
+        .values_list('status', 'c')
+    )
+    invoices_paid = inv_counts.get(InvoiceStatus.PAID, 0)
+    invoices_partial = inv_counts.get(InvoiceStatus.PARTIALLY_PAID, 0)
+    invoices_unpaid = inv_counts.get(InvoiceStatus.ISSUED, 0)
+    invoices_void = inv_counts.get(InvoiceStatus.VOID, 0) + inv_counts.get(InvoiceStatus.CANCELLED, 0)
 
     # ── Pending Approvals ──
     pending_expenses = Expense.objects.filter(
@@ -9057,6 +9097,13 @@ def finance_director_dashboard(request):
         'total_liquidity': total_liquidity,
         'trend_labels': json.dumps(trend_labels),
         'trend_data': json.dumps(trend_data),
+        'trend_expenses': json.dumps(trend_expenses),
+        'cat_labels': json.dumps(cat_labels),
+        'cat_data': json.dumps(cat_data),
+        'invoices_paid': invoices_paid,
+        'invoices_partial': invoices_partial,
+        'invoices_unpaid': invoices_unpaid,
+        'invoices_void': invoices_void,
         'pending_expenses': pending_expenses,
         'pending_advances': pending_advances,
         'overdue_advances': overdue_advances,
