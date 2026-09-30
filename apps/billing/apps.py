@@ -9,10 +9,19 @@ class BillingConfig(AppConfig):
     def ready(self):
         from django.db.models.signals import post_save
         from apps.billing.models import (
-            Payment, Expense, APPayment, APBill,
+            Invoice, Payment, Expense, APPayment, APBill,
             Refund, PettyCashEntry, PettyCashFund, WalletTransaction,
         )
         from apps.billing import gl_service
+
+        def on_invoice_saved(sender, instance, created, **kwargs):
+            """Post receivable to GL when invoice is issued (not draft)."""
+            from apps.billing.models import InvoiceStatus, JournalEntry
+            if instance.status in (InvoiceStatus.ISSUED, InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID):
+                if not JournalEntry.objects.filter(
+                    source_type='invoice', source_id=str(instance.pk)
+                ).exists():
+                    gl_service.post_invoice_issued(instance)
 
         def on_payment_saved(sender, instance, created, **kwargs):
             if created:
@@ -57,6 +66,7 @@ class BillingConfig(AppConfig):
                 ):
                     gl_service.post_wallet_deduction(instance)
 
+        post_save.connect(on_invoice_saved,     sender=Invoice)
         post_save.connect(on_payment_saved,    sender=Payment)
         post_save.connect(on_expense_approved, sender=Expense)
         post_save.connect(on_ap_payment_saved, sender=APPayment)
