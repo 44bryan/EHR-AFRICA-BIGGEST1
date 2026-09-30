@@ -422,9 +422,15 @@ def invoice_list(request):
 
     if q:
         from apps.core.utils import patient_search_q
+        # Allow search by receipt number (RCT-) — convert to invoice number (INV-)
+        q_inv = q
+        if q.upper().startswith('RCT-'):
+            q_inv = 'INV-' + q[4:]
         invoices = invoices.filter(
-            Q(invoice_number__icontains=q) | patient_search_q(q, prefix='patient__')
-        )
+            Q(invoice_number__icontains=q_inv)
+            | Q(payments__receipt_number__icontains=q)
+            | patient_search_q(q, prefix='patient__')
+        ).distinct()
     if status:
         invoices = invoices.filter(status=status)
     if date_from:
