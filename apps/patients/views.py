@@ -3789,3 +3789,184 @@ def visit_summary_view(request, visit_number):
         'invoices': invoices,
         'visit_stops': visit_stops,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Disability Questionnaire (TurboClinic parity — Admission module)
+# ─────────────────────────────────────────────────────────────────────────────
+
+DISABILITY_OPTIONS = [
+    ('visual_impairment',  'Visual impairment'),
+    ('physical_disability', 'Physical disability'),
+    ('hearing_impairment', 'Hearing impairment'),
+    ('speech_impairment',  'Speech impairment'),
+    ('cognitive_disability', 'Cognitive disability'),
+    ('albinism',           'Albinism'),
+    ('other_disability',   'Other disability'),
+]
+
+EYE_COMPLAINT_OPTIONS = [
+    ('reduced_vision',    'Reduced vision'),
+    ('eye_pain',          'Eye pain'),
+    ('red_eye',           'Red eye'),
+    ('discharge',         'Discharge / watery eye'),
+    ('headache',          'Headache / eyestrain'),
+    ('double_vision',     'Double vision'),
+    ('flashes_floaters',  'Flashes / floaters'),
+    ('eyelid_problem',    'Eyelid problem'),
+    ('trauma',            'Eye trauma / injury'),
+    ('other',             'Other complaint'),
+]
+
+
+@login_required
+def disability_questionnaire_view(request, patient_id):
+    """
+    Disability Questionnaire — view/edit a patient's disability status
+    and eye complaints from their latest visit.
+    Accessible by receptionist, admission officer, medical_records, super_admin.
+    """
+    _allowed = (
+        request.user.is_super_admin
+        or request.user.is_receptionist
+        or request.user.is_admission_officer
+        or request.user.role == 'medical_records'
+        or request.user.is_medical_director
+    )
+    if not _allowed:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Access denied.')
+
+    patient = get_object_or_404(Patient, patient_id=patient_id, is_deleted=False)
+    latest_visit = (
+        Visit.objects.filter(patient=patient, is_deleted=False)
+        .order_by('-visit_date')
+        .first()
+    )
+
+    if request.method == 'POST':
+        if not latest_visit:
+            messages.error(request, 'No visit found for this patient. Register a visit first.')
+            return redirect('patients:disability_questionnaire', patient_id=patient_id)
+
+        disability_vals = request.POST.getlist('disability')
+        eye_complaint_vals = request.POST.getlist('eye_complaints')
+        latest_visit.intake_disability = ','.join(disability_vals)
+        latest_visit.intake_eye_complaints = ','.join(eye_complaint_vals)
+        latest_visit.save(update_fields=['intake_disability', 'intake_eye_complaints'])
+        messages.success(request, 'Disability questionnaire saved.')
+        return redirect('patients:disability_questionnaire', patient_id=patient_id)
+
+    # Compute selected values for pre-checking boxes
+    selected_disabilities = set(
+        latest_visit.intake_disability.split(',') if latest_visit and latest_visit.intake_disability else []
+    )
+    selected_eye_complaints = set(
+        latest_visit.intake_eye_complaints.split(',') if latest_visit and latest_visit.intake_eye_complaints else []
+    )
+
+    return render(request, 'patients/disability_questionnaire.html', {
+        'patient': patient,
+        'latest_visit': latest_visit,
+        'disability_options': DISABILITY_OPTIONS,
+        'eye_complaint_options': EYE_COMPLAINT_OPTIONS,
+        'selected_disabilities': selected_disabilities,
+        'selected_eye_complaints': selected_eye_complaints,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Registration Statistics (TurboClinic parity — Admission / Reports)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def registration_stats_view(request):
+    """
+    Registration Statistics dashboard — daily registration counts, by gender,
+    by billing type, by service tier, and journal of recent registrations.
+    Accessible by receptionist, admin_director, medical_director, super_admin, ceo.
+    """
+    _allowed = (
+        request.user.is_super_admin
+        or request.user.is_receptionist
+        or request.user.is_admin_director
+        or request.user.is_medical_director
+        or request.user.is_ceo
+    )
+    if not _allowed:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Access denied.')
+
+    from django.utils import timezone
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
+
+    today = timezone.now().date()
+    date_from_str = request.GET.get('date_from', str(today.replace(day=1)))
+    date_to_str = request.GET.get('date_to', str(today))
+    try:
+        import datetime
+        date_from = datetime.date.fromisoformat(date_from_str)
+        date_to = datetime.date.fromisoformat(date_to_str)
+    except ValueError:
+        date_from = today.replace(day=1)
+        date_to = today
+
+    base_qs = Visit.objects.filter(
+        is_deleted=False,
+        visit_date__date__gte=date_from,
+        visit_date__date__lte=date_to,
+    ).select_related('patient')
+
+    # Daily registration counts
+    daily_counts = list(
+        base_qs.annotate(day=TruncDate('visit_date'))
+        .values('day')
+        .annotate(total=Count('id'))
+        .order_by('day')
+    )
+
+    # By gender
+    gender_counts = list(
+        base_qs.values('patient__gender')
+        .annotate(total=Count('id'))
+        .order_by('-total')
+    )
+
+    # By billing type
+    billing_counts = list(
+        base_qs.values('billing_type')
+        .annotate(total=Count('id'))
+        .order_by('-total')
+    )
+
+    # By service tier
+    tier_counts = list(
+        base_qs.values('service_tier')
+        .annotate(total=Count('id'))
+        .order_by('-total')
+    )
+
+    # Journal — recent 100 registrations
+    journal = list(
+        base_qs.select_related('patient')
+        .order_by('-visit_date')[:100]
+    )
+
+    total = base_qs.count()
+    today_count = Visit.objects.filter(
+        is_deleted=False,
+        visit_date__date=today,
+    ).count()
+
+    return render(request, 'patients/registration_stats.html', {
+        'date_from': date_from,
+        'date_to': date_to,
+        'daily_counts': daily_counts,
+        'gender_counts': gender_counts,
+        'billing_counts': billing_counts,
+        'tier_counts': tier_counts,
+        'journal': journal,
+        'total': total,
+        'today_count': today_count,
+    })

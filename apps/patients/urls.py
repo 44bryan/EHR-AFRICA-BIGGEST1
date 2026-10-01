@@ -74,4 +74,10 @@ urlpatterns = [
     path('<str:patient_id>/documents/upload/', views.document_upload_view, name='document_upload'),
     path('<str:patient_id>/documents/<uuid:doc_id>/delete/', views.document_delete_view, name='document_delete'),
 
+    # ── Disability Questionnaire (TurboClinic Admission parity) ─────────────
+    path('<str:patient_id>/disability-questionnaire/', views.disability_questionnaire_view, name='disability_questionnaire'),
+
+    # ── Registration Statistics (TurboClinic Admission Reports parity) ───────
+    path('registration-stats/', views.registration_stats_view, name='registration_stats'),
+
 ]

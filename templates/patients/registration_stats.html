@@ -1,0 +1,232 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Registration Statistics{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold">Registration Statistics</h5>
+    <div class="text-muted small">Patient registration analytics &mdash; {{ date_from|date:"d/m/Y" }} to {{ date_to|date:"d/m/Y" }}</div>
+  </div>
+  <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Patient List
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Date Filter ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-search me-1"></i>Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── KPI Cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-primary mb-0">{{ total|intcomma }}</div>
+      <div class="small text-muted">Total Registrations</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-success mb-0">{{ today_count|intcomma }}</div>
+      <div class="small text-muted">Today</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="h3 fw-bold text-info mb-0">{{ daily_counts|length }}</div>
+      <div class="small text-muted">Days with Registrations</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      {% if daily_counts %}
+      <div class="h3 fw-bold text-warning mb-0">{% widthratio total daily_counts|length 1 %}</div>
+      {% else %}
+      <div class="h3 fw-bold text-warning mb-0">0</div>
+      {% endif %}
+      <div class="small text-muted">Avg / Day</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── By Gender ── #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light fw-semibold small py-2">By Gender</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Gender</th><th class="text-end">Count</th><th class="text-end">%</th></tr>
+          </thead>
+          <tbody>
+            {% for g in gender_counts %}
+            <tr>
+              <td>{{ g.patient__gender|default:"Unknown"|capfirst }}</td>
+              <td class="text-end">{{ g.total|intcomma }}</td>
+              <td class="text-end">
+                {% if total %}{% widthratio g.total total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── By Billing Type ── #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light fw-semibold small py-2">By Billing Type</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Type</th><th class="text-end">Count</th><th class="text-end">%</th></tr>
+          </thead>
+          <tbody>
+            {% for b in billing_counts %}
+            <tr>
+              <td>{{ b.billing_type|default:"—"|upper }}</td>
+              <td class="text-end">{{ b.total|intcomma }}</td>
+              <td class="text-end">
+                {% if total %}{% widthratio b.total total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── By Service Tier ── #}
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light fw-semibold small py-2">By Service Tier</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>Tier</th><th class="text-end">Count</th><th class="text-end">%</th></tr>
+          </thead>
+          <tbody>
+            {% for t in tier_counts %}
+            <tr>
+              <td>{{ t.service_tier|default:"—"|upper }}</td>
+              <td class="text-end">{{ t.total|intcomma }}</td>
+              <td class="text-end">
+                {% if total %}{% widthratio t.total total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center text-muted py-3">No data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Daily Breakdown ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-light fw-semibold small py-2">
+    Daily Registrations — {{ date_from|date:"d/m/Y" }} to {{ date_to|date:"d/m/Y" }}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr><th>Date</th><th class="text-end">Registrations</th></tr>
+        </thead>
+        <tbody>
+          {% for day in daily_counts %}
+          <tr>
+            <td>{{ day.day|date:"D, d M Y" }}</td>
+            <td class="text-end"><span class="badge bg-primary rounded-pill">{{ day.total }}</span></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="2" class="text-center text-muted py-4">No registrations in this period.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Journal of Registrations ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light fw-semibold small py-2 d-flex justify-content-between">
+    <span>Journal of Registrations <span class="text-muted fw-normal">(last 100)</span></span>
+    <span class="text-muted">{{ total|intcomma }} total</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Visit N°</th>
+            <th>Patient</th>
+            <th>Gender</th>
+            <th>Billing</th>
+            <th>Tier</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in journal %}
+          <tr>
+            <td>{{ v.visit_date|date:"d/m/Y H:i" }}</td>
+            <td>
+              <a href="{% url 'patients:visit_detail' v.visit_number %}" class="text-decoration-none fw-semibold">
+                {{ v.visit_number }}
+              </a>
+            </td>
+            <td>
+              <a href="{% url 'patients:detail' v.patient.patient_id %}" class="text-decoration-none">
+                {{ v.patient.full_name }}
+              </a>
+              <div class="text-muted" style="font-size:.75rem;">{{ v.patient.patient_id }}</div>
+            </td>
+            <td>{{ v.patient.gender|default:"—" }}</td>
+            <td><span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ v.get_billing_type_display }}</span></td>
+            <td><span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ v.service_tier }}</span></td>
+            <td><span class="badge bg-secondary" style="font-size:.7rem;">{{ v.get_status_display }}</span></td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-5">
+              <i class="bi bi-clipboard-x fs-3 d-block mb-2"></i>
+              No registrations found in this period.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
