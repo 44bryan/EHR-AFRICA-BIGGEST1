@@ -7654,9 +7654,9 @@ def _can_manage_advances(user):
 
 
 def _can_manage_cash_transfers(user):
-    """Cash transfers — Chief Cashier (initiates), Accountant/Senior Accountant (confirms), oversight (view)."""
+    """Cash transfers — Cashier (initiates desk→safe), Chief Cashier (oversight), Accountant (confirms)."""
     return user.role in (
-        UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
+        UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.ACCOUNTANT,
         UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
         UserRole.BILLING_OFFICER, UserRole.CEO,
         UserRole.ADMIN_DIRECTOR, UserRole.SUPER_ADMIN,
