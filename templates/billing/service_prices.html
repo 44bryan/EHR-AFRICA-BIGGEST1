@@ -15,8 +15,11 @@
     <a href="{% url 'billing:sub_category_list' %}" class="btn btn-outline-info btn-sm">
       <i class="bi bi-folder me-1"></i>Manage Families ({{ sub_categories|length }})
     </a>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPriceModal">
-      <i class="bi bi-plus-circle me-1"></i>Add Service / Item
+    <button class="btn btn-primary btn-sm" onclick="openAdd('SERVICE')">
+      <i class="bi bi-gear me-1"></i>Add Service
+    </button>
+    <button class="btn btn-success btn-sm" onclick="openAdd('ITEM')">
+      <i class="bi bi-box-seam me-1"></i>Add Item
     </button>
   </div>
 </div>
@@ -178,21 +181,17 @@
     <div class="modal-content">
       <form method="post" action="{% url 'billing:service_price_create' %}" id="addForm">
         {% csrf_token %}
-        <div class="modal-header">
-          <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1 text-primary"></i>Add to Price Catalog</h6>
+        <div class="modal-header" id="addModalHeader">
+          <h6 class="modal-title fw-bold" id="addModalTitle"><i class="bi bi-plus-circle me-1"></i>Add to Price Catalog</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <!-- Entry Type Toggle -->
-          <div class="row g-3 mb-3">
-            <div class="col-12">
-              <div class="btn-group w-100" role="group">
-                <input type="radio" class="btn-check" name="entry_type" value="SERVICE" id="addTypeService" checked autocomplete="off">
-                <label class="btn btn-outline-primary" for="addTypeService"><i class="bi bi-gear me-1"></i>Service</label>
-                <input type="radio" class="btn-check" name="entry_type" value="ITEM" id="addTypeItem" autocomplete="off">
-                <label class="btn btn-outline-success" for="addTypeItem"><i class="bi bi-box-seam me-1"></i>Item (Physical Good)</label>
-              </div>
-            </div>
+          <!-- Hidden entry type field — set by openAdd() -->
+          <input type="hidden" name="entry_type" id="addEntryType" value="SERVICE">
+          <!-- Mode banner -->
+          <div id="addModeBanner" class="alert alert-primary d-flex align-items-center gap-2 py-2 mb-3">
+            <i class="bi bi-gear fs-5" id="addModeIcon"></i>
+            <span id="addModeText"></span>
           </div>
 
           <div class="row g-3">
@@ -330,16 +329,10 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <!-- Entry Type Toggle -->
-        <div class="row g-3 mb-3">
-          <div class="col-12">
-            <div class="btn-group w-100" role="group">
-              <input type="radio" class="btn-check" name="edit_entry_type" value="SERVICE" id="editTypeService" autocomplete="off">
-              <label class="btn btn-outline-primary" for="editTypeService"><i class="bi bi-gear me-1"></i>Service</label>
-              <input type="radio" class="btn-check" name="edit_entry_type" value="ITEM" id="editTypeItem" autocomplete="off">
-              <label class="btn btn-outline-success" for="editTypeItem"><i class="bi bi-box-seam me-1"></i>Item (Physical Good)</label>
-            </div>
-          </div>
+        <!-- Mode banner (set by openEdit) -->
+        <div id="editModeBanner" class="alert d-flex align-items-center gap-2 py-2 mb-3">
+          <i class="bi fs-5" id="editModeIcon"></i>
+          <span id="editModeText"></span>
         </div>
 
         <div class="row g-3">
@@ -470,55 +463,76 @@
 <script>
 let currentEditId = null;
 
-/* ── Entry type toggle logic ── */
+/* ── Apply UI based on entry type ── */
 function applyEntryTypeUI(prefix, isItem) {
-  // Tier: mandatory for SERVICE, optional for ITEM
+  // Tier: required for SERVICE, optional for ITEM
   const tierReq = document.getElementById(prefix + 'TierReq');
   const tierSel = document.getElementById(prefix + 'Tier');
   if (tierReq) tierReq.style.display = isItem ? 'none' : '';
   if (tierSel) tierSel.required = !isItem;
 
-  // Stockable: auto-checked + disabled for ITEM, editable for SERVICE
-  const stockWrap = document.getElementById(prefix + 'StockableWrap');
+  // Stockable: always checked+disabled for ITEM
   const stockCb = document.getElementById(prefix + 'Stockable');
   if (stockCb) {
     if (isItem) { stockCb.checked = true; stockCb.disabled = true; }
     else { stockCb.disabled = false; }
   }
 
-  // ERP GL fields: show for items, show for services too (optional)
-  const erpWraps = [prefix + 'PurchaseGLWrap', prefix + 'StockGLWrap', prefix + 'StockVarGLWrap'];
-  erpWraps.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.opacity = isItem ? '1' : '0.6';
+  // ERP GL fields: visible for items, hidden for services
+  ['PurchaseGLWrap','StockGLWrap','StockVarGLWrap'].forEach(s => {
+    const el = document.getElementById(prefix + s);
+    if (el) el.style.display = isItem ? '' : 'none';
   });
 
   // Submit button label
   const btn = document.getElementById(prefix + 'SubmitBtn');
-  if (btn) btn.textContent = isItem ? (prefix === 'add' ? 'Save Item' : 'Save Changes') : (prefix === 'add' ? 'Save Service' : 'Save Changes');
+  if (btn) btn.textContent = prefix === 'add'
+    ? (isItem ? 'Save Item' : 'Save Service')
+    : 'Save Changes';
 }
 
-// Add modal toggles
-document.getElementById('addTypeService')?.addEventListener('change', () => applyEntryTypeUI('add', false));
-document.getElementById('addTypeItem')?.addEventListener('change', () => applyEntryTypeUI('add', true));
+/* ── Open Add modal, pre-set to SERVICE or ITEM ── */
+function openAdd(entryType) {
+  const isItem = entryType === 'ITEM';
+  document.getElementById('addEntryType').value = entryType;
 
-// Edit modal toggles
-document.getElementById('editTypeService')?.addEventListener('change', () => applyEntryTypeUI('edit', false));
-document.getElementById('editTypeItem')?.addEventListener('change', () => applyEntryTypeUI('edit', true));
+  // Banner
+  const banner = document.getElementById('addModeBanner');
+  const icon   = document.getElementById('addModeIcon');
+  const text   = document.getElementById('addModeText');
+  if (isItem) {
+    banner.className = 'alert alert-success d-flex align-items-center gap-2 py-2 mb-3';
+    icon.className   = 'bi bi-box-seam fs-5';
+    text.innerHTML   = '<strong>Adding a Physical Item</strong> — a stockable product sold or dispensed (e.g. frame, lens, drug). Stock &amp; Purchase GL fields are shown.';
+  } else {
+    banner.className = 'alert alert-primary d-flex align-items-center gap-2 py-2 mb-3';
+    icon.className   = 'bi bi-gear fs-5';
+    text.innerHTML   = '<strong>Adding a Service</strong> — a billable procedure or consultation (e.g. eye exam, surgery). A desk tier is required.';
+  }
+
+  // Reset form fields
+  document.getElementById('addForm').reset();
+  document.getElementById('addEntryType').value = entryType;
+  applyEntryTypeUI('add', isItem);
+
+  const modal = document.getElementById('addPriceModal');
+  modal.querySelector('#addModalTitle').innerHTML = isItem
+    ? '<i class="bi bi-box-seam me-1 text-success"></i>Add Item to Price Catalog'
+    : '<i class="bi bi-gear me-1 text-primary"></i>Add Service to Price Catalog';
+
+  new bootstrap.Modal(modal).show();
+}
 
 // Form validation — prevent submit if service without tier
 document.getElementById('addForm')?.addEventListener('submit', function(e) {
-  const isService = document.getElementById('addTypeService').checked;
-  const tier = document.getElementById('addTier').value;
-  if (isService && !tier) {
+  const isItem = document.getElementById('addEntryType').value === 'ITEM';
+  const tier   = document.getElementById('addTier').value;
+  if (!isItem && !tier) {
     e.preventDefault();
-    alert('Desk Tier is mandatory for services. Please select a tier.');
+    alert('Desk Tier is required for services. Please select a tier.');
     document.getElementById('addTier').focus();
   }
 });
-
-// Init add modal
-applyEntryTypeUI('add', false);
 
 /* Auto-calc TTC from HT + tax */
 function calcTTC(htId, taxId, ttcId) {
@@ -545,11 +559,22 @@ function openEdit(spId, btn) {
   const d = btn.dataset;
   currentEditId = spId;
 
-  // Set entry type
   const isItem = d.entry_type === 'ITEM';
-  document.getElementById('editTypeService').checked = !isItem;
-  document.getElementById('editTypeItem').checked = isItem;
   applyEntryTypeUI('edit', isItem);
+
+  // Banner
+  const banner = document.getElementById('editModeBanner');
+  const icon   = document.getElementById('editModeIcon');
+  const text   = document.getElementById('editModeText');
+  if (isItem) {
+    banner.className = 'alert alert-success d-flex align-items-center gap-2 py-2 mb-3';
+    icon.className   = 'bi bi-box-seam fs-5';
+    text.innerHTML   = '<strong>Editing a Physical Item</strong>';
+  } else {
+    banner.className = 'alert alert-primary d-flex align-items-center gap-2 py-2 mb-3';
+    icon.className   = 'bi bi-gear fs-5';
+    text.innerHTML   = '<strong>Editing a Service</strong>';
+  }
 
   document.getElementById('editName').value     = d.name;
   document.getElementById('editCode').value     = d.code;
@@ -574,7 +599,8 @@ function openEdit(spId, btn) {
 
 function saveEdit() {
   if (!currentEditId) return;
-  const isItem = document.getElementById('editTypeItem').checked;
+  const banner = document.getElementById('editModeBanner');
+  const isItem = banner.classList.contains('alert-success');
   const tier = document.getElementById('editTier').value;
 
   // Validate tier for services
