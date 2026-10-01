@@ -73,7 +73,7 @@
 /* ── Main grid ────────────────────────────────────── */
 .pos-grid {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 220px 1fr;
   gap: 0.75rem;
   align-items: start;
 }
@@ -321,19 +321,6 @@
 .ai-tab { background: linear-gradient(135deg,#4c1d95,#6d28d9) !important; border-color: #6d28d9 !important; color: #fff !important; }
 .ai-tab:hover { background: linear-gradient(135deg,#5b21b6,#7c3aed) !important; }
 
-/* ── Step Progress Bar ──────────────────────────────── */
-.pos-steps { display:flex; align-items:center; background:#fff; border:1px solid #dee2e6; border-radius:10px; padding:0.5rem 1.2rem; margin-bottom:0.75rem; box-shadow:0 1px 3px rgba(0,0,0,.07); gap:0; }
-.pos-step { display:flex; align-items:center; gap:0.45rem; flex:1; min-width:0; }
-.pos-step-num { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:800; flex-shrink:0; }
-.pos-step-num.done   { background:#16a34a; color:#fff; }
-.pos-step-num.active { background:#0d6efd; color:#fff; box-shadow:0 0 0 3px rgba(13,110,253,.2); }
-.pos-step-num.pend   { background:#e9ecef; color:#9ca3af; }
-.pos-step-lbl { font-size:0.73rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pos-step-lbl.done   { color:#16a34a; }
-.pos-step-lbl.active { color:#0d6efd; }
-.pos-step-lbl.pend   { color:#9ca3af; }
-.pos-step-sep { color:#dee2e6; font-size:0.8rem; margin:0 0.6rem; flex-shrink:0; }
-
 /* ── Add All Orders button ──────────────────────────── */
 .btn-add-all { width:100%; background:#198754; border:none; color:#fff; border-radius:7px; padding:0.5rem 0.75rem; font-size:0.82rem; font-weight:700; cursor:pointer; margin-bottom:0.5rem; transition:background .12s; letter-spacing:.01em; }
 .btn-add-all:hover:not(:disabled) { background:#157347; }
@@ -574,32 +561,6 @@
 <div class="pos-alert pos-alert-warn">
   <i class="bi bi-shield-exclamation flex-shrink-0"></i>
   <div><strong>Pre-Auth Required:</strong> {{ preauth_warning }}</div>
-</div>
-{% endif %}
-
-{# ── Step Progress Bar ────────────────────────────────────────────────────── #}
-{% if invoice %}
-<div class="pos-steps">
-  <div class="pos-step">
-    <div class="pos-step-num {% if items|length > 0 %}done{% else %}active{% endif %}">
-      {% if items|length > 0 %}<i class="bi bi-check-lg"></i>{% else %}1{% endif %}
-    </div>
-    <span class="pos-step-lbl {% if items|length > 0 %}done{% else %}active{% endif %}">Add Services</span>
-  </div>
-  <span class="pos-step-sep"><i class="bi bi-chevron-right"></i></span>
-  <div class="pos-step">
-    <div class="pos-step-num {% if invoice.status == 'PAID' %}done{% elif items|length > 0 %}active{% else %}pend{% endif %}">
-      {% if invoice.status == 'PAID' %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
-    </div>
-    <span class="pos-step-lbl {% if invoice.status == 'PAID' %}done{% elif items|length > 0 %}active{% else %}pend{% endif %}">Set Payment</span>
-  </div>
-  <span class="pos-step-sep"><i class="bi bi-chevron-right"></i></span>
-  <div class="pos-step">
-    <div class="pos-step-num {% if invoice.status == 'PAID' %}done{% else %}pend{% endif %}">
-      {% if invoice.status == 'PAID' %}<i class="bi bi-check-lg"></i>{% else %}3{% endif %}
-    </div>
-    <span class="pos-step-lbl {% if invoice.status == 'PAID' %}done{% else %}pend{% endif %}">Collect &amp; Print</span>
-  </div>
 </div>
 {% endif %}
 
@@ -849,16 +810,18 @@
         <span class="tot-val" id="subtotalDisplay">{{ invoice.subtotal|floatformat:0|intcomma }} FCFA</span>
       </div>
 
-      {# Discount #}
-      <div class="tot-row mod-row align-items-center gap-1 mt-1" style="flex-wrap:wrap;">
-        <span style="color:#f59e0b;font-size:.78rem;">Discount</span>
-        <div class="d-flex gap-1 ms-auto align-items-center">
-          <input type="number" id="discAmt" class="form-control form-control-sm" style="width:80px;text-align:right;"
-                 value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0">
-          <input type="text" id="discReason" class="form-control form-control-sm" style="width:100px;"
-                 value="{{ invoice.discount_reason }}" placeholder="Reason…">
-          <button class="mod-btn" onclick="applyDiscount()">Apply</button>
-        </div>
+      {# Discount — collapsed by default #}
+      <div class="tot-row mt-1">
+        <a href="#" class="text-muted" style="font-size:.75rem;text-decoration:none;" onclick="toggleDiscount(event)">
+          <i class="bi bi-tag me-1"></i><span id="discToggleLbl">{% if invoice.discount_amount %}Discount ({{ invoice.discount_amount|floatformat:0|intcomma }} FCFA) ▴{% else %}Add discount ▾{% endif %}</span>
+        </a>
+      </div>
+      <div id="discRow" style="display:{% if invoice.discount_amount %}block{% else %}none{% endif %};" class="mod-row d-flex gap-1 align-items-center mt-1">
+        <input type="number" id="discAmt" class="form-control form-control-sm" style="width:80px;text-align:right;"
+               value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0">
+        <input type="text" id="discReason" class="form-control form-control-sm"
+               value="{{ invoice.discount_reason }}" placeholder="Reason…">
+        <button class="mod-btn" onclick="applyDiscount()">Apply</button>
       </div>
 
       {# Grand total #}
@@ -867,21 +830,18 @@
         <span class="grand-val" id="totalDisplay">{{ invoice.total|floatformat:0|intcomma }} FCFA</span>
       </div>
 
-      {# Insurance split #}
-      <div class="mt-2 pt-2" style="border-top:1px dashed #334155;">
-        <div class="tot-row mod-row align-items-center gap-1" style="font-size:.8rem;">
-          <span style="color:#60a5fa;"><i class="bi bi-shield-check me-1"></i>Insurance</span>
-          <div class="d-flex align-items-center gap-1 ms-auto">
-            <input type="number" id="insAmt" class="form-control form-control-sm" style="width:90px;text-align:right;font-size:.78rem;"
-                   value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
-            <span style="color:#475569;font-size:.72rem;">FCFA</span>
-            <button class="mod-btn" onclick="saveInsAmt()">Set</button>
-          </div>
-        </div>
-        <div class="tot-row mt-1" style="font-size:.85rem;">
-          <span style="color:#4ade80;"><i class="bi bi-person-fill me-1"></i>Patient pays</span>
-          <span class="patient-pays" id="patAmtDisplay">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>
-        </div>
+      {# Insurance — collapsed by default #}
+      <div class="tot-row mt-1">
+        <a href="#" class="text-muted" style="font-size:.75rem;text-decoration:none;" onclick="toggleInsurance(event)">
+          <i class="bi bi-shield-check me-1"></i><span id="insToggleLbl">{% if invoice.insurance_amount %}Insurance ({{ invoice.insurance_amount|floatformat:0|intcomma }} FCFA) ▴{% else %}Insurance split ▾{% endif %}</span>
+        </a>
+        {% if invoice.insurance_amount %}<span class="patient-pays" id="patAmtDisplay">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% else %}<span class="patient-pays" id="patAmtDisplay" style="display:none;">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% endif %}
+      </div>
+      <div id="insRow" style="display:{% if invoice.insurance_amount %}block{% else %}none{% endif %};" class="mod-row d-flex align-items-center gap-1 mt-1">
+        <input type="number" id="insAmt" class="form-control form-control-sm" style="width:90px;text-align:right;font-size:.78rem;"
+               value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
+        <span class="text-muted" style="font-size:.72rem;">FCFA</span>
+        <button class="mod-btn" onclick="saveInsAmt()">Set</button>
       </div>
     </div>
 
@@ -902,105 +862,24 @@
     <div class="pay-log" id="payLog"></div>
     {% endif %}
 
-    <div class="bal-row">
-      <span style="color:#94a3b8;">Balance Due</span>
-      <span id="balDisplay" class="{% if invoice.balance_due <= 0 %}bal-clear{% else %}bal-due{% endif %}">
+    {# Balance due + collect button #}
+    <div class="bal-row mt-1">
+      <span class="text-muted fw-semibold" style="font-size:.82rem;">Balance Due</span>
+      <span id="balDisplay" class="{% if invoice.balance_due <= 0 %}bal-clear{% else %}bal-due{% endif %}" style="font-size:1.1rem;">
         {{ invoice.balance_due|floatformat:0|intcomma }} FCFA
       </span>
     </div>
 
-    {# Payment section #}
-    <div class="pay-section">
-      <div class="pay-section-lbl">Record Payment</div>
-
-      {# Method buttons #}
-      <div class="method-btns" id="methBtns">
-        {% for val, label in payment_methods %}
-        <button class="meth-btn {% if val == 'CASH' %}active{% endif %}"
-                data-method="{{ val }}" onclick="pickMethod(this,'{{ val }}')">
-          {% if val == 'CASH' %}<i class="bi bi-cash me-1"></i>
-          {% elif val == 'MOBILE' %}<i class="bi bi-phone me-1"></i>
-          {% elif val == 'CARD' %}<i class="bi bi-credit-card me-1"></i>
-          {% elif val == 'TRANSFER' %}<i class="bi bi-bank me-1"></i>
-          {% elif val == 'INSURANCE' %}<i class="bi bi-shield-check me-1"></i>
-          {% else %}<i class="bi bi-currency-exchange me-1"></i>{% endif %}
-          {{ label }}
-        </button>
-        {% endfor %}
-        <button class="meth-btn" id="splitToggleBtn" onclick="toggleSplit()" style="border-color:#f59e0b;color:#f59e0b;">
-          <i class="bi bi-arrow-left-right me-1"></i>Split
-        </button>
-        {% if wallet_balance is not None %}
-        <button class="meth-btn" data-method="WALLET" onclick="pickMethod(this,'WALLET')" style="border-color:#166534;color:#166534;"
-                title="Patient Wallet ({{ wallet_balance|floatformat:0|intcomma }} FCFA)">
-          <i class="bi bi-wallet2 me-1"></i>Wallet
-          {% if wallet_balance > 0 %}<small class="ms-1" style="font-size:.65rem;">({{ wallet_balance|floatformat:0|intcomma }})</small>{% endif %}
-        </button>
-        {% endif %}
-      </div>
-
-      {# Insurance info #}
-      {% if active_insurance %}
-      <div id="insPanel" style="display:none;" class="ins-panel">
-        <div class="fw-bold mb-1"><i class="bi bi-shield-check me-1 text-info"></i>{{ active_insurance.provider }}</div>
-        <div>Policy: {{ active_insurance.policy_number|default:"—" }}</div>
-        {% if active_insurance.group_number %}<div>Group: {{ active_insurance.group_number }}</div>{% endif %}
-        {% if active_insurance.expiry_date %}
-        <div>Expires: <span class="{% if active_insurance.expiry_date < today %}" style="color:#f87171;{% endif %}">{{ active_insurance.expiry_date|date:"d M Y" }}</span></div>
-        {% endif %}
-        {% if active_insurance.notes %}<div class="small text-info mt-1"><i class="bi bi-info-circle me-1"></i>{{ active_insurance.notes }}</div>{% endif %}
-      </div>
-      {% else %}
-      <div id="insPanel" style="display:none;" class="pos-alert pos-alert-warn mb-2">
-        <i class="bi bi-exclamation-triangle me-1"></i>No insurance on file. Verify coverage first.
-      </div>
-      {% endif %}
-
-      {# Insurance pre-auth # field (shown only when INSURANCE/NHIS selected) #}
-      <div id="authNumDiv" style="display:none;margin-bottom:.5rem;">
-        <input type="text" id="insAuthNum" class="pay-ref"
-               placeholder="Pre-Authorization / Auth # (required)">
-      </div>
-
-      {# Single payment amount (default) #}
-      <div id="singlePayDiv">
-        <input type="number" id="payAmt" class="single-amt" placeholder="Amount (FCFA)" min="0"
-               value="{{ invoice.balance_due|floatformat:0 }}" oninput="updateChangeCalc()">
-        <div id="changeCalcRow" style="display:none;background:#052e16;border:1px solid #4ade80;border-radius:6px;padding:5px 10px;margin-bottom:.5rem;font-size:.88rem;font-weight:700;color:#4ade80;">
-          <i class="bi bi-arrow-return-left me-1"></i>Change: <span id="changeCalcAmt">0</span> FCFA
-        </div>
-        <input type="text" id="payRef" class="pay-ref" placeholder="Reference / MoMo # (optional)">
-      </div>
-
-      {# Split payment (Cash + MoMo) #}
-      <div id="splitPayDiv" style="display:none;">
-        <div class="split-grid">
-          <div class="split-card">
-            <div class="split-card-lbl split-cash-lbl"><i class="bi bi-cash me-1"></i>Cash (FCFA)</div>
-            <input type="number" id="splitCash" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
-          </div>
-          <div class="split-card">
-            <div class="split-card-lbl split-momo-lbl"><i class="bi bi-phone me-1"></i>Mobile Money</div>
-            <input type="number" id="splitMomo" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
-          </div>
-        </div>
-        <div class="d-flex justify-content-between align-items-center mb-2" style="font-size:.78rem;">
-          <span style="color:#94a3b8;">Split total:</span>
-          <span id="splitTotalDisplay" style="color:#f1f5f9;font-weight:700;">0 FCFA</span>
-        </div>
-        <input type="text" id="splitRef" class="pay-ref" placeholder="MoMo reference # (optional)">
-      </div>
-
-      <button type="button" class="btn-collect" id="collectBtn" onclick="collectPay()"
-              {% if invoice.status == 'PAID' %}style="background:linear-gradient(135deg,#334155,#475569);"{% endif %}>
-        <i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt
-      </button>
-    </div>
-
-    {# Reprint if paid #}
     {% if invoice.status == 'PAID' %}
-    <button class="btn-reprint" onclick="document.getElementById('receiptFrame').src='{{ receipt_url }}?popup=1';new bootstrap.Modal(document.getElementById('receiptViewerModal')).show();">
+    <div class="text-center py-2">
+      <span class="badge bg-success px-3 py-2 fs-6"><i class="bi bi-check-circle-fill me-1"></i>PAID IN FULL</span>
+    </div>
+    <button class="btn-reprint mt-1" onclick="document.getElementById('receiptFrame').src='{{ receipt_url }}?popup=1';new bootstrap.Modal(document.getElementById('receiptViewerModal')).show();">
       <i class="bi bi-printer me-2"></i>Reprint Receipt
+    </button>
+    {% else %}
+    <button type="button" class="btn-collect mt-2" onclick="openCollectModal()">
+      <i class="bi bi-cash-coin me-2"></i>Collect Payment
     </button>
     {% endif %}
 
@@ -1106,6 +985,114 @@
     </div>
   </div>
 </div>
+
+{# ── Collect Payment Modal ─────────────────────────────────────────────────── #}
+{% if invoice %}
+<div class="modal fade" id="collectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom">
+        <div>
+          <h6 class="modal-title fw-bold mb-0"><i class="bi bi-cash-coin me-2 text-primary"></i>Collect Payment</h6>
+          <small class="text-muted">{{ invoice.invoice_number }}</small>
+        </div>
+        <button type="button" class="btn-close ms-3" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+
+        {# Balance summary #}
+        <div class="d-flex justify-content-between align-items-center mb-3 p-2 rounded" style="background:#f8f9fa;border:1px solid #dee2e6;">
+          <span class="text-muted small">Balance Due</span>
+          <strong id="modalBalDisplay" class="fs-5" style="color:#dc2626;">{{ invoice.balance_due|floatformat:0|intcomma }} FCFA</strong>
+        </div>
+
+        {# Method buttons #}
+        <div class="method-btns mb-3" id="methBtns">
+          {% for val, label in payment_methods %}
+          <button class="meth-btn {% if val == 'CASH' %}active{% endif %}"
+                  data-method="{{ val }}" onclick="pickMethod(this,'{{ val }}')">
+            {% if val == 'CASH' %}<i class="bi bi-cash me-1"></i>
+            {% elif val == 'MOBILE' %}<i class="bi bi-phone me-1"></i>
+            {% elif val == 'CARD' %}<i class="bi bi-credit-card me-1"></i>
+            {% elif val == 'TRANSFER' %}<i class="bi bi-bank me-1"></i>
+            {% elif val == 'INSURANCE' %}<i class="bi bi-shield-check me-1"></i>
+            {% else %}<i class="bi bi-currency-exchange me-1"></i>{% endif %}
+            {{ label }}
+          </button>
+          {% endfor %}
+          <button class="meth-btn" id="splitToggleBtn" onclick="toggleSplit()">
+            <i class="bi bi-arrow-left-right me-1"></i>Split
+          </button>
+          {% if wallet_balance is not None %}
+          <button class="meth-btn" data-method="WALLET" onclick="pickMethod(this,'WALLET')"
+                  title="Patient Wallet ({{ wallet_balance|floatformat:0|intcomma }} FCFA)">
+            <i class="bi bi-wallet2 me-1"></i>Wallet
+            {% if wallet_balance > 0 %}<small class="ms-1" style="font-size:.65rem;">({{ wallet_balance|floatformat:0|intcomma }})</small>{% endif %}
+          </button>
+          {% endif %}
+        </div>
+
+        {# Insurance info panel #}
+        {% if active_insurance %}
+        <div id="insPanel" style="display:none;" class="ins-panel mb-2">
+          <div class="fw-bold mb-1"><i class="bi bi-shield-check me-1 text-info"></i>{{ active_insurance.provider }}</div>
+          <div>Policy: {{ active_insurance.policy_number|default:"—" }}</div>
+          {% if active_insurance.expiry_date %}
+          <div>Expires: {{ active_insurance.expiry_date|date:"d M Y" }}</div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div id="insPanel" style="display:none;" class="pos-alert pos-alert-warn mb-2">
+          <i class="bi bi-exclamation-triangle me-1"></i>No insurance on file. Verify coverage first.
+        </div>
+        {% endif %}
+
+        {# Insurance pre-auth # #}
+        <div id="authNumDiv" style="display:none;margin-bottom:.75rem;">
+          <input type="text" id="insAuthNum" class="pay-ref"
+                 placeholder="Pre-Authorization / Auth # (required)">
+        </div>
+
+        {# Single payment amount #}
+        <div id="singlePayDiv">
+          <input type="number" id="payAmt" class="single-amt" placeholder="Amount (FCFA)" min="0"
+                 value="{{ invoice.balance_due|floatformat:0 }}" oninput="updateChangeCalc()">
+          <div id="changeCalcRow" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:5px 10px;margin-bottom:.5rem;font-size:.88rem;font-weight:700;color:#166534;">
+            <i class="bi bi-arrow-return-left me-1"></i>Change: <span id="changeCalcAmt">0</span> FCFA
+          </div>
+          <input type="text" id="payRef" class="pay-ref" placeholder="Reference / MoMo # (optional)">
+        </div>
+
+        {# Split payment (Cash + MoMo) #}
+        <div id="splitPayDiv" style="display:none;">
+          <div class="split-grid">
+            <div class="split-card">
+              <div class="split-card-lbl"><i class="bi bi-cash me-1"></i>Cash (FCFA)</div>
+              <input type="number" id="splitCash" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
+            </div>
+            <div class="split-card">
+              <div class="split-card-lbl"><i class="bi bi-phone me-1"></i>Mobile Money</div>
+              <input type="number" id="splitMomo" class="split-input" placeholder="0" min="0" oninput="updateSplitBalance()">
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2" style="font-size:.78rem;">
+            <span class="text-muted">Split total:</span>
+            <span id="splitTotalDisplay" class="fw-bold">0 FCFA</span>
+          </div>
+          <input type="text" id="splitRef" class="pay-ref" placeholder="MoMo reference # (optional)">
+        </div>
+
+      </div>
+      <div class="modal-footer border-0 pt-0 gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn-collect flex-grow-1" id="collectBtn" onclick="collectPay()">
+          <i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# Price modal #}
 <div class="modal fade" id="priceModal" tabindex="-1">
@@ -1216,6 +1203,8 @@ function updateTotals(data) {
   if (bd && data.balance_due !== undefined) {
     bd.textContent = fmt(data.balance_due) + ' FCFA';
     bd.className = data.balance_due <= 0 ? 'bal-clear' : 'bal-due';
+    const mbd = document.getElementById('modalBalDisplay');
+    if (mbd) { mbd.textContent = fmt(data.balance_due) + ' FCFA'; mbd.style.color = data.balance_due <= 0 ? '#16a34a' : '#dc2626'; }
     const pa = document.getElementById('payAmt');
     if (pa && data.balance_due > 0) pa.value = Math.round(data.balance_due);
     if (splitMode) prefillSplit(data.balance_due);
@@ -1438,7 +1427,8 @@ function applyDiscount() {
 function updateInsSplit() {
   const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
   const ins   = parseFloat(document.getElementById('insAmt').value) || 0;
-  document.getElementById('patAmtDisplay').textContent = fmt(Math.max(total - ins, 0)) + ' FCFA';
+  const pat   = document.getElementById('patAmtDisplay');
+  if (pat) { pat.textContent = fmt(Math.max(total - ins, 0)) + ' FCFA'; pat.style.display = 'inline'; }
 }
 function saveInsAmt() {
   if (!INV_ID) return;
@@ -1516,6 +1506,43 @@ function updateSplitBalance() {
   const cash = parseFloat(document.getElementById('splitCash').value) || 0;
   const momo = parseFloat(document.getElementById('splitMomo').value) || 0;
   document.getElementById('splitTotalDisplay').textContent = fmt(cash + momo) + ' FCFA';
+}
+
+// ── Open collect modal ────────────────────────────────────────────────────────
+function openCollectModal() {
+  if (!INV_ID) return;
+  const balEl = document.getElementById('balDisplay');
+  const modalBal = document.getElementById('modalBalDisplay');
+  if (balEl && modalBal) {
+    modalBal.textContent = balEl.textContent;
+    const balNum = parseFloat(balEl.textContent.replace(/[^0-9.]/g,'')) || 0;
+    modalBal.style.color = balNum <= 0 ? '#16a34a' : '#dc2626';
+  }
+  const pa = document.getElementById('payAmt');
+  const balNum = parseFloat((balEl ? balEl.textContent : '').replace(/[^0-9.]/g,'')) || 0;
+  if (pa) pa.value = balNum > 0 ? Math.round(balNum) : '';
+  updateChangeCalc();
+  new bootstrap.Modal(document.getElementById('collectModal')).show();
+}
+
+// ── Toggle discount row ───────────────────────────────────────────────────────
+function toggleDiscount(e) {
+  e.preventDefault();
+  const row = document.getElementById('discRow');
+  const lbl = document.getElementById('discToggleLbl');
+  const show = row.style.display === 'none';
+  row.style.display = show ? 'flex' : 'none';
+  lbl.textContent = show ? 'Discount ▴' : 'Add discount ▾';
+}
+
+// ── Toggle insurance row ──────────────────────────────────────────────────────
+function toggleInsurance(e) {
+  e.preventDefault();
+  const row = document.getElementById('insRow');
+  const lbl = document.getElementById('insToggleLbl');
+  const show = row.style.display === 'none';
+  row.style.display = show ? 'flex' : 'none';
+  lbl.textContent = show ? 'Insurance ▴' : 'Insurance split ▾';
 }
 
 // ── Collect & Print ───────────────────────────────────────────────────────────
@@ -1608,6 +1635,7 @@ function _resetCollectBtn() {
   if (btn) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-printer-fill me-2"></i>Collect &amp; Print Receipt';
+    btn.style.background = '';
   }
 }
 
