@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('departments', '0001_initial'),
-        ('billing', '0015_patientwallet_wallettransaction_assetregister'),
+        ('billing', '0015_patient_wallet_asset_register'),
     ]
 
     operations = [
