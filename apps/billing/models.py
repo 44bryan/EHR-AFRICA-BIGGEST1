@@ -79,6 +79,12 @@ class DiscountApprovalStatus(models.TextChoices):
     REJECTED = 'REJECTED', 'Rejected'
 
 
+class DiscountType(models.TextChoices):
+    PERCENTAGE = 'PERCENTAGE', 'Percentage (%)'
+    AMOUNT     = 'AMOUNT',     'Fixed Amount (FCFA)'
+    REJECTED = 'REJECTED', 'Rejected'
+
+
 class ServiceSubCategory(AuditModel):
     """
     Sub-category within a ServiceCategory — e.g. "Frames" under OPTICAL.
@@ -1771,7 +1777,14 @@ class DiscountApproval(AuditModel):
         'accounts.User', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='approved_discounts'
     )
-    requested_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_type    = models.CharField(
+        max_length=20, choices=DiscountType.choices, default=DiscountType.AMOUNT,
+        help_text='Percentage (%) or Fixed Amount (FCFA)'
+    )
+    requested_amount = models.DecimalField(max_digits=10, decimal_places=2,
+        help_text='FCFA amount if AMOUNT type; computed FCFA value if PERCENTAGE type')
+    requested_pct    = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text='Percentage entered by cashier (only set when discount_type=PERCENTAGE)')
     approved_amount  = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text='May differ from requested if supervisor partially approves'

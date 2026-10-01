@@ -1259,6 +1259,15 @@ def cashier_pos(request, token_id):
             _wallet_balance = int(_w.balance) if _w else 0
         except Exception:
             _wallet_balance = None
+
+    # Pending discount approval for this invoice (blocks payment)
+    from apps.billing.models import DiscountApproval, DiscountApprovalStatus
+    _pending_discount = None
+    if invoice:
+        _pending_discount = DiscountApproval.objects.filter(
+            invoice=invoice, status=DiscountApprovalStatus.PENDING, is_deleted=False
+        ).order_by('-created_at').first()
+
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -1288,6 +1297,7 @@ def cashier_pos(request, token_id):
         'tier_changes': _tier_changes,
         'tier_choices': _ST.choices,
         'wallet_balance': _wallet_balance,
+        'pending_discount': _pending_discount,
     })
 
 
@@ -1473,24 +1483,81 @@ def pos_edit_item(request, item_id):
 @login_required
 @require_POST
 def pos_apply_discount(request, invoice_id):
-    """AJAX: Apply or update a discount on the invoice."""
+    """
+    AJAX: Cashier requests a discount — creates a DiscountApproval for Finance Director review.
+    Finance Director / Senior Accountant applying directly bypasses the approval queue.
+    Payment is blocked until the approval is decided.
+    """
+    from apps.billing.models import DiscountApproval, DiscountApprovalStatus, DiscountType
     invoice = get_object_or_404(Invoice, id=invoice_id, is_deleted=False)
 
-    try:
-        discount_amount = Decimal(request.POST.get('discount_amount', '0') or '0')
-    except InvalidOperation:
-        return JsonResponse({'success': False, 'error': 'Invalid discount amount.'}, status=400)
-
+    discount_type = request.POST.get('discount_type', 'AMOUNT')
     discount_reason = request.POST.get('discount_reason', '').strip()
 
-    invoice.discount_amount = discount_amount
-    invoice.discount_reason = discount_reason
-    invoice.save(update_fields=['discount_amount', 'discount_reason', 'updated_at'])
+    if discount_type == 'PERCENTAGE':
+        try:
+            pct = Decimal(request.POST.get('discount_pct', '0') or '0')
+            if pct < 0 or pct > 100:
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            return JsonResponse({'success': False, 'error': 'Percentage must be between 0 and 100.'}, status=400)
+        discount_amount = (invoice.subtotal * pct / 100).quantize(Decimal('1'))
+    else:
+        discount_type = 'AMOUNT'
+        try:
+            discount_amount = Decimal(request.POST.get('discount_amount', '0') or '0')
+        except InvalidOperation:
+            return JsonResponse({'success': False, 'error': 'Invalid discount amount.'}, status=400)
+        pct = None
 
-    invoice.refresh_from_db()
+    if discount_amount < 0:
+        return JsonResponse({'success': False, 'error': 'Discount cannot be negative.'}, status=400)
+    if discount_amount > invoice.subtotal:
+        return JsonResponse({'success': False, 'error': 'Discount cannot exceed invoice subtotal.'}, status=400)
+    if not discount_reason:
+        return JsonResponse({'success': False, 'error': 'Reason is required for a discount.'}, status=400)
+
+    # Finance Director / Senior Accountant can apply directly without approval queue
+    can_apply_directly = _can_approve_discount(request.user)
+
+    if can_apply_directly:
+        invoice.discount_amount = discount_amount
+        invoice.discount_reason = discount_reason
+        invoice.save(update_fields=['discount_amount', 'discount_reason', 'updated_at'])
+        invoice.refresh_from_db()
+        return JsonResponse({
+            'success': True,
+            'status': 'applied',
+            'message': f'Discount of {int(discount_amount):,} FCFA applied.',
+            'discount_amount': int(invoice.discount_amount),
+            'total': int(invoice.total),
+            'balance_due': int(invoice.balance_due),
+        })
+
+    # Cashier: cancel any previous PENDING approval for this invoice first
+    DiscountApproval.objects.filter(
+        invoice=invoice, status=DiscountApprovalStatus.PENDING, is_deleted=False
+    ).update(
+        status=DiscountApprovalStatus.REJECTED,
+        decision_notes='Superseded by new request',
+        decision_at=timezone.now(),
+    )
+
+    DiscountApproval.objects.create(
+        invoice=invoice,
+        requested_by=request.user,
+        discount_type=discount_type,
+        requested_amount=discount_amount,
+        requested_pct=pct,
+        reason=discount_reason,
+        status=DiscountApprovalStatus.PENDING,
+        created_by=request.user,
+    )
     return JsonResponse({
         'success': True,
-        'discount_amount': int(invoice.discount_amount),
+        'status': 'pending',
+        'message': 'Discount request sent to Finance Director for approval. Payment is blocked until approved.',
+        'discount_amount': int(invoice.discount_amount),  # unchanged until approved
         'total': int(invoice.total),
         'balance_due': int(invoice.balance_due),
     })
@@ -1515,6 +1582,21 @@ def pos_record_payment(request, invoice_id):
                 'success': False,
                 'error': 'Your shift is not open. Ask the Chief Cashier to open the working day before billing.'
             }, status=403)
+
+    # ── Block payment if a discount is awaiting Finance Director approval ──
+    from apps.billing.models import DiscountApproval, DiscountApprovalStatus
+    pending_discount = DiscountApproval.objects.filter(
+        invoice=invoice, status=DiscountApprovalStatus.PENDING, is_deleted=False
+    ).first()
+    if pending_discount:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                f'Payment blocked — a discount of {int(pending_discount.requested_amount):,} FCFA '
+                f'is awaiting Finance Director approval. '
+                f'Wait for approval or cancel the discount request.'
+            ),
+        }, status=403)
 
     payment_method = request.POST.get('payment_method', PaymentMethod.CASH)
     try:
@@ -7520,14 +7602,22 @@ def discount_request(request, invoice_id):
 
 @login_required
 def discount_approval_list(request):
-    """Supervisor view — pending discount approval requests."""
+    """Supervisor view — pending discount approval requests + recent decisions."""
     if not _can_approve_discount(request.user):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
-    qs = DiscountApproval.objects.filter(
+    pending = DiscountApproval.objects.filter(
         status=DiscountApprovalStatus.PENDING, is_deleted=False
     ).select_related('invoice', 'invoice__patient', 'requested_by').order_by('-created_at')
-    return render(request, 'billing/discount_approval_list.html', {'approvals': qs})
+    recent = DiscountApproval.objects.exclude(
+        status=DiscountApprovalStatus.PENDING
+    ).filter(is_deleted=False).select_related(
+        'invoice', 'invoice__patient', 'requested_by', 'approved_by'
+    ).order_by('-decision_at')[:20]
+    return render(request, 'billing/discount_approval_list.html', {
+        'approvals': pending,
+        'recent': recent,
+    })
 
 
 @json_error_handler

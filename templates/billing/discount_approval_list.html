@@ -3,17 +3,23 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">Discount Approval Queue</h5>
-      <div class="text-muted small">Pending cashier discount requests requiring supervisor sign-off</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold">Discount Approval Queue</h5>
+    <div class="text-muted small">Cashier discount requests — must be approved before payment proceeds</div>
   </div>
+  {% if approvals %}
+  <span class="badge bg-danger fs-6">{{ approvals|length }} pending</span>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="card border-0 shadow-sm">
+
+{# ── Pending queue ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-2 fw-semibold small">
+    <i class="bi bi-hourglass-split text-warning me-1"></i>Awaiting Decision
+  </div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
@@ -23,9 +29,10 @@
             <th>Invoice</th>
             <th>Patient</th>
             <th>Requested By</th>
-            <th class="text-end">Amount (XAF)</th>
+            <th>Type</th>
+            <th class="text-end">Amount (FCFA)</th>
             <th>Reason</th>
-            <th style="width:240px;"></th>
+            <th style="width:200px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -39,10 +46,16 @@
             </td>
             <td class="small">{{ ap.invoice.patient.full_name }}</td>
             <td class="small">{{ ap.requested_by|user_display }}</td>
+            <td class="small">
+              {% if ap.discount_type == 'PERCENTAGE' %}
+                <span class="badge bg-info text-dark">{{ ap.requested_pct }}%</span>
+              {% else %}
+                <span class="badge bg-secondary">Fixed</span>
+              {% endif %}
+            </td>
             <td class="text-end fw-bold">{{ ap.requested_amount|floatformat:0 }}</td>
             <td class="small text-muted fst-italic">{{ ap.reason|truncatechars:50 }}</td>
             <td class="text-end">
-              <!-- Approve / Reject via small inline forms -->
               <div class="d-flex gap-1 justify-content-end">
                 <button class="btn btn-success btn-sm" data-bs-toggle="modal"
                         data-bs-target="#approveModal{{ ap.pk|slugify }}">
@@ -68,19 +81,25 @@
                   {% csrf_token %}
                   <input type="hidden" name="decision" value="APPROVE">
                   <div class="modal-body">
+                    <p class="small text-muted mb-2">
+                      Patient: <strong>{{ ap.invoice.patient.full_name }}</strong><br>
+                      Invoice: {{ ap.invoice.invoice_number }}<br>
+                      {% if ap.discount_type == 'PERCENTAGE' %}Type: {{ ap.requested_pct }}% percentage{% endif %}
+                    </p>
                     <div class="mb-2">
-                      <label class="form-label small fw-semibold">Approved Amount (XAF)</label>
+                      <label class="form-label small fw-semibold">Approved Amount (FCFA)</label>
                       <input type="number" name="approved_amount" class="form-control form-control-sm"
-                             value="{{ ap.requested_amount }}" min="1" step="1">
+                             value="{{ ap.requested_amount|floatformat:0 }}" min="1" step="1">
+                      <div class="form-text">You may reduce the approved amount if needed.</div>
                     </div>
                     <div>
-                      <label class="form-label small fw-semibold">Notes</label>
+                      <label class="form-label small fw-semibold">Notes (optional)</label>
                       <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
                     </div>
                   </div>
                   <div class="modal-footer py-2">
                     <button type="submit" class="btn btn-success btn-sm w-100">
-                      <i class="bi bi-check2 me-1"></i>Confirm Approval
+                      <i class="bi bi-check2 me-1"></i>Confirm Approval — unblocks payment
                     </button>
                   </div>
                 </form>
@@ -100,6 +119,7 @@
                   {% csrf_token %}
                   <input type="hidden" name="decision" value="REJECT">
                   <div class="modal-body">
+                    <p class="small text-muted mb-2">Rejecting will unblock payment at full price.</p>
                     <label class="form-label small fw-semibold">Reason for Rejection</label>
                     <textarea name="notes" class="form-control form-control-sm" rows="2" required></textarea>
                   </div>
@@ -115,9 +135,9 @@
 
           {% empty %}
           <tr>
-            <td colspan="7" class="text-center text-muted py-5">
-              <i class="bi bi-check-circle-fill fs-1 text-success opacity-50 d-block mb-2"></i>
-              No pending discount requests.
+            <td colspan="8" class="text-center text-muted py-4">
+              <i class="bi bi-check-circle-fill fs-2 text-success opacity-50 d-block mb-2"></i>
+              No pending discount requests — all clear.
             </td>
           </tr>
           {% endfor %}
@@ -126,4 +146,62 @@
     </div>
   </div>
 </div>
+
+{# ── Recent decisions ── #}
+{% if recent %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 fw-semibold small">
+    <i class="bi bi-clock-history me-1 text-muted"></i>Recent Decisions (last 20)
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Decided</th>
+            <th>Invoice</th>
+            <th>Patient</th>
+            <th>Type</th>
+            <th class="text-end">Requested</th>
+            <th class="text-end">Approved</th>
+            <th>Status</th>
+            <th>By</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ap in recent %}
+          <tr>
+            <td class="small text-muted">{{ ap.decision_at|date:"d M H:i"|default:"—" }}</td>
+            <td class="small">
+              <a href="{% url 'billing:invoice_detail' invoice_id=ap.invoice.pk %}">{{ ap.invoice.invoice_number }}</a>
+            </td>
+            <td class="small">{{ ap.invoice.patient.full_name }}</td>
+            <td class="small">
+              {% if ap.discount_type == 'PERCENTAGE' %}
+                <span class="badge bg-info text-dark">{{ ap.requested_pct }}%</span>
+              {% else %}
+                <span class="badge bg-secondary">Fixed</span>
+              {% endif %}
+            </td>
+            <td class="text-end small">{{ ap.requested_amount|floatformat:0 }}</td>
+            <td class="text-end small">{{ ap.approved_amount|floatformat:0|default:"—" }}</td>
+            <td>
+              {% if ap.status == 'APPROVED' %}
+                <span class="badge bg-success">Approved</span>
+              {% else %}
+                <span class="badge bg-danger">Rejected</span>
+              {% endif %}
+            </td>
+            <td class="small">{{ ap.approved_by|user_display|default:"—" }}</td>
+            <td class="small text-muted">{{ ap.decision_notes|truncatechars:40|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

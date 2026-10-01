@@ -808,12 +808,48 @@
           <i class="bi bi-tag me-1"></i><span id="discToggleLbl">{% if invoice.discount_amount %}Discount ({{ invoice.discount_amount|floatformat:0|intcomma }} FCFA) ▴{% else %}Add discount ▾{% endif %}</span>
         </a>
       </div>
-      <div id="discRow" style="display:{% if invoice.discount_amount %}block{% else %}none{% endif %};" class="mod-row d-flex gap-1 align-items-center mt-1">
-        <input type="number" id="discAmt" class="form-control form-control-sm" style="width:80px;text-align:right;"
-               value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0">
-        <input type="text" id="discReason" class="form-control form-control-sm"
-               value="{{ invoice.discount_reason }}" placeholder="Reason…">
-        <button class="mod-btn" onclick="applyDiscount()">Apply</button>
+      {% if pending_discount %}
+      <div class="alert alert-warning py-1 px-2 mb-1" style="font-size:.75rem;">
+        <i class="bi bi-hourglass-split me-1"></i>
+        <strong>Discount pending FD approval</strong> —
+        {{ pending_discount.requested_amount|floatformat:0|intcomma }} FCFA
+        {% if pending_discount.requested_pct %}({{ pending_discount.requested_pct }}%){% endif %}
+        requested by {{ pending_discount.requested_by.get_full_name|default:pending_discount.requested_by.username }}.
+        Payment blocked until Finance Director decides.
+      </div>
+      {% endif %}
+      <div id="discRow" style="display:{% if invoice.discount_amount or pending_discount %}block{% else %}none{% endif %};" class="mt-1">
+        {# Type selector #}
+        <div class="d-flex gap-1 mb-1">
+          <div class="btn-group btn-group-sm" role="group" id="discTypeGroup">
+            <input type="radio" class="btn-check" name="discType" id="discTypeAmt" value="AMOUNT" autocomplete="off"
+                   {% if not pending_discount or pending_discount.discount_type == 'AMOUNT' %}checked{% endif %}
+                   onchange="toggleDiscInputs()">
+            <label class="btn btn-outline-secondary" for="discTypeAmt" style="font-size:.72rem;">FCFA Amount</label>
+            <input type="radio" class="btn-check" name="discType" id="discTypePct" value="PERCENTAGE" autocomplete="off"
+                   {% if pending_discount and pending_discount.discount_type == 'PERCENTAGE' %}checked{% endif %}
+                   onchange="toggleDiscInputs()">
+            <label class="btn btn-outline-secondary" for="discTypePct" style="font-size:.72rem;">% Percentage</label>
+          </div>
+        </div>
+        {# Amount row #}
+        <div id="discAmtRow" class="d-flex gap-1 align-items-center mb-1">
+          <input type="number" id="discAmt" class="form-control form-control-sm" style="width:90px;text-align:right;"
+                 value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0 FCFA">
+          <small class="text-muted">FCFA</small>
+        </div>
+        {# Percentage row (hidden by default) #}
+        <div id="discPctRow" class="d-flex gap-1 align-items-center mb-1" style="display:none!important;">
+          <input type="number" id="discPct" class="form-control form-control-sm" style="width:70px;text-align:right;"
+                 min="0" max="100" step="0.5" placeholder="0">
+          <small class="text-muted">% of subtotal</small>
+          <small class="text-info ms-1" id="discPctCalc"></small>
+        </div>
+        <div class="d-flex gap-1 align-items-center">
+          <input type="text" id="discReason" class="form-control form-control-sm"
+                 value="{{ invoice.discount_reason }}" placeholder="Reason (required)…">
+          <button class="mod-btn" onclick="applyDiscount()">Request</button>
+        </div>
       </div>
 
       {# Grand total #}
@@ -1256,6 +1292,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.cat-pane').forEach(p => {
     p.style.display = p.classList.contains('active') ? 'block' : 'none';
   });
+  toggleDiscInputs();
+  const pctInput = document.getElementById('discPct');
+  if (pctInput) pctInput.addEventListener('input', updatePctCalc);
   // Defensive: if page loads/reloads with an already-paid invoice, show receipt overlay
   {% if invoice.status == 'PAID' and invoice.id %}
   if (RECEIPT_URL && !sessionStorage.getItem('pos_shown_' + INV_ID)) {
@@ -1403,15 +1442,52 @@ function removeItem(itemId, btn) {
 }
 
 // ── Discount ──────────────────────────────────────────────────────────────────
+function toggleDiscInputs() {
+  const isPct = document.getElementById('discTypePct') && document.getElementById('discTypePct').checked;
+  const amtRow = document.getElementById('discAmtRow');
+  const pctRow = document.getElementById('discPctRow');
+  if (amtRow) amtRow.style.display = isPct ? 'none' : 'flex';
+  if (pctRow) pctRow.style.cssText = isPct
+    ? 'display:flex!important;gap:.25rem;align-items:center;margin-bottom:.25rem;'
+    : 'display:none!important;';
+}
+
+function updatePctCalc() {
+  const pct = parseFloat(document.getElementById('discPct') && document.getElementById('discPct').value) || 0;
+  const sub = parseFloat((document.getElementById('subtotalDisplay') || {}).textContent.replace(/[^0-9.]/g,'')) || 0;
+  const calc = Math.round(sub * pct / 100);
+  const el = document.getElementById('discPctCalc');
+  if (el) el.textContent = calc > 0 ? '= ' + fmt(calc) + ' FCFA' : '';
+}
+
 function applyDiscount() {
   if (!INV_ID) return;
+  const reason = (document.getElementById('discReason') || {value:''}).value.trim();
+  if (!reason) { toast('Reason is required for a discount.', 'warning'); return; }
+
+  const isPct = document.getElementById('discTypePct') && document.getElementById('discTypePct').checked;
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('discount_amount', document.getElementById('discAmt').value || '0');
-  fd.append('discount_reason', document.getElementById('discReason').value);
+  fd.append('discount_reason', reason);
+  if (isPct) {
+    fd.append('discount_type', 'PERCENTAGE');
+    fd.append('discount_pct', (document.getElementById('discPct') || {value:'0'}).value || '0');
+  } else {
+    fd.append('discount_type', 'AMOUNT');
+    fd.append('discount_amount', (document.getElementById('discAmt') || {value:'0'}).value || '0');
+  }
   fetch(`/billing/invoice/${INV_ID}/discount/`, { method: 'POST', body: fd })
     .then(r => r.json())
-    .then(data => { if (data.success) updateTotals(data); else toast(data.error, 'danger'); })
+    .then(data => {
+      if (!data.success) { toast(data.error, 'danger'); return; }
+      updateTotals(data);
+      if (data.status === 'pending') {
+        toast('<i class="bi bi-hourglass-split me-1"></i>' + data.message, 'warning');
+        setTimeout(() => location.reload(), 1800);
+      } else {
+        toast('<i class="bi bi-check-circle me-1"></i>' + (data.message || 'Discount applied.'), 'success');
+      }
+    })
     .catch(() => toast('Network error.', 'danger'));
 }
 
