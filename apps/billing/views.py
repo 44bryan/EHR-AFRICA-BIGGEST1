@@ -3071,6 +3071,9 @@ def service_price_list(request):
     if etype:
         prices = prices.filter(entry_type=etype)
     prices = prices.order_by('entry_type', 'category', 'sub_category__sort_order', 'name')
+    from django.core.paginator import Paginator
+    paginator = Paginator(prices, 50)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
     sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).select_related('gl_account').order_by('category', 'sort_order')
     gl_revenue  = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
     gl_expense  = GLAccount.objects.filter(is_active=True, account_type='EXPENSE').order_by('code')
@@ -3083,7 +3086,9 @@ def service_price_list(request):
         ('INSURED', 'Insured / HMO Desk'),
     ]]
     return render(request, 'billing/service_prices.html', {
-        'prices': prices,
+        'prices': page_obj,
+        'page_obj': page_obj,
+        'paginator': paginator,
         'categories': ServiceCategory.choices,
         'entry_types': EntryType.choices,
         'sub_categories': sub_categories,
@@ -3096,6 +3101,7 @@ def service_price_list(request):
         'filter_sub': sub,
         'filter_tier': tier,
         'filter_etype': etype,
+        'total_count': paginator.count,
     })
 
 
