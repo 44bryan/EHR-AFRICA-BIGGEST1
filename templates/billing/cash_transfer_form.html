@@ -3,19 +3,22 @@
 
 {% block title %}New Cash Transfer{% endblock %}
 
-{% block page_header %}
-<nav aria-label="breadcrumb">
-  <ol class="breadcrumb mb-0 small">
-    <li class="breadcrumb-item"><a href="{% url 'billing:dashboard' %}">Billing</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'billing:cash_transfer_list' %}">Cash Transfers</a></li>
-    <li class="breadcrumb-item active">New Transfer</li>
-  </ol>
-</nav>
-{% endblock %}
+
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-lg-6 col-md-8">
+
+    {% if is_cashier %}
+    <div class="alert alert-info d-flex align-items-start gap-2 mb-3 py-2 px-3" style="font-size:.85rem;">
+      <i class="bi bi-info-circle-fill mt-1"></i>
+      <div>
+        Use this form to hand over your session cash to the <strong>Head Teller / Chief Cashier</strong> at end of shift.
+        {% if my_desk %}The system has pre-selected your current desk: <strong>{{ my_desk }}</strong>.{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white border-bottom">
         <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2"></i>New Cash Transfer</h5>
@@ -26,26 +29,27 @@
 
           <div class="mb-3">
             <label for="id_transfer_type" class="form-label fw-semibold">Transfer Type <span class="text-danger">*</span></label>
-            <select name="transfer_type" id="id_transfer_type" class="form-select" required>
+            <select name="transfer_type" id="id_transfer_type" class="form-select" required onchange="onTypeChange(this.value)">
               <option value="">-- Select type --</option>
               {% for value, label in transfer_types %}
-              <option value="{{ value }}">{{ label }}</option>
+              <option value="{{ value }}"{% if value == default_type %} selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
+            <div id="typeHelp" class="form-text text-muted" style="font-size:.78rem;"></div>
           </div>
 
-          <div class="mb-3">
+          <div class="mb-3" id="fromDeskRow">
             <label for="id_from_desk" class="form-label fw-semibold">From Desk</label>
             <select name="from_desk" id="id_from_desk" class="form-select">
-              <option value="">-- None (e.g. external) --</option>
+              <option value="">-- None --</option>
               {% for desk in desks %}
-              <option value="{{ desk.pk }}">{{ desk }}</option>
+              <option value="{{ desk.pk }}"{% if my_desk and desk.pk == my_desk.pk %} selected{% endif %}>{{ desk }}</option>
               {% endfor %}
             </select>
           </div>
 
-          <div class="mb-3">
-            <label for="id_to_desk" class="form-label fw-semibold">To Desk</label>
+          <div class="mb-3" id="toDeskRow">
+            <label for="id_to_desk" class="form-label fw-semibold" id="toDeskLabel">To (Head Teller / Safe / Desk)</label>
             <select name="to_desk" id="id_to_desk" class="form-select">
               <option value="">-- None (e.g. safe / bank) --</option>
               {% for desk in desks %}
@@ -86,4 +90,35 @@
     </div>
   </div>
 </div>
+
+<script>
+const TYPE_HELP = {
+  'DESK_TELLER': 'Cashier hands over session cash to the Head Teller / Chief Cashier.',
+  'DESK_SAFE':   'Cash moved from a desk into the hospital safe.',
+  'SAFE_BANK':   'Cash taken from the safe for bank deposit.',
+  'DESK_DESK':   'Cash transferred between two cashier desks (e.g. float rebalance).',
+  'FLOAT':       'Opening float issued from safe to a desk at start of shift.',
+};
+const TO_LABELS = {
+  'DESK_TELLER': 'To Head Teller / Chief Cashier Desk',
+  'DESK_SAFE':   'To Safe',
+  'SAFE_TO_BANK':'To Bank (leave desk blank)',
+  'DESK_DESK':   'To Desk',
+  'FLOAT':       'To Desk (receiving float)',
+};
+function onTypeChange(val) {
+  document.getElementById('typeHelp').textContent = TYPE_HELP[val] || '';
+  const lbl = document.getElementById('toDeskLabel');
+  lbl.textContent = TO_LABELS[val] || 'To (Head Teller / Safe / Desk)';
+  // SAFE_TO_BANK: hide both desk selects, they're not relevant
+  const showDesks = val !== 'SAFE_BANK';
+  document.getElementById('fromDeskRow').style.display = showDesks ? '' : 'none';
+  document.getElementById('toDeskRow').style.display  = showDesks ? '' : 'none';
+}
+// Run on load for default selection
+document.addEventListener('DOMContentLoaded', function() {
+  const sel = document.getElementById('id_transfer_type');
+  if (sel.value) onTypeChange(sel.value);
+});
+</script>
 {% endblock %}

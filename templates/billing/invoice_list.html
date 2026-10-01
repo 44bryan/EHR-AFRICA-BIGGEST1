@@ -1,11 +1,17 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
-{% block title %}Invoices{% endblock %}
+{% load humanize ehr_tags %}
+{% block title %}{% if is_cashier %}My Invoices{% else %}All Invoices{% endif %}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+
+<div class="d-flex justify-content-between align-items-center mb-3">
   <div>
+    {% if is_cashier %}
+    <h4 class="fw-bold mb-0">My Invoices</h4>
+    <small class="text-muted">Only invoices billed by you</small>
+    {% else %}
     <h4 class="fw-bold mb-0">All Invoices</h4>
     <small class="text-muted">Full audit trail — every invoice issued by any staff member</small>
+    {% endif %}
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="{% url 'billing:export_invoice_list' %}?q={{ search }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&cashier={{ cashier_filter }}" class="btn btn-success btn-sm">
@@ -14,9 +20,37 @@
     <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
       <i class="bi bi-printer me-1"></i>Print
     </button>
+    {% if not is_cashier %}
     <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Invoice</a>
+    {% endif %}
   </div>
 </div>
+
+{% if is_cashier %}
+{# ── Quick period tabs for cashier ── #}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a href="?period=today"
+     class="btn btn-sm {% if active_period == 'today' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-calendar-day me-1"></i>Today
+  </a>
+  <a href="?period=week"
+     class="btn btn-sm {% if active_period == 'week' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-calendar-week me-1"></i>This Week
+  </a>
+  <a href="?period=month"
+     class="btn btn-sm {% if active_period == 'month' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-calendar-month me-1"></i>This Month
+  </a>
+  <a href="?period=year"
+     class="btn btn-sm {% if active_period == 'year' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-calendar me-1"></i>This Year
+  </a>
+  <a href="{% url 'billing:invoice_list' %}"
+     class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-x me-1"></i>All Time
+  </a>
+</div>
+{% endif %}
 
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
@@ -47,10 +81,10 @@
       <div class="col-md-2">
         <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" title="From date">
       </div>
-      <div class="col-md-1">
+      <div class="col-md-2">
         <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" title="To date">
       </div>
-      <div class="col-md-2 d-flex gap-1">
+      <div class="col d-flex gap-1">
         <button type="submit" class="btn btn-primary btn-sm flex-grow-1">Filter</button>
         <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">✕</a>
       </div>
@@ -62,7 +96,9 @@
   <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
     <span class="small text-muted fw-semibold">
       {{ paginator.count }} invoice{{ paginator.count|pluralize }}
-      {% if date_from or date_to or search or status or cashier_filter %}<span class="badge bg-primary ms-1">filtered</span>{% endif %}
+      {% if date_from or date_to or search or status or cashier_filter or active_period %}
+      <span class="badge bg-primary ms-1">filtered</span>
+      {% endif %}
     </span>
     <span class="small text-muted">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
   </div>
@@ -73,7 +109,7 @@
           <tr>
             <th>Invoice #</th>
             <th>Patient</th>
-            <th>Issued By</th>
+            {% if not is_cashier %}<th>Issued By</th>{% endif %}
             <th>Date &amp; Time</th>
             <th class="text-end">Total</th>
             <th class="text-end">Paid</th>
@@ -87,6 +123,7 @@
           <tr>
             <td><code class="small">{{ inv.invoice_number }}</code></td>
             <td class="fw-semibold">{{ inv.patient.full_name }}</td>
+            {% if not is_cashier %}
             <td>
               {% if inv.created_by %}
               <div class="fw-semibold" style="font-size:.8rem;">{{ inv.created_by|user_display }}</div>
@@ -95,6 +132,7 @@
               <span class="text-muted">—</span>
               {% endif %}
             </td>
+            {% endif %}
             <td class="text-muted" style="white-space:nowrap;">
               {{ inv.created_at|date:"d M Y" }}<br>
               <span style="font-size:.72rem;">{{ inv.created_at|time:"H:i" }}</span>
