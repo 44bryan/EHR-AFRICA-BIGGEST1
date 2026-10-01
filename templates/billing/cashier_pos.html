@@ -106,6 +106,15 @@
 .cat-tc-standard  { background: #dbeafe; color: #1d4ed8; }
 .cat-tc-vip       { background: #ede9fe; color: #6d28d9; }
 .cat-tc-express   { background: #e0f2fe; color: #0369a1; }
+/* Sub-category / family header inside pane */
+.subcat-sep {
+  font-size: .68rem; font-weight: 700; color: #475569;
+  text-transform: uppercase; letter-spacing: .07em;
+  padding: 0.45rem 0.3rem 0.2rem;
+  border-top: 2px solid #e2e8f0; margin-top: 0.4rem;
+  background: linear-gradient(90deg,#f8fafc 0%,transparent 100%);
+}
+.subcat-sep:first-child { border-top: none; margin-top: 0; }
 /* Tier separator inside pane */
 .cat-tier-sep {
   font-size: .68rem; font-weight: 700; color: #94a3b8;
@@ -608,108 +617,127 @@
       {# ── Tier chip helper macro (inline) ───────────────────────────── #}
       {# Rendered by each pane — shows tier badge for tier-specific services #}
 
+      {# ── Shared service button macro ─────────────────────────────── #}
+      {# Used by every pane below via catalog_grouped[PANE_KEY] #}
+
       {# Registration #}
       <div class="cat-pane {% if not doctor_orders %}active{% endif %}" data-cat="REG">
-        {% for svc in service_catalog %}{% if svc.category == 'REG' %}
-        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.REG.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No registration services configured.</div>
+        {% endfor %}
       </div>
 
       {# Consultation #}
       <div class="cat-pane" data-cat="CONSULT">
-        {% for svc in service_catalog %}{% if svc.category == 'CONSULT' %}
-        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.CONSULT.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No consultation services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Clinical Exams (optometry) — tier-sorted #}
+      {# Clinical Exams #}
       <div class="cat-pane" data-cat="CLINICAL">
-        {% for svc in service_catalog %}{% if svc.category == 'CLINICAL' and svc.tier == '' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
-        {% for svc in service_catalog %}{% if svc.category == 'CLINICAL' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
-        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.CLINICAL.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No clinical exam services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Investigations — tier-sorted (imaging/diagnostics only) #}
+      {# Investigations #}
       <div class="cat-pane" data-cat="INVEST">
-        {% for svc in service_catalog %}{% if svc.category == 'INVEST' and svc.tier == '' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
-        {% for svc in service_catalog %}{% if svc.category == 'INVEST' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
-        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.INVEST.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No investigation services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Lab — tier-sorted #}
+      {# Lab #}
       <div class="cat-pane" data-cat="LAB">
-        {% for svc in service_catalog %}{% if svc.category == 'LAB' and svc.tier == '' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
-        {% for svc in service_catalog %}{% if svc.category == 'LAB' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
-        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.LAB.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No laboratory services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Pharmacy / Optical — tier-sorted #}
+      {# Pharmacy + Optical (combined as PHARM pane) #}
       <div class="cat-pane" data-cat="PHARM">
-        {% for svc in service_catalog %}{% if svc.category == 'PHARMACY' or svc.category == 'OPTICAL' %}
-        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-          <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.PHARM.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No pharmacy / optical services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Surgery — tier-sorted #}
+      {# Surgery #}
       <div class="cat-pane" data-cat="SURGERY">
-        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' and svc.tier == '' %}
-        <button class="svc-btn" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}</span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
-        {% for svc in service_catalog %}{% if svc.category == 'SURGICAL' and svc.tier != '' %}{% if forloop.first %}<div class="cat-tier-sep"><i class="bi bi-diamond-fill me-1" style="font-size:.55rem;"></i>Tier-specific pricing</div>{% endif %}
-        <button class="svc-btn{% if svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small></span>
-          <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.SURGERY.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No surgical services configured.</div>
+        {% endfor %}
       </div>
 
-      {# Other / Admission #}
+      {# Other + Admission (combined as OTHER pane) #}
       <div class="cat-pane" data-cat="OTHER">
-        {% for svc in service_catalog %}{% if svc.category == 'OTHER' or svc.category == 'ADMISSION' %}
-        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-          <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-        </button>
-        {% endif %}{% endfor %}
+        {% for subcat_name, svcs in catalog_grouped.OTHER.items %}
+          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
+          {% for svc in svcs %}
+          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+            <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+          </button>
+          {% endfor %}
+        {% empty %}
+        <div class="text-muted small p-2">No other services configured.</div>
+        {% endfor %}
       </div>
 
       {# Custom #}

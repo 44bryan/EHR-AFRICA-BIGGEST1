@@ -915,6 +915,40 @@ def waive_invoice(request, invoice_id):
 # POS (Point of Sale) — Cashier Station
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Map DB category → POS tab key (used by _build_catalog_grouped)
+_CAT_TO_PANE = {
+    'REG':       'REG',
+    'CONSULT':   'CONSULT',
+    'CLINICAL':  'CLINICAL',
+    'INVEST':    'INVEST',
+    'LAB':       'LAB',
+    'PHARMACY':  'PHARM',
+    'OPTICAL':   'PHARM',
+    'SURGICAL':  'SURGERY',
+    'OTHER':     'OTHER',
+    'ADMISSION': 'OTHER',
+}
+
+
+def _build_catalog_grouped(catalog):
+    """
+    Returns {pane_key: OrderedDict{subcat_name_or_empty: [svcs]}}
+    Services without a sub-category are grouped under '' (empty string).
+    Already sorted by sub_category__sort_order from the DB query.
+    """
+    from collections import OrderedDict
+    grouped = {}
+    for svc in catalog:
+        pane = _CAT_TO_PANE.get(svc['category'], 'OTHER')
+        subcat = svc.get('sub_category__name') or ''
+        if pane not in grouped:
+            grouped[pane] = OrderedDict()
+        if subcat not in grouped[pane]:
+            grouped[pane][subcat] = []
+        grouped[pane][subcat].append(svc)
+    return grouped
+
+
 def _get_service_catalog(cashier_station=None):
     """
     Load active service prices from the Charge Master (DB), filtered by cashier station tier.
@@ -931,10 +965,11 @@ def _get_service_catalog(cashier_station=None):
             # Show services with no tier restriction OR matching this cashier's tier(s)
             qs = qs.filter(Q(tier='') | Q(tier__in=_tiers))
         return list(
-            qs.order_by('tier', 'category', 'name')
+            qs.order_by('category', 'sub_category__sort_order', 'sub_category__name', 'tier', 'name')
             .values('id', 'name', 'category', 'tier', 'price', 'nhis_price',
                     'insurance_price', 'requires_price_entry', 'code',
                     'gl_account__code', 'sub_category__gl_account__code',
+                    'sub_category__name', 'sub_category__sort_order',
                     'tax_rate', 'is_taxable', 'price_ht')
         )
     except Exception:
@@ -1276,7 +1311,8 @@ def cashier_pos(request, token_id):
         'payments': payments,
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
-        'service_catalog': _get_service_catalog(cashier_station=_pos_tier),
+        'service_catalog': (_sc := _get_service_catalog(cashier_station=_pos_tier)),
+        'catalog_grouped': _build_catalog_grouped(_sc),
         'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
