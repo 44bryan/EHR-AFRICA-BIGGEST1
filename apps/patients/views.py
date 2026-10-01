@@ -169,7 +169,7 @@ def patient_register_view(request):
             _posted_tier = request.POST.get('service_tier', 'STANDARD')
             _u2 = request.user
             _u2_tier = (getattr(_u2, 'patient_tier', '') or '').strip()
-            _all_tiers2 = ['STANDARD', 'EXPRESS', 'VIP']
+            _all_tiers2 = ['STANDARD', 'EXPRESS', 'VIP', 'EVIP']
             _unrestricted2 = _u2.is_super_admin or _u2.is_medical_director or _u2.is_admin_director or _u2.is_ceo
             if not _unrestricted2 and _u2_tier and _u2_tier not in ('ALL', ''):
                 _allowed2 = [_u2_tier]

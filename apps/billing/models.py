@@ -48,6 +48,7 @@ class ServiceTierFilter(models.TextChoices):
     STANDARD   = 'STANDARD',  'Standard Desk Only'
     EXPRESS    = 'EXPRESS',   'Express Desk Only'
     VIP        = 'VIP',       'VIP Desk Only'
+    EVIP       = 'EVIP',      'Executive VIP Desk Only'
     INSURED    = 'INSURED',   'Insured / HMO Desk Only'
 
 

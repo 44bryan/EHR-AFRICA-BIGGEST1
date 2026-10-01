@@ -28,6 +28,7 @@ class Appointment(AuditModel):
         STANDARD = 'STANDARD', _('Standard')
         EXPRESS = 'EXPRESS', _('Express')
         VIP = 'VIP', _('VIP')
+        EVIP = 'EVIP', _('Executive VIP')
 
     appointment_number = models.CharField(max_length=20, unique=True, editable=False)
     patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='appointments')

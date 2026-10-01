@@ -2958,6 +2958,7 @@ def service_price_list(request):
         ('STANDARD', 'Standard Desk'),
         ('EXPRESS', 'Express Desk'),
         ('VIP', 'VIP Desk'),
+        ('EVIP', 'Executive VIP Desk'),
         ('INSURED', 'Insured / HMO Desk'),
     ]]
     return render(request, 'billing/service_prices.html', {
@@ -6877,7 +6878,7 @@ def desk_create(request):
             messages.success(request, f'Cash desk "{desk.name}" created.')
             return redirect('billing:desk_list')
     context = {'desk_types': DeskType.choices, 'tier_choices': [
-        ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'),
+        ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'), ('EVIP', 'Executive VIP'),
     ]}
     return render(request, 'billing/desk_form.html', context)
 
@@ -6908,7 +6909,7 @@ def desk_edit(request, desk_id):
         'desk': desk,
         'desk_types': DeskType.choices,
         'tier_choices': [
-            ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'),
+            ('STANDARD', 'Standard'), ('EXPRESS', 'Express'), ('VIP', 'VIP'), ('EVIP', 'Executive VIP'),
         ],
     }
     return render(request, 'billing/desk_form.html', context)
