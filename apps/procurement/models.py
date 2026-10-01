@@ -163,14 +163,14 @@ class GoodsReceivedNote(AuditModel):
     grn_number = models.CharField(max_length=20, unique=True, blank=True)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='grns')
     received_by = models.ForeignKey(
-        'accounts.User', on_delete=models.SET_NULL, null=True, related_name='grns_received'
+        'accounts.User', on_delete=models.SET_NULL, null=True, related_name='procurement_grns_received'
     )
     received_date = models.DateField(default=timezone.now)
     delivery_note_ref = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
     is_verified = models.BooleanField(default=False)
     verified_by = models.ForeignKey(
-        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='grns_verified'
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='procurement_grns_verified'
     )
 
     class Meta:
