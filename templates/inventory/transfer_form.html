@@ -75,8 +75,8 @@
           <tbody id="itemsBody">
             <tr class="item-row">
               <td>
-                <select name="item_id[]" class="form-select form-select-sm" required>
-                  <option value="">-- Select item --</option>
+                <select name="item_id[]" class="form-select form-select-sm ts-transfer-item" required>
+                  <option value="">-- Type to search item --</option>
                   {% for item in items %}
                   <option value="{{ item.id }}">{{ item.name }} ({{ item.item_code }})</option>
                   {% endfor %}
@@ -110,18 +110,27 @@
 </form>
 
 <script>
+function initTransferTsSelects(){
+  document.querySelectorAll('.ts-transfer-item').forEach(function(el){
+    if(el.tomselect) return;
+    new TomSelect(el, {placeholder:'Type to search item...', searchField:['text'], maxOptions:50});
+  });
+}
 document.addEventListener('DOMContentLoaded', function() {
+  initTransferTsSelects();
   const tbody = document.getElementById('itemsBody');
   const addBtn = document.getElementById('addRowBtn');
 
   addBtn.addEventListener('click', function() {
     const firstRow = tbody.querySelector('.item-row');
     const newRow = firstRow.cloneNode(true);
-    // Reset values
-    newRow.querySelector('select[name="item_id[]"]').value = '';
+    const sel = newRow.querySelector('select[name="item_id[]"]');
+    if(sel && sel.tomselect){ sel.tomselect.destroy(); }
+    sel.value = '';
     newRow.querySelector('input[name="quantity[]"]').value = '1';
     newRow.querySelector('input[name="item_notes[]"]').value = '';
     tbody.appendChild(newRow);
+    initTransferTsSelects();
     bindRemoveButtons();
   });
 
@@ -147,4 +156,5 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 </script>
+{% include 'components/tom_select.html' %}
 {% endblock %}

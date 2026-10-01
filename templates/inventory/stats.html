@@ -223,10 +223,11 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function(){
+function initInvStatsCharts(){
+  ['trendChart','catChart','dailyChart','deptChart'].forEach(function(id){
+    var c = Chart.getChart(id); if(c) c.destroy();
+  });
   const COLORS = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#20c997','#fd7e14','#0dcaf0','#d63384','#6610f2','#adb5bd','#495057'];
-
-  // 12-month trend
   new Chart(document.getElementById('trendChart'), {
     type:'bar',
     data:{
@@ -238,27 +239,25 @@ document.addEventListener('DOMContentLoaded', function(){
     },
     options:{responsive:true, plugins:{legend:{position:'top',labels:{font:{size:11}}}}, scales:{y:{beginAtZero:true}}}
   });
-
-  // Category doughnut
   new Chart(document.getElementById('catChart'), {
     type:'doughnut',
     data:{labels:{{ cat_labels|safe }}, datasets:[{data:{{ cat_counts|safe }}, backgroundColor:COLORS}]},
     options:{responsive:true, plugins:{legend:{position:'right',labels:{font:{size:10}}}}}
   });
-
-  // Daily bar
   new Chart(document.getElementById('dailyChart'), {
     type:'bar',
     data:{labels:{{ daily_labels|safe }}, datasets:[{label:'Movements', data:{{ daily_data|safe }}, backgroundColor:'rgba(13,110,253,.5)', borderRadius:2}]},
     options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}, x:{ticks:{maxTicksLimit:10,font:{size:9}}}}}
   });
-
-  // Dept consumption
   new Chart(document.getElementById('deptChart'), {
     type:'bar',
     data:{labels:{{ dept_labels|safe }}, datasets:[{label:'Items Issued', data:{{ dept_values|safe }}, backgroundColor:'rgba(111,66,193,.6)', borderRadius:3}]},
     options:{indexAxis:'y', responsive:true, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}
   });
+}
+document.addEventListener('DOMContentLoaded', initInvStatsCharts);
+document.addEventListener('htmx:afterSettle', function(e){
+  if(document.getElementById('trendChart')) initInvStatsCharts();
 });
 </script>
 {% endblock %}

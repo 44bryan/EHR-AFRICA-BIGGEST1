@@ -320,19 +320,29 @@ def item_list(request):
     from django.core.paginator import Paginator
     q        = request.GET.get('q', '')
     category = request.GET.get('category', '')
-    items    = InventoryItem.objects.filter(is_deleted=False).select_related('preferred_vendor')
+    store    = request.GET.get('store', '')
+    low      = request.GET.get('low', '')
+    items    = InventoryItem.objects.filter(is_deleted=False, is_active=True).select_related('preferred_vendor', 'store_location')
     if q:
         items = items.filter(Q(name__icontains=q) | Q(item_code__icontains=q))
     if category:
         items = items.filter(category=category)
+    if store:
+        items = items.filter(store_location_id=store)
+    if low:
+        items = items.filter(current_stock__lte=F('reorder_level'))
     paginator = Paginator(items.order_by('name'), 50)
     page_obj = paginator.get_page(request.GET.get('page'))
+    store_locations = StoreLocation.objects.filter(is_deleted=False, is_active=True).order_by('store_code')
     return render(request, 'inventory/item_list.html', {
-        'items':      page_obj,
-        'page_obj':   page_obj,
-        'search':     q,
-        'category':   category,
-        'categories': ItemCategory.choices,
+        'items':           page_obj,
+        'page_obj':        page_obj,
+        'search':          q,
+        'category':        category,
+        'store':           store,
+        'low':             low,
+        'categories':      ItemCategory.choices,
+        'store_locations': store_locations,
     })
 
 
@@ -1134,24 +1144,31 @@ def stock_count_create(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
     if request.method == 'POST':
+        store_id = request.POST.get('store_location', '').strip()
+        store = None
+        if store_id:
+            store = get_object_or_404(StoreLocation, pk=store_id, is_deleted=False)
         sc = StockCount.objects.create(
             counted_by=request.user,
             notes=request.POST.get('notes', '').strip(),
             created_by=request.user,
         )
-        # Auto-populate all active items with system quantities
-        items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
-        bulk = []
-        for item in items:
-            bulk.append(StockCountItem(
-                stock_count=sc, item=item,
-                system_quantity=item.current_stock,
-                physical_quantity=item.current_stock,  # default = system qty, user edits
-            ))
+        # Populate items — filter by store if selected (avoid loading all 2800+ items at once)
+        qs = InventoryItem.objects.filter(is_active=True, is_deleted=False)
+        if store:
+            qs = qs.filter(store_location=store)
+        qs = qs.order_by('name')
+        bulk = [StockCountItem(
+            stock_count=sc, item=item,
+            system_quantity=item.current_stock,
+            physical_quantity=item.current_stock,
+        ) for item in qs]
         StockCountItem.objects.bulk_create(bulk)
-        messages.success(request, f'Stock count {sc.count_number} started with {len(bulk)} items.')
+        label = f' ({store.store_code})' if store else ''
+        messages.success(request, f'Stock count {sc.count_number}{label} started — {len(bulk)} items.')
         return redirect('inventory:stock_count_detail', count_id=sc.pk)
-    return render(request, 'inventory/stock_count_form.html')
+    store_locations = StoreLocation.objects.filter(is_deleted=False, is_active=True).order_by('store_code')
+    return render(request, 'inventory/stock_count_form.html', {'store_locations': store_locations})
 
 
 @login_required

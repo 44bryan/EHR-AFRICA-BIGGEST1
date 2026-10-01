@@ -6,7 +6,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h5 class="fw-bold mb-0">Stock Entry Note</h5>
-      <p class="text-muted small mb-0">ISO 9001 &sect;8.5.1 &mdash; Controlled Stock Receipt</p>
+      <p class="text-muted small mb-0">Record goods received into store</p>
     </div>
     <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Entry Log</a>
   </div>
@@ -81,10 +81,10 @@
           <tbody id="entryLines">
             <tr class="entry-line">
               <td>
-                <select name="item_id[]" class="form-select form-select-sm" required onchange="fillEntryCost(this)">
-                  <option value="">-- Select Item --</option>
+                <select name="item_id[]" class="form-select form-select-sm ts-select-item" required onchange="fillEntryCost(this)">
+                  <option value="">-- Type to search item --</option>
                   {% for item in items %}
-                  <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
+                  <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} — {{ item.name }} ({{ item.unit }})</option>
                   {% endfor %}
                 </select>
               </td>
@@ -110,13 +110,28 @@
 </div>
 
 <script>
+function initTsSelects(){
+  document.querySelectorAll('.ts-select-item').forEach(function(el){
+    if(el.tomselect) return;
+    new TomSelect(el, {
+      placeholder:'Type to search item...',
+      searchField:['text'],
+      maxOptions:50,
+      onChange: function(val){ fillEntryCost(el); }
+    });
+  });
+}
 function addEntryLine(){
   const tbody = document.getElementById('entryLines');
   const first = tbody.querySelector('.entry-line');
   const clone = first.cloneNode(true);
   clone.querySelectorAll('input').forEach(i => i.value = '');
-  clone.querySelector('select').selectedIndex = 0;
+  // Reset Tom Select instance on cloned row
+  const sel = clone.querySelector('select');
+  if(sel && sel.tomselect){ sel.tomselect.destroy(); }
+  sel.selectedIndex = 0;
   tbody.appendChild(clone);
+  initTsSelects();
 }
 function fillEntryCost(sel){
   const opt = sel.options[sel.selectedIndex];
@@ -124,5 +139,7 @@ function fillEntryCost(sel){
   const costInput = sel.closest('tr').querySelector('input[name="unit_cost[]"]');
   if(costInput && cost) costInput.value = cost;
 }
+document.addEventListener('DOMContentLoaded', initTsSelects);
 </script>
+{% include 'components/tom_select.html' %}
 {% endblock %}
