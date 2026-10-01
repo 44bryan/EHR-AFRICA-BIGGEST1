@@ -391,10 +391,12 @@ def invoice_list(request):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
     from django.core.paginator import Paginator
+    from django.utils import timezone as _tz
     q = request.GET.get('q', '')
     status = request.GET.get('status', '')
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
+    period = request.GET.get('period', '')  # today / week / month / year
 
     from django.contrib.auth import get_user_model
     User = get_user_model()
@@ -417,8 +419,22 @@ def invoice_list(request):
     )
 
     # Cashiers see ONLY their own invoices — oversight roles see all
-    if request.user.role == UserRole.CASHIER and not request.user.is_superuser:
+    is_cashier = request.user.role == UserRole.CASHIER and not request.user.is_superuser
+    if is_cashier:
         invoices = invoices.filter(created_by=request.user)
+
+    # Quick period filter (cashier convenience: today/week/month/year)
+    _now = _tz.localtime(_tz.now())
+    if period == 'today':
+        invoices = invoices.filter(created_at__date=_now.date())
+    elif period == 'week':
+        from datetime import timedelta as _td
+        week_start = _now.date() - _td(days=_now.weekday())
+        invoices = invoices.filter(created_at__date__gte=week_start)
+    elif period == 'month':
+        invoices = invoices.filter(created_at__year=_now.year, created_at__month=_now.month)
+    elif period == 'year':
+        invoices = invoices.filter(created_at__year=_now.year)
 
     if q:
         from apps.core.utils import patient_search_q
@@ -444,12 +460,15 @@ def invoice_list(request):
     paginator = Paginator(invoices, 50)
     page_obj = paginator.get_page(request.GET.get('page'))
 
-    # Build cashier list for the filter dropdown (billing staff who have created invoices)
+    # Build cashier list for the filter dropdown — only shown to oversight roles
     _billing_roles = (
         UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
         UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
     )
-    cashiers = User.objects.filter(role__in=_billing_roles, is_active=True).order_by('first_name', 'last_name')
+    cashiers = (
+        [] if is_cashier
+        else User.objects.filter(role__in=_billing_roles, is_active=True).order_by('first_name', 'last_name')
+    )
 
     return render(request, 'billing/invoice_list.html', {
         'page_obj': page_obj,
@@ -461,6 +480,8 @@ def invoice_list(request):
         'cashier_filter': cashier_filter,
         'cashiers': cashiers,
         'statuses': InvoiceStatus.choices,
+        'is_cashier': is_cashier,
+        'active_period': period,
     })
 
 
@@ -8276,6 +8297,16 @@ def cash_transfer_create(request):
         messages.error(request, 'Access denied.')
         return redirect('billing:dashboard')
     desks = CashDesk.objects.filter(is_deleted=False, is_active=True)
+
+    # Auto-detect cashier's current open session desk for pre-fill
+    my_desk = None
+    if request.user.role == UserRole.CASHIER:
+        open_session = CashierSession.objects.filter(
+            cashier=request.user, closed_at__isnull=True, is_deleted=False
+        ).select_related('cash_desk').first()
+        if open_session:
+            my_desk = open_session.cash_desk
+
     if request.method == 'POST':
         xfer = CashTransfer(
             transfer_type=request.POST.get('transfer_type'),
@@ -8293,9 +8324,15 @@ def cash_transfer_create(request):
         xfer.save()
         messages.success(request, f'Cash transfer of {xfer.amount:,.0f} XAF recorded.')
         return redirect('billing:cash_transfer_list')
+
+    # Default type for cashiers is Desk → Head Teller
+    default_type = TransferType.DESK_TO_TELLER if request.user.role == UserRole.CASHIER else ''
     return render(request, 'billing/cash_transfer_form.html', {
         'desks': desks,
         'transfer_types': TransferType.choices,
+        'my_desk': my_desk,
+        'default_type': default_type,
+        'is_cashier': request.user.role == UserRole.CASHIER,
     })
 
 
@@ -9613,3 +9650,153 @@ def gl_mapping_seed(request):
 
     messages.success(request, f'GL mappings seeded — {created} new, {len(DEFAULTS) - created} updated.')
     return redirect('billing:gl_mapping_list')
+
+
+# ── Asset Maintenance ─────────────────────────────────────────────────────────
+
+def _can_manage_maintenance(user):
+    return user.is_superuser or user.role in (
+        UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR,
+        UserRole.SENIOR_ACCOUNTANT,
+    )
+
+
+@login_required
+def maintenance_list(request):
+    if not _can_manage_maintenance(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import MaintenanceWorkOrder, MaintenanceSchedule
+    from django.utils import timezone as _tz
+    today = _tz.now().date()
+    wos = MaintenanceWorkOrder.objects.select_related('asset', 'performed_by').order_by('-created_at')
+    overdue = MaintenanceSchedule.objects.filter(
+        next_due__lt=today, is_active=True, is_deleted=False
+    ).select_related('asset').count()
+    status_filter = request.GET.get('status', '')
+    if status_filter:
+        wos = wos.filter(status=status_filter)
+    from .models import MaintenanceStatus
+    return render(request, 'billing/maintenance_list.html', {
+        'wos': wos,
+        'overdue_count': overdue,
+        'status_filter': status_filter,
+        'statuses': MaintenanceStatus.choices,
+    })
+
+
+@login_required
+def maintenance_schedule_list(request):
+    if not _can_manage_maintenance(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import MaintenanceSchedule
+    from django.utils import timezone as _tz
+    today = _tz.now().date()
+    schedules = MaintenanceSchedule.objects.filter(is_deleted=False).select_related('asset', 'assigned_to').order_by('next_due')
+    return render(request, 'billing/maintenance_schedule_list.html', {
+        'schedules': schedules,
+        'today': today,
+    })
+
+
+@login_required
+def maintenance_wo_create(request, asset_id):
+    if not _can_manage_maintenance(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import AssetRegister, MaintenanceSchedule, MaintenanceWorkOrder, MaintenanceType
+    asset = get_object_or_404(AssetRegister, pk=asset_id)
+    schedules = MaintenanceSchedule.objects.filter(asset=asset, is_active=True, is_deleted=False)
+    if request.method == 'POST':
+        mtype = request.POST.get('maintenance_type', 'PREVENTIVE')
+        desc = request.POST.get('description', '').strip()
+        est_cost = request.POST.get('estimated_cost', '0') or '0'
+        schedule_id = request.POST.get('schedule_id') or None
+        if not desc:
+            messages.error(request, 'Description is required.')
+        else:
+            MaintenanceWorkOrder.objects.create(
+                asset=asset,
+                schedule_id=schedule_id,
+                maintenance_type=mtype,
+                description=desc,
+                estimated_cost=est_cost,
+                created_by=request.user,
+            )
+            messages.success(request, 'Work order created.')
+            return redirect('billing:maintenance_list')
+    return render(request, 'billing/maintenance_wo_form.html', {
+        'asset': asset,
+        'schedules': schedules,
+        'maintenance_types': MaintenanceType.choices,
+    })
+
+
+@login_required
+def maintenance_wo_complete(request, wo_id):
+    if not _can_manage_maintenance(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:maintenance_list')
+    from .models import MaintenanceWorkOrder, MaintenanceStatus
+    from django.utils import timezone as _tz
+    wo = get_object_or_404(MaintenanceWorkOrder, pk=wo_id)
+    if request.method == 'POST':
+        status = request.POST.get('status', 'DONE')
+        actual_cost = request.POST.get('actual_cost', '0') or '0'
+        findings = request.POST.get('findings', '').strip()
+        parts_used = request.POST.get('parts_used', '').strip()
+        wo.status = status
+        wo.actual_cost = actual_cost
+        wo.findings = findings
+        wo.parts_used = parts_used
+        wo.performed_by = request.user
+        if status == 'DONE':
+            wo.completed_at = _tz.now()
+            # Update schedule last_done + next_due
+            if wo.schedule:
+                from dateutil.relativedelta import relativedelta
+                sched = wo.schedule
+                sched.last_done = _tz.now().date()
+                freq_map = {
+                    'MONTHLY': relativedelta(months=1),
+                    'QUARTERLY': relativedelta(months=3),
+                    'BIANNUAL': relativedelta(months=6),
+                    'ANNUAL': relativedelta(years=1),
+                    'AS_NEEDED': relativedelta(years=1),
+                }
+                sched.next_due = _tz.now().date() + freq_map.get(sched.frequency, relativedelta(years=1))
+                sched.save()
+        wo.save()
+        messages.success(request, f'Work order {wo.wo_number} updated to {wo.get_status_display()}.')
+    return redirect('billing:maintenance_list')
+
+
+@login_required
+def maintenance_schedule_create(request, asset_id):
+    if not _can_manage_maintenance(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import AssetRegister, MaintenanceSchedule, MaintenanceFrequency
+    asset = get_object_or_404(AssetRegister, pk=asset_id)
+    if request.method == 'POST':
+        frequency = request.POST.get('frequency', 'ANNUAL')
+        next_due = request.POST.get('next_due')
+        desc = request.POST.get('description', '').strip()
+        assigned_id = request.POST.get('assigned_to') or None
+        MaintenanceSchedule.objects.create(
+            asset=asset,
+            frequency=frequency,
+            next_due=next_due,
+            description=desc,
+            assigned_to_id=assigned_id,
+        )
+        messages.success(request, f'Maintenance schedule created for {asset.asset_name}.')
+        return redirect('billing:maintenance_schedule_list')
+    from apps.accounts.models import User
+    staff = User.objects.filter(is_active=True, is_deleted=False).order_by('last_name')
+    return render(request, 'billing/maintenance_schedule_form.html', {
+        'asset': asset,
+        'frequencies': MaintenanceFrequency.choices,
+        'staff': staff,
+    })

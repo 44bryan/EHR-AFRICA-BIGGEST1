@@ -1,0 +1,118 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Asset Maintenance{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Asset Maintenance Work Orders</h4>
+    <small class="text-muted">Track preventive &amp; corrective maintenance for all assets</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:maintenance_schedule_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-calendar2-check me-1"></i>Schedules
+    </a>
+    <a href="{% url 'billing:asset_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-archive me-1"></i>Asset Register
+    </a>
+  </div>
+</div>
+
+{% if overdue_count %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <span><strong>{{ overdue_count }}</strong> maintenance schedule{{ overdue_count|pluralize }} overdue. <a href="{% url 'billing:maintenance_schedule_list' %}">View schedules →</a></span>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="status" class="form-select form-select-sm" style="width:auto;">
+        <option value="">All Statuses</option>
+        {% for val, lbl in statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+      <a href="{% url 'billing:maintenance_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover small mb-0">
+      <thead class="table-light"><tr>
+        <th>WO #</th><th>Asset</th><th>Type</th>
+        <th class="text-end">Est. Cost</th><th class="text-end">Actual Cost</th>
+        <th>Status</th><th>Performed By</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for wo in wos %}
+      <tr>
+        <td><code class="small">{{ wo.wo_number }}</code></td>
+        <td class="fw-semibold">{{ wo.asset.asset_name }}</td>
+        <td class="text-muted small">{{ wo.get_maintenance_type_display }}</td>
+        <td class="text-end">{{ wo.estimated_cost|floatformat:0|intcomma }}</td>
+        <td class="text-end">{{ wo.actual_cost|floatformat:0|intcomma }}</td>
+        <td>
+          <span class="badge {% if wo.status == 'DONE' %}bg-success{% elif wo.status == 'IN_PROGRESS' %}bg-primary{% elif wo.status == 'DEFERRED' %}bg-secondary{% else %}bg-warning text-dark{% endif %}">
+            {{ wo.get_status_display }}
+          </span>
+        </td>
+        <td class="text-muted small">{{ wo.performed_by.get_full_name|default:"—" }}</td>
+        <td>
+          {% if wo.status != 'DONE' %}
+          <button class="btn btn-sm btn-outline-primary py-0" data-bs-toggle="modal"
+                  data-bs-target="#completeModal{{ wo.pk|slugify }}">Update</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-center text-muted py-4">No work orders yet</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% for wo in wos %}
+{% if wo.status != 'DONE' %}
+<div class="modal fade" id="completeModal{{ wo.pk|slugify }}" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Update — {{ wo.wo_number }} ({{ wo.asset.asset_name }})</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" action="{% url 'billing:maintenance_wo_complete' wo_id=wo.pk %}">{% csrf_token %}
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Status</label>
+            <select name="status" class="form-select form-select-sm">
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="DONE">Completed</option>
+              <option value="DEFERRED">Deferred</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Actual Cost (FCFA)</label>
+            <input type="number" name="actual_cost" class="form-control form-control-sm"
+                   value="{{ wo.actual_cost|floatformat:0 }}" min="0" step="1">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Findings / Actions Taken</label>
+            <textarea name="findings" class="form-control form-control-sm" rows="2">{{ wo.findings }}</textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Parts Used</label>
+            <input type="text" name="parts_used" class="form-control form-control-sm"
+                   value="{{ wo.parts_used }}" placeholder="e.g. Filter × 2, Oil 5L">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm w-100">Save Update</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

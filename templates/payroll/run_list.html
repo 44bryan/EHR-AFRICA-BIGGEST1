@@ -1,0 +1,36 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Payroll Runs{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0">Payroll Runs</h4>
+  <a href="{% url 'payroll:run_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Run</a>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover small mb-0">
+      <thead class="table-light"><tr>
+        <th>Period</th><th>Status</th><th>Payslips</th>
+        <th class="text-end">Gross</th><th class="text-end">Deductions</th><th class="text-end">Net</th>
+        <th>Created By</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="fw-semibold">{{ run.period_label }}</td>
+        <td><span class="badge {% if run.status == 'PAID' %}bg-success{% elif run.status == 'APPROVED' %}bg-primary{% elif run.status == 'PENDING' %}bg-warning text-dark{% elif run.status == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">{{ run.get_status_display }}</span></td>
+        <td>{{ run.payslips.count }}</td>
+        <td class="text-end">{{ run.total_gross|floatformat:0|intcomma }}</td>
+        <td class="text-end text-danger">{{ run.total_deductions|floatformat:0|intcomma }}</td>
+        <td class="text-end fw-semibold text-success">{{ run.total_net|floatformat:0|intcomma }}</td>
+        <td class="text-muted small">{{ run.created_by.get_full_name|default:"—" }}</td>
+        <td><a href="{% url 'payroll:run_detail' run_id=run.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-center text-muted py-4">No payroll runs</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

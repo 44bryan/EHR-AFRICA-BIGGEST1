@@ -1,0 +1,40 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Maintenance Schedules{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0">Maintenance Schedules</h4>
+  <a href="{% url 'billing:maintenance_list' %}" class="btn btn-outline-secondary btn-sm">Work Orders</a>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover small mb-0">
+      <thead class="table-light"><tr>
+        <th>Asset</th><th>Frequency</th><th>Next Due</th><th>Last Done</th><th>Assigned To</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for sched in schedules %}
+      <tr>
+        <td class="fw-semibold">{{ sched.asset.asset_name }}</td>
+        <td class="text-muted small">{{ sched.get_frequency_display }}</td>
+        <td class="{% if sched.next_due < today %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+          {{ sched.next_due|date:"d M Y" }}
+          {% if sched.next_due < today %}<span class="badge bg-danger ms-1">OVERDUE</span>{% endif %}
+        </td>
+        <td class="text-muted small">{{ sched.last_done|date:"d M Y"|default:"Never" }}</td>
+        <td class="text-muted small">{{ sched.assigned_to.get_full_name|default:"—" }}</td>
+        <td>{% if sched.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
+        <td>
+          <a href="{% url 'billing:maintenance_wo_create' asset_id=sched.asset.pk %}"
+             class="btn btn-sm btn-outline-primary py-0">Create WO</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="text-center text-muted py-4">No maintenance schedules set up yet.<br>
+        Go to <a href="{% url 'billing:asset_list' %}">Asset Register</a> to add schedules to assets.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

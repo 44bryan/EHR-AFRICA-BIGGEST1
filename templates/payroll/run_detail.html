@@ -1,0 +1,104 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ run.period_label }} Payroll{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">{{ run.period_label }} Payroll</h4>
+    <small class="text-muted">
+      Status: <span class="badge {% if run.status == 'PAID' %}bg-success{% elif run.status == 'APPROVED' %}bg-primary{% elif run.status == 'PENDING' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ run.get_status_display }}</span>
+    </small>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if run.status == 'DRAFT' %}
+    <form method="post" action="{% url 'payroll:run_generate' run_id=run.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-lightning me-1"></i>Generate Payslips
+      </button>
+    </form>
+    <form method="post" action="{% url 'payroll:run_approve' run_id=run.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-warning btn-sm">
+        <i class="bi bi-send me-1"></i>Submit for Approval
+      </button>
+    </form>
+    {% elif run.status == 'PENDING' and can_approve %}
+    <form method="post" action="{% url 'payroll:run_approve' run_id=run.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success btn-sm">
+        <i class="bi bi-check-circle me-1"></i>Approve Payroll
+      </button>
+    </form>
+    {% elif run.status == 'APPROVED' and can_approve %}
+    <form method="post" action="{% url 'payroll:run_mark_paid' run_id=run.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-cash-coin me-1"></i>Mark as Paid
+      </button>
+    </form>
+    {% endif %}
+    <a href="{% url 'payroll:run_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-4">{{ payslips.count }}</div>
+      <div class="text-muted small">Payslips</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-5">{{ run.total_gross|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Total Gross (FCFA)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-5 text-danger">{{ run.total_deductions|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Total Deductions</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-5 text-success">{{ run.total_net|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">Total Net Pay</div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom fw-semibold py-2">Payslips</div>
+  <div class="table-responsive">
+    <table class="table table-hover small mb-0">
+      <thead class="table-light"><tr>
+        <th>Staff</th><th>Role</th>
+        <th class="text-end">Basic</th>
+        <th class="text-end">Gross</th>
+        <th class="text-end">Deductions</th>
+        <th class="text-end">Net</th>
+        <th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for slip in payslips %}
+      <tr>
+        <td class="fw-semibold">{{ slip.staff.get_full_name }}</td>
+        <td class="text-muted small">{{ slip.staff.get_role_display }}</td>
+        <td class="text-end">{{ slip.basic_salary|floatformat:0|intcomma }}</td>
+        <td class="text-end">{{ slip.gross_pay|floatformat:0|intcomma }}</td>
+        <td class="text-end text-danger">{{ slip.total_deductions|floatformat:0|intcomma }}</td>
+        <td class="text-end fw-semibold text-success">{{ slip.net_pay|floatformat:0|intcomma }}</td>
+        <td><span class="badge {% if slip.status == 'PAID' %}bg-success{% elif slip.status == 'APPROVED' %}bg-primary{% else %}bg-secondary{% endif %}">{{ slip.get_status_display }}</span></td>
+        <td><a href="{% url 'payroll:payslip_detail' slip_id=slip.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-center text-muted py-4">No payslips yet. Click "Generate Payslips" to create them.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

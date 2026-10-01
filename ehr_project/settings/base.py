@@ -82,6 +82,9 @@ LOCAL_APPS = [
     'apps.dietary',
     'apps.mortuary',
     'apps.telemedicine',
+    # New operational modules
+    'apps.payroll',
+    'apps.procurement',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

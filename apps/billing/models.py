@@ -2166,10 +2166,11 @@ class StaffAdvance(AuditModel):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TransferType(models.TextChoices):
-    DESK_TO_SAFE  = 'DESK_SAFE',  'Cash Desk → Safe'
-    SAFE_TO_BANK  = 'SAFE_BANK',  'Safe → Bank'
-    DESK_TO_DESK  = 'DESK_DESK',  'Desk → Desk'
-    FLOAT_ISSUE   = 'FLOAT',      'Float Issued to Desk'
+    DESK_TO_TELLER = 'DESK_TELLER', 'Cash Desk → Head Teller'
+    DESK_TO_SAFE   = 'DESK_SAFE',   'Cash Desk → Safe'
+    SAFE_TO_BANK   = 'SAFE_BANK',   'Safe → Bank'
+    DESK_TO_DESK   = 'DESK_DESK',   'Desk → Desk'
+    FLOAT_ISSUE    = 'FLOAT',       'Float Issued to Desk'
 
 
 class TransferStatus(models.TextChoices):
@@ -2479,4 +2480,100 @@ class GLMapping(AuditModel):
             return m.gl_account.code
         except cls.DoesNotExist:
             return fallback
+
+
+# ── Asset Maintenance ─────────────────────────────────────────────────────────
+
+class MaintenanceFrequency(models.TextChoices):
+    MONTHLY = 'MONTHLY', 'Monthly'
+    QUARTERLY = 'QUARTERLY', 'Quarterly'
+    BIANNUAL = 'BIANNUAL', 'Every 6 Months'
+    ANNUAL = 'ANNUAL', 'Annual'
+    AS_NEEDED = 'AS_NEEDED', 'As Needed'
+
+
+class MaintenanceStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    DONE = 'DONE', 'Completed'
+    DEFERRED = 'DEFERRED', 'Deferred'
+
+
+class MaintenanceType(models.TextChoices):
+    PREVENTIVE = 'PREVENTIVE', 'Preventive'
+    CORRECTIVE = 'CORRECTIVE', 'Corrective'
+    INSPECTION = 'INSPECTION', 'Inspection'
+    CALIBRATION = 'CALIBRATION', 'Calibration'
+
+
+class MaintenanceSchedule(AuditModel):
+    """Recurring maintenance schedule for an asset."""
+    asset = models.ForeignKey(
+        'AssetRegister', on_delete=models.CASCADE, related_name='maintenance_schedules'
+    )
+    frequency = models.CharField(max_length=20, choices=MaintenanceFrequency.choices,
+                                  default=MaintenanceFrequency.ANNUAL)
+    next_due = models.DateField()
+    last_done = models.DateField(null=True, blank=True)
+    description = models.TextField(blank=True)
+    assigned_to = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='maintenance_assignments'
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['next_due']
+
+    def __str__(self):
+        return f"{self.asset.asset_name} — {self.get_frequency_display()} (due {self.next_due})"
+
+    @property
+    def is_overdue(self):
+        from django.utils import timezone
+        return self.next_due < timezone.now().date() and self.is_active
+
+
+class MaintenanceWorkOrder(AuditModel):
+    """A specific maintenance work order for an asset."""
+    asset = models.ForeignKey(
+        'AssetRegister', on_delete=models.CASCADE, related_name='work_orders'
+    )
+    schedule = models.ForeignKey(
+        MaintenanceSchedule, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='work_orders'
+    )
+    wo_number = models.CharField(max_length=20, unique=True, blank=True)
+    maintenance_type = models.CharField(max_length=20, choices=MaintenanceType.choices,
+                                         default=MaintenanceType.PREVENTIVE)
+    status = models.CharField(max_length=20, choices=MaintenanceStatus.choices,
+                               default=MaintenanceStatus.PENDING)
+    description = models.TextField()
+    estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    actual_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    findings = models.TextField(blank=True)
+    parts_used = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        'accounts.User', null=True, on_delete=models.SET_NULL, related_name='maintenance_wos_created'
+    )
+    performed_by = models.ForeignKey(
+        'accounts.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='maintenance_wos_performed'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.wo_number} — {self.asset.asset_name}"
+
+    def save(self, *args, **kwargs):
+        if not self.wo_number:
+            from django.utils import timezone as tz
+            year = tz.now().year
+            count = MaintenanceWorkOrder.objects.filter(created_at__year=year).count() + 1
+            self.wo_number = f"WO-{year}-{count:04d}"
+        super().save(*args, **kwargs)
 

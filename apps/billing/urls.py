@@ -314,4 +314,13 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════════════════
     path('dashboard/finance-director/', views.finance_director_dashboard, name='finance_director_dashboard'),
     path('dashboard/senior-accountant/', views.senior_accountant_dashboard, name='senior_accountant_dashboard'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ASSET MAINTENANCE
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('maintenance/', views.maintenance_list, name='maintenance_list'),
+    path('maintenance/schedules/', views.maintenance_schedule_list, name='maintenance_schedule_list'),
+    path('assets/<uuid:asset_id>/maintenance/schedule/', views.maintenance_schedule_create, name='maintenance_schedule_create'),
+    path('assets/<uuid:asset_id>/maintenance/create/', views.maintenance_wo_create, name='maintenance_wo_create'),
+    path('maintenance/<uuid:wo_id>/complete/', views.maintenance_wo_complete, name='maintenance_wo_complete'),
 ]

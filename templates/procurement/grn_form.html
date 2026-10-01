@@ -1,0 +1,62 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Record Goods Receipt — {{ po.po_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Record Goods Receipt</h4>
+    <small class="text-muted">PO: {{ po.po_number }} — {{ po.vendor.name }}</small>
+  </div>
+  <a href="{% url 'procurement:po_detail' po_id=po.pk %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <form method="post">{% csrf_token %}
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Receipt Date <span class="text-danger">*</span></label>
+          <input type="date" name="received_date" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Delivery Note Ref</label>
+          <input type="text" name="delivery_note_ref" class="form-control" placeholder="Vendor delivery note #">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Notes</label>
+          <input type="text" name="notes" class="form-control" placeholder="Any remarks">
+        </div>
+      </div>
+      <h6 class="fw-semibold mb-2">Items to Receive</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm small">
+          <thead class="table-light"><tr><th>Description</th><th class="text-center">Ordered</th><th class="text-center">Already Received</th><th class="text-center">Qty Receiving Now</th><th>Condition</th></tr></thead>
+          <tbody>
+          {% for item in items %}
+          <tr>
+            <td>{{ item.description }}</td>
+            <td class="text-center">{{ item.quantity_ordered }} {{ item.unit }}</td>
+            <td class="text-center text-success">{{ item.quantity_received }}</td>
+            <td class="text-center">
+              <input type="number" name="qty_{{ item.pk }}" class="form-control form-control-sm text-center"
+                     value="{{ item.remaining }}" min="0" max="{{ item.remaining }}" step="0.01" style="width:80px;display:inline-block;">
+            </td>
+            <td>
+              <select name="cond_{{ item.pk }}" class="form-select form-select-sm" style="width:auto;">
+                <option value="GOOD">Good</option>
+                <option value="DAMAGED">Damaged</option>
+                <option value="PARTIAL">Partial</option>
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex gap-2 justify-content-end">
+        <a href="{% url 'procurement:po_detail' po_id=po.pk %}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-success"><i class="bi bi-box-seam me-1"></i>Save GRN</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

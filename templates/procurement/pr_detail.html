@@ -1,0 +1,104 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}{{ pr.pr_number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">{{ pr.pr_number }}</h4>
+    <small class="text-muted">{{ pr.title }}</small>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if pr.status == 'DRAFT' and can_edit %}
+    <form method="post" action="{% url 'procurement:pr_submit' pr_id=pr.pk %}">{% csrf_token %}
+      <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-send me-1"></i>Submit for Approval</button>
+    </form>
+    {% elif pr.status == 'PENDING' and can_approve %}
+    <form method="post" action="{% url 'procurement:pr_approve' pr_id=pr.pk %}" class="d-flex gap-2">{% csrf_token %}
+      <button type="submit" name="action" value="approve" class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i>Approve</button>
+      <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm"><i class="bi bi-x-circle me-1"></i>Reject</button>
+    </form>
+    {% endif %}
+    {% if pr.status == 'APPROVED' and can_approve %}
+    <a href="{% url 'procurement:po_create' %}?pr={{ pr.pk }}" class="btn btn-primary btn-sm"><i class="bi bi-bag-plus me-1"></i>Raise PO</a>
+    {% endif %}
+    <a href="{% url 'procurement:pr_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2 fw-semibold">Details</div>
+      <div class="card-body small">
+        <table class="table table-sm mb-0">
+          <tr><td class="text-muted">Status</td><td>
+            <span class="badge {% if pr.status == 'APPROVED' %}bg-success{% elif pr.status == 'PENDING' %}bg-warning text-dark{% elif pr.status == 'REJECTED' %}bg-danger{% elif pr.status == 'ORDERED' %}bg-primary{% else %}bg-secondary{% endif %}">
+              {{ pr.get_status_display }}
+            </span></td></tr>
+          <tr><td class="text-muted">Category</td><td>{{ pr.get_category_display }}</td></tr>
+          <tr><td class="text-muted">Urgency</td><td>{{ pr.urgency }}</td></tr>
+          <tr><td class="text-muted">Requested By</td><td>{{ pr.requested_by.get_full_name|default:"—" }}</td></tr>
+          {% if pr.department %}<tr><td class="text-muted">Department</td><td>{{ pr.department.name }}</td></tr>{% endif %}
+          {% if pr.required_by_date %}<tr><td class="text-muted">Required By</td><td>{{ pr.required_by_date|date:"d M Y" }}</td></tr>{% endif %}
+          <tr><td class="text-muted">Est. Total</td><td class="fw-bold">{{ pr.estimated_total|floatformat:0|intcomma }} FCFA</td></tr>
+        </table>
+        {% if pr.justification %}
+        <hr class="my-2">
+        <div class="text-muted small">{{ pr.justification }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom py-2 fw-semibold d-flex justify-content-between">
+        <span>Items ({{ items.count }})</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm small mb-0">
+          <thead class="table-light"><tr><th>Description</th><th>Qty</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Subtotal</th></tr></thead>
+          <tbody>
+          {% for item in items %}
+          <tr>
+            <td>{{ item.description }}</td>
+            <td>{{ item.quantity }}</td>
+            <td class="text-muted">{{ item.unit }}</td>
+            <td class="text-end">{{ item.estimated_unit_price|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold">{{ item.estimated_subtotal|floatformat:0|intcomma }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-3">No items yet</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if can_edit and pr.status in 'DRAFT,PENDING' %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2 fw-semibold">Add Item</div>
+      <div class="card-body">
+        <form method="post" action="{% url 'procurement:pr_add_item' pr_id=pr.pk %}">{% csrf_token %}
+          <div class="row g-2">
+            <div class="col-md-5">
+              <input type="text" name="description" class="form-control form-control-sm" placeholder="Description *" required>
+            </div>
+            <div class="col-md-2">
+              <input type="number" name="quantity" class="form-control form-control-sm" placeholder="Qty" value="1" min="0.01" step="0.01" required>
+            </div>
+            <div class="col-md-2">
+              <input type="text" name="unit" class="form-control form-control-sm" placeholder="Unit" value="pcs">
+            </div>
+            <div class="col-md-3">
+              <input type="number" name="estimated_unit_price" class="form-control form-control-sm" placeholder="Est. Price" value="0" step="1" min="0">
+            </div>
+            <div class="col-12">
+              <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-plus me-1"></i>Add Item</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

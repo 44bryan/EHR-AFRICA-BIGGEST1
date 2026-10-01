@@ -1,0 +1,76 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Payslip — {{ slip.staff.get_full_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Payslip</h4>
+    <small class="text-muted">{{ slip.payroll_run.period_label }} — {{ slip.staff.get_full_name }}</small>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    <a href="{% url 'payroll:run_detail' run_id=slip.payroll_run.pk %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px;margin:0 auto;">
+  <div class="card-header bg-white border-bottom py-3">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <div class="fw-bold fs-5">{{ slip.staff.get_full_name }}</div>
+        <div class="text-muted small">{{ slip.staff.get_role_display }}</div>
+      </div>
+      <div class="text-end">
+        <div class="fw-semibold">{{ slip.payroll_run.period_label }}</div>
+        <span class="badge {% if slip.status == 'PAID' %}bg-success{% elif slip.status == 'APPROVED' %}bg-primary{% else %}bg-secondary{% endif %}">{{ slip.get_status_display }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <table class="table table-sm small mb-3">
+      <thead class="table-light">
+        <tr><th>Description</th><th>Type</th><th class="text-end">Amount (FCFA)</th></tr>
+      </thead>
+      <tbody>
+        <tr class="fw-semibold">
+          <td>Basic Salary</td><td class="text-success">Earning</td>
+          <td class="text-end">{{ slip.basic_salary|floatformat:0|intcomma }}</td>
+        </tr>
+        {% for line in lines %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td class="{% if line.component_type == 'EARNING' %}text-success{% else %}text-danger{% endif %} small">
+            {{ line.get_component_type_display }}
+          </td>
+          <td class="text-end {% if line.component_type != 'EARNING' %}text-danger{% endif %}">
+            {% if line.component_type != 'EARNING' %}-{% endif %}{{ line.amount|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light fw-bold">
+        <tr>
+          <td colspan="2">Gross Pay</td>
+          <td class="text-end">{{ slip.gross_pay|floatformat:0|intcomma }}</td>
+        </tr>
+        <tr class="text-danger">
+          <td colspan="2">Total Deductions</td>
+          <td class="text-end">-{{ slip.total_deductions|floatformat:0|intcomma }}</td>
+        </tr>
+        <tr class="text-success fs-6">
+          <td colspan="2">NET PAY</td>
+          <td class="text-end fw-bold">{{ slip.net_pay|floatformat:0|intcomma }} FCFA</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% if slip.cnps_employee or slip.cnps_employer or slip.withholding_tax %}
+    <div class="alert alert-light border py-2 small">
+      <strong>Statutory Deductions:</strong>
+      CNPS Employee: {{ slip.cnps_employee|floatformat:0|intcomma }} FCFA &nbsp;|&nbsp;
+      CNPS Employer: {{ slip.cnps_employer|floatformat:0|intcomma }} FCFA &nbsp;|&nbsp;
+      IRPP: {{ slip.withholding_tax|floatformat:0|intcomma }} FCFA
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

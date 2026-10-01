@@ -1,0 +1,91 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Payroll Dashboard{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Payroll</h4>
+    <small class="text-muted">Salary structures, payroll runs &amp; payslips</small>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'payroll:run_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>New Payroll Run
+    </a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-3" style="color:var(--ehr-primary);">{{ staff_count }}</div>
+      <div class="text-muted small">Staff with Salary</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fw-bold fs-3 text-warning">{{ pending_count }}</div>
+      <div class="text-muted small">Pending Approval</div>
+    </div>
+  </div>
+  {% if latest %}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm py-3 px-4">
+      <div class="fw-semibold mb-1">Latest Run: {{ latest.period_label }}</div>
+      <div class="d-flex gap-3 small">
+        <span>Gross: <strong>{{ latest.total_gross|floatformat:0|intcomma }} FCFA</strong></span>
+        <span>Net: <strong class="text-success">{{ latest.total_net|floatformat:0|intcomma }} FCFA</strong></span>
+        <span class="badge {% if latest.status == 'PAID' %}bg-success{% elif latest.status == 'APPROVED' %}bg-primary{% elif latest.status == 'PENDING' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ latest.get_status_display }}</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom fw-semibold py-2">Quick Actions</div>
+      <div class="card-body p-0">
+        <a href="{% url 'payroll:run_list' %}" class="list-group-item list-group-item-action py-3 px-3">
+          <i class="bi bi-calendar-range me-2 text-primary"></i>Payroll Runs
+        </a>
+        <a href="{% url 'payroll:structure_list' %}" class="list-group-item list-group-item-action py-3 px-3">
+          <i class="bi bi-diagram-3 me-2 text-success"></i>Salary Structures
+        </a>
+        <a href="{% url 'payroll:component_list' %}" class="list-group-item list-group-item-action py-3 px-3">
+          <i class="bi bi-list-check me-2 text-info"></i>Pay Components
+        </a>
+        <a href="{% url 'payroll:assignment_list' %}" class="list-group-item list-group-item-action py-3 px-3">
+          <i class="bi bi-people me-2 text-warning"></i>Staff Assignments
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom fw-semibold py-2">Recent Payroll Runs</div>
+      <div class="table-responsive">
+        <table class="table table-hover small mb-0">
+          <thead class="table-light"><tr>
+            <th>Period</th><th>Status</th><th class="text-end">Gross</th><th class="text-end">Net</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for run in runs %}
+          <tr>
+            <td class="fw-semibold">{{ run.period_label }}</td>
+            <td><span class="badge {% if run.status == 'PAID' %}bg-success{% elif run.status == 'APPROVED' %}bg-primary{% elif run.status == 'PENDING' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ run.get_status_display }}</span></td>
+            <td class="text-end">{{ run.total_gross|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success fw-semibold">{{ run.total_net|floatformat:0|intcomma }}</td>
+            <td><a href="{% url 'payroll:run_detail' run_id=run.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No payroll runs yet</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

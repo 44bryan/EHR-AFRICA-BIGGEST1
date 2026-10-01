@@ -48,6 +48,9 @@ urlpatterns = [
     path('dietary/', include('apps.dietary.urls', namespace='dietary')),
     path('mortuary/', include('apps.mortuary.urls', namespace='mortuary')),
     path('telemedicine/', include('apps.telemedicine.urls', namespace='telemedicine')),
+    # New operational modules
+    path('payroll/', include('apps.payroll.urls', namespace='payroll')),
+    path('procurement/', include('apps.procurement.urls', namespace='procurement')),
 ]
 
 if settings.DEBUG:

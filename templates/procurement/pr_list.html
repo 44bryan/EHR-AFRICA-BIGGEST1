@@ -1,0 +1,54 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Purchase Requests{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0">Purchase Requests</h4>
+  <a href="{% url 'procurement:pr_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Request</a>
+</div>
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <select name="status" class="form-select form-select-sm" style="width:auto;">
+        <option value="">All Statuses</option>
+        {% for val, lbl in pr_statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+      <a href="{% url 'procurement:pr_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover small mb-0">
+      <thead class="table-light"><tr>
+        <th>PR #</th><th>Title</th><th>Category</th><th>Urgency</th>
+        <th class="text-end">Est. Total</th><th>Requested By</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for pr in prs %}
+      <tr>
+        <td><code class="small">{{ pr.pr_number }}</code></td>
+        <td class="fw-semibold">{{ pr.title|truncatechars:45 }}</td>
+        <td class="text-muted small">{{ pr.get_category_display }}</td>
+        <td>
+          <span class="badge {% if pr.urgency == 'URGENT' %}bg-danger{% elif pr.urgency == 'NORMAL' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
+            {{ pr.urgency }}
+          </span>
+        </td>
+        <td class="text-end">{{ pr.estimated_total|floatformat:0 }} FCFA</td>
+        <td class="text-muted small">{{ pr.requested_by.get_full_name|default:"—" }}</td>
+        <td>
+          <span class="badge {% if pr.status == 'APPROVED' %}bg-success{% elif pr.status == 'PENDING' %}bg-warning text-dark{% elif pr.status == 'REJECTED' %}bg-danger{% elif pr.status == 'ORDERED' %}bg-primary{% elif pr.status == 'DRAFT' %}bg-light text-dark border{% else %}bg-secondary{% endif %}">
+            {{ pr.get_status_display }}
+          </span>
+        </td>
+        <td><a href="{% url 'procurement:pr_detail' pr_id=pr.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-center text-muted py-4">No purchase requests found</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
