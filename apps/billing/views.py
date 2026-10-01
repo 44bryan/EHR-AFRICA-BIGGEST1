@@ -9389,6 +9389,26 @@ def gl_mapping_list(request):
 
     from .models import GLMapping, GLMappingCategory, GLAccount
 
+    # ── CSV export ─────────────────────────────────────────────────────────────
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse as _HR
+        from django.utils import timezone as _tz
+        resp = _HR(content_type='text/csv')
+        resp['Content-Disposition'] = f'attachment; filename="gl_mappings_{_tz.localdate()}.csv"'
+        writer = csv.writer(resp)
+        writer.writerow(['Category', 'Source Key', 'Description', 'GL Account Code', 'GL Account Name', 'Notes'])
+        for m in GLMapping.objects.filter(is_active=True).select_related('gl_account').order_by('category', 'source_key'):
+            writer.writerow([
+                m.category,
+                m.source_key,
+                m.label,
+                m.gl_account.code if m.gl_account else '',
+                m.gl_account.name if m.gl_account else '',
+                m.notes or '',
+            ])
+        return resp
+
     if request.method == 'POST':
         # Save all mapping changes
         mapping_ids = request.POST.getlist('mapping_id')
