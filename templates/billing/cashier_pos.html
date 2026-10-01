@@ -376,6 +376,18 @@
       <span class="sb-label">FCFA</span>
     </div>
     <div class="sb-item">
+      <i class="bi bi-credit-card" style="color:#6d28d9;"></i>
+      <span class="sb-label">Card:</span>
+      <span class="sb-val" id="shiftCard" style="color:#6d28d9;">{{ shift_card|default:0|floatformat:0|intcomma }}</span>
+      <span class="sb-label">FCFA</span>
+    </div>
+    <div class="sb-item">
+      <i class="bi bi-bank" style="color:#0891b2;"></i>
+      <span class="sb-label">Transfer:</span>
+      <span class="sb-val" id="shiftTransfer" style="color:#0891b2;">{{ shift_transfer|default:0|floatformat:0|intcomma }}</span>
+      <span class="sb-label">FCFA</span>
+    </div>
+    <div class="sb-item">
       <i class="bi bi-bar-chart-fill" style="color:#0d6efd;"></i>
       <span class="sb-label">Shift Total:</span>
       <span class="sb-val sb-total" id="shiftTotal">{{ shift_total|floatformat:0|intcomma }}</span>
@@ -407,6 +419,12 @@
     </div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
+    {% if wallet_balance is not None %}
+    <span class="pat-badge" style="background:{% if wallet_balance > 0 %}#dcfce7;color:#166534{% else %}#f1f5f9;color:#6c757d{% endif %};"
+          title="Patient Wallet Balance">
+      <i class="bi bi-wallet2 me-1"></i>{{ wallet_balance|floatformat:0|intcomma }} FCFA
+    </span>
+    {% endif %}
     {% if invoice %}
       <span class="pat-badge-inv"><i class="bi bi-receipt me-1"></i>{{ invoice.invoice_number }}</span>
       <span class="pat-badge
@@ -593,6 +611,8 @@
   {# ─── LEFT: Service Catalog ─── #}
   <div class="catalog-col">
     <div class="cat-label mb-2">Services</div>
+    <input type="search" id="catalogSearch" class="form-control form-control-sm mb-2"
+           placeholder="Search services…" autocomplete="off" oninput="filterCatalog(this.value)">
 
     {# Tab strip #}
     <div class="cat-tabs" id="catTabs">
@@ -810,7 +830,8 @@
             <td class="text-center" style="color:#94a3b8;">{{ item.quantity }}</td>
             <td class="text-end" style="color:#475569;white-space:nowrap;font-size:.75rem;">{{ item.unit_price|floatformat:0|intcomma }}</td>
             <td class="text-end item-amt" style="white-space:nowrap;">{{ item.line_total|floatformat:0|intcomma }}</td>
-            <td>
+            <td style="white-space:nowrap;">
+              <button class="rm-btn" style="margin-right:3px;" onclick="editItem('{{ item.id }}','{{ item.description|escapejs }}',{{ item.quantity }},{{ item.unit_price|floatformat:0 }})" title="Edit"><i class="bi bi-pencil"></i></button>
               <button class="rm-btn" onclick="removeItem('{{ item.id }}',this)"><i class="bi bi-trash3"></i></button>
             </td>
           </tr>
@@ -911,6 +932,13 @@
         <button class="meth-btn" id="splitToggleBtn" onclick="toggleSplit()" style="border-color:#f59e0b;color:#f59e0b;">
           <i class="bi bi-arrow-left-right me-1"></i>Split
         </button>
+        {% if wallet_balance is not None %}
+        <button class="meth-btn" data-method="WALLET" onclick="pickMethod(this,'WALLET')" style="border-color:#166534;color:#166534;"
+                title="Patient Wallet ({{ wallet_balance|floatformat:0|intcomma }} FCFA)">
+          <i class="bi bi-wallet2 me-1"></i>Wallet
+          {% if wallet_balance > 0 %}<small class="ms-1" style="font-size:.65rem;">({{ wallet_balance|floatformat:0|intcomma }})</small>{% endif %}
+        </button>
+        {% endif %}
       </div>
 
       {# Insurance info #}
@@ -930,10 +958,19 @@
       </div>
       {% endif %}
 
+      {# Insurance pre-auth # field (shown only when INSURANCE/NHIS selected) #}
+      <div id="authNumDiv" style="display:none;margin-bottom:.5rem;">
+        <input type="text" id="insAuthNum" class="pay-ref"
+               placeholder="Pre-Authorization / Auth # (required)">
+      </div>
+
       {# Single payment amount (default) #}
       <div id="singlePayDiv">
         <input type="number" id="payAmt" class="single-amt" placeholder="Amount (FCFA)" min="0"
-               value="{{ invoice.balance_due|floatformat:0 }}">
+               value="{{ invoice.balance_due|floatformat:0 }}" oninput="updateChangeCalc()">
+        <div id="changeCalcRow" style="display:none;background:#052e16;border:1px solid #4ade80;border-radius:6px;padding:5px 10px;margin-bottom:.5rem;font-size:.88rem;font-weight:700;color:#4ade80;">
+          <i class="bi bi-arrow-return-left me-1"></i>Change: <span id="changeCalcAmt">0</span> FCFA
+        </div>
         <input type="text" id="payRef" class="pay-ref" placeholder="Reference / MoMo # (optional)">
       </div>
 
@@ -1043,6 +1080,35 @@
   </button>
 </div>
 
+{# Edit item modal #}
+<div class="modal fade" id="editItemModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="editItemTitle">Edit Item</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-2">
+        <input type="hidden" id="editItemId">
+        <div class="row g-2">
+          <div class="col-4">
+            <label class="form-label small mb-1 fw-semibold">Qty</label>
+            <input type="number" id="editItemQty" class="form-control" value="1" min="1" step="1">
+          </div>
+          <div class="col-8">
+            <label class="form-label small mb-1 fw-semibold">Unit Price (FCFA)</label>
+            <input type="number" id="editItemPrice" class="form-control" placeholder="0" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmEditItem()"><i class="bi bi-check-lg me-1"></i>Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# Price modal #}
 <div class="modal fade" id="priceModal" tabindex="-1">
   <div class="modal-dialog modal-sm modal-dialog-centered">
@@ -1055,10 +1121,19 @@
         <input type="hidden" id="pendName">
         <input type="hidden" id="pendCat">
         <input type="hidden" id="pendSpId">
-        <input type="number" id="pendPrice" class="form-control" placeholder="Price (FCFA)" min="0">
+        <div class="row g-2">
+          <div class="col-4">
+            <label class="form-label small mb-1 fw-semibold">Qty</label>
+            <input type="number" id="pendQty" class="form-control" value="1" min="1" step="1">
+          </div>
+          <div class="col-8">
+            <label class="form-label small mb-1 fw-semibold">Price (FCFA)</label>
+            <input type="number" id="pendPrice" class="form-control" placeholder="0" min="0">
+          </div>
+        </div>
       </div>
       <div class="modal-footer border-0 py-2">
-        <button class="btn btn-primary btn-sm" onclick="confirmPrice()">Add to Bill</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmPrice()"><i class="bi bi-plus-circle me-1"></i>Add to Bill</button>
       </div>
     </div>
   </div>
@@ -1098,9 +1173,11 @@ var CATALOG_ID_MAP = {
 };
 
 // Shift totals JS state (updated when payments come in)
-var _shiftCash  = {{ shift_cash|default:0|floatformat:0 }};
-var _shiftMomo  = {{ shift_mobile|default:0|floatformat:0 }};
-var _shiftTotal = {{ shift_total|default:0|floatformat:0 }};
+var _shiftCash     = {{ shift_cash|default:0|floatformat:0 }};
+var _shiftMomo     = {{ shift_mobile|default:0|floatformat:0 }};
+var _shiftCard     = {{ shift_card|default:0|floatformat:0 }};
+var _shiftTransfer = {{ shift_transfer|default:0|floatformat:0 }};
+var _shiftTotal    = {{ shift_total|default:0|floatformat:0 }};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -1120,10 +1197,16 @@ function updateShiftBar(method, amount) {
   amount = parseFloat(amount) || 0;
   if (method === 'CASH') _shiftCash += amount;
   else if (method === 'MOBILE') _shiftMomo += amount;
+  else if (method === 'CARD') _shiftCard += amount;
+  else if (method === 'TRANSFER') _shiftTransfer += amount;
   _shiftTotal += amount;
-  document.getElementById('shiftCash').textContent  = fmt(_shiftCash);
-  document.getElementById('shiftMomo').textContent  = fmt(_shiftMomo);
-  document.getElementById('shiftTotal').textContent = fmt(_shiftTotal);
+  document.getElementById('shiftCash').textContent     = fmt(_shiftCash);
+  document.getElementById('shiftMomo').textContent     = fmt(_shiftMomo);
+  var sc = document.getElementById('shiftCard');
+  if (sc) sc.textContent     = fmt(_shiftCard);
+  var st = document.getElementById('shiftTransfer');
+  if (st) st.textContent = fmt(_shiftTransfer);
+  document.getElementById('shiftTotal').textContent    = fmt(_shiftTotal);
 }
 
 function updateTotals(data) {
@@ -1138,6 +1221,7 @@ function updateTotals(data) {
     const pa = document.getElementById('payAmt');
     if (pa && data.balance_due > 0) pa.value = Math.round(data.balance_due);
     if (splitMode) prefillSplit(data.balance_due);
+    updateChangeCalc();
   }
   updateFloatCart();
 }
@@ -1145,6 +1229,32 @@ function updateTotals(data) {
 function removeEmptyRow() {
   const er = document.getElementById('emptyRow');
   if (er) er.remove();
+}
+
+// ── Catalog search filter ──────────────────────────────────────────────────────
+function filterCatalog(q) {
+  q = q.trim().toLowerCase();
+  const search = document.getElementById('catalogSearch');
+  if (q.length > 0) {
+    // Show all panes while searching so we can search across tabs
+    document.querySelectorAll('.cat-pane').forEach(p => { p.style.display = 'block'; });
+    document.querySelectorAll('.svc-btn').forEach(btn => {
+      const text = btn.textContent.toLowerCase();
+      btn.style.display = text.includes(q) ? 'flex' : 'none';
+    });
+    // Hide panes that have no visible buttons (cleaner UX)
+    document.querySelectorAll('.cat-pane').forEach(p => {
+      const visible = Array.from(p.querySelectorAll('.svc-btn')).some(b => b.style.display !== 'none');
+      p.style.display = visible ? 'block' : 'none';
+    });
+  } else {
+    // Restore normal cat-pane view
+    document.querySelectorAll('.svc-btn').forEach(btn => { btn.style.display = ''; });
+    document.querySelectorAll('.cat-pane').forEach(p => {
+      p.style.display = p.classList.contains('active') ? 'block' : 'none';
+    });
+  }
+  document.getElementById('catScroll').scrollTop = 0;
 }
 
 // ── Catalog tab switcher ───────────────────────────────────────────────────────
@@ -1156,6 +1266,9 @@ function switchCat(cat, btn) {
     p.classList.toggle('active', on);
     p.style.display = on ? 'block' : 'none';
   });
+  // Clear search when switching tabs
+  const cs = document.getElementById('catalogSearch');
+  if (cs) { cs.value = ''; document.querySelectorAll('.svc-btn').forEach(b => { b.style.display = ''; }); }
   document.getElementById('catScroll').scrollTop = 0;
 }
 
@@ -1213,6 +1326,7 @@ function addItem(name, cat, price, requiresEntry, spId) {
     document.getElementById('pendCat').value  = cat;
     document.getElementById('pendSpId').value = spId || '';
     document.getElementById('pendPrice').value = resolvedPrice > 0 ? resolvedPrice : '';
+    document.getElementById('pendQty').value   = 1;
     document.getElementById('priceModalTitle').textContent = name;
     new bootstrap.Modal(document.getElementById('priceModal')).show();
     return;
@@ -1225,8 +1339,9 @@ function confirmPrice() {
   const cat   = document.getElementById('pendCat').value;
   const spId  = document.getElementById('pendSpId').value;
   const price = parseFloat(document.getElementById('pendPrice').value || '0');
+  const qty   = parseInt(document.getElementById('pendQty').value || '1') || 1;
   bootstrap.Modal.getInstance(document.getElementById('priceModal')).hide();
-  _doAdd(name, cat, 1, price, spId);
+  _doAdd(name, cat, qty, price, spId);
 }
 
 function addCustomItem() {
@@ -1349,8 +1464,32 @@ function pickMethod(btn, method) {
   activeMethod = method;
   const ip = document.getElementById('insPanel');
   if (ip) ip.style.display = (method === 'INSURANCE' || method === 'NHIS') ? 'block' : 'none';
+  // Show pre-auth field for insurance
+  const an = document.getElementById('authNumDiv');
+  if (an) an.style.display = (method === 'INSURANCE' || method === 'NHIS') ? 'block' : 'none';
+  // Change calculator — only relevant for CASH
+  updateChangeCalc();
   // Exit split mode when picking a specific method
   if (splitMode) toggleSplit();
+}
+
+function updateChangeCalc() {
+  const isCash = (activeMethod === 'CASH' && !splitMode);
+  const balEl  = document.getElementById('balDisplay');
+  const payEl  = document.getElementById('payAmt');
+  const rowEl  = document.getElementById('changeCalcRow');
+  const amtEl  = document.getElementById('changeCalcAmt');
+  if (!rowEl || !payEl || !balEl) return;
+  if (!isCash) { rowEl.style.display = 'none'; return; }
+  const bal     = parseFloat(balEl.textContent.replace(/[^0-9.]/g,'')) || 0;
+  const entered = parseFloat(payEl.value) || 0;
+  const change  = entered - bal;
+  if (change > 0) {
+    amtEl.textContent  = fmt(change);
+    rowEl.style.display = 'block';
+  } else {
+    rowEl.style.display = 'none';
+  }
 }
 
 // ── Split payment toggle ──────────────────────────────────────────────────────
@@ -1417,7 +1556,12 @@ function collectPay() {
       .catch(function() { _resetCollectBtn(); });
   } else {
     const amount = parseFloat(document.getElementById('payAmt').value) || 0;
-    const ref    = document.getElementById('payRef').value;
+    let ref = document.getElementById('payRef').value;
+    // Prepend auth number to reference when insurance method
+    const authEl = document.getElementById('insAuthNum');
+    if (authEl && authEl.value.trim() && (activeMethod === 'INSURANCE' || activeMethod === 'NHIS')) {
+      ref = 'Auth#' + authEl.value.trim() + (ref ? ' · ' + ref : '');
+    }
     if (amount <= 0) {
       document.getElementById('payAmt').focus();
       toast('Enter payment amount.', 'warn'); return;
@@ -1636,7 +1780,7 @@ function addAllOrders(btn) {
   });
 }
 
-// ── Enter key to collect / confirm price ──────────────────────────────────────
+// ── Enter key to collect / confirm price / confirm edit ───────────────────────
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Enter') return;
   var active = document.activeElement;
@@ -1644,6 +1788,8 @@ document.addEventListener('keydown', function(e) {
     e.preventDefault(); collectPay();
   } else if (active && active.id === 'pendPrice') {
     e.preventDefault(); confirmPrice();
+  } else if (active && (active.id === 'editItemQty' || active.id === 'editItemPrice')) {
+    e.preventDefault(); confirmEditItem();
   }
 });
 
@@ -1676,6 +1822,43 @@ function updateFloatCart() {
   document.getElementById('floatTotal').textContent = parseInt(total || 0).toLocaleString();
 }
 updateFloatCart();
+
+// ── Edit item (qty / unit price) ──────────────────────────────────────────────
+function editItem(itemId, desc, qty, price) {
+  document.getElementById('editItemId').value    = itemId;
+  document.getElementById('editItemTitle').textContent = desc;
+  document.getElementById('editItemQty').value   = qty;
+  document.getElementById('editItemPrice').value = price;
+  new bootstrap.Modal(document.getElementById('editItemModal')).show();
+  setTimeout(() => document.getElementById('editItemQty').select(), 400);
+}
+
+function confirmEditItem() {
+  const itemId = document.getElementById('editItemId').value;
+  const qty    = parseInt(document.getElementById('editItemQty').value || '1') || 1;
+  const price  = parseFloat(document.getElementById('editItemPrice').value || '0');
+  bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('quantity', qty);
+  fd.append('unit_price', price);
+  fetch(`/billing/item/${itemId}/edit/`, { method: 'POST', body: fd })
+    .then(r => r.json().then(d => { d._ok = r.ok; return d; }))
+    .then(data => {
+      if (!data.success || !data._ok) { toast(data.error || 'Could not update item.', 'danger'); return; }
+      // Update the row in place
+      const row = document.getElementById(`ir-${itemId}`);
+      if (row) {
+        const tds = row.querySelectorAll('td');
+        tds[2].textContent = qty;
+        tds[3].textContent = fmt(price);
+        tds[4].textContent = fmt(data.line_total);
+      }
+      updateTotals(data);
+      toast('<i class="bi bi-check-circle me-1"></i>Item updated', 'success');
+    })
+    .catch(() => toast('Network error.', 'danger'));
+}
 
 // ── Discard empty invoice ──────────────────────────────────────────────────────
 function doDiscard() {

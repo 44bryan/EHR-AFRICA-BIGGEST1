@@ -1205,6 +1205,8 @@ def cashier_pos(request, token_id):
         total=Sum('amount'),
         cash=Sum('amount', filter=Q(payment_method=PaymentMethod.CASH)),
         mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE_MONEY)),
+        card=Sum('amount', filter=Q(payment_method=PaymentMethod.CARD)),
+        transfer=Sum('amount', filter=Q(payment_method=PaymentMethod.TRANSFER)),
     )
 
     _pos_session = _get_active_cashier_session(request.user)
@@ -1227,6 +1229,15 @@ def cashier_pos(request, token_id):
         )
 
     from apps.patients.models import ServiceTier as _ST
+    # Wallet balance for this patient
+    _wallet_balance = None
+    if patient:
+        try:
+            from .models import PatientWallet
+            _w = PatientWallet.objects.filter(patient=patient, is_deleted=False).first()
+            _wallet_balance = int(_w.balance) if _w else 0
+        except Exception:
+            _wallet_balance = None
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -1248,11 +1259,14 @@ def cashier_pos(request, token_id):
         'shift_total': shift_totals['total'] or 0,
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
+        'shift_card': shift_totals['card'] or 0,
+        'shift_transfer': shift_totals['transfer'] or 0,
         'patient_tier': _pos_tier,
         'queue_url': _queue_url,
         'visit': _visit,
         'tier_changes': _tier_changes,
         'tier_choices': _ST.choices,
+        'wallet_balance': _wallet_balance,
     })
 
 
@@ -1395,6 +1409,48 @@ def pos_remove_item(request, item_id):
 @json_error_handler
 @login_required
 @require_POST
+def pos_edit_item(request, item_id):
+    """AJAX: Update qty and/or unit_price of an existing invoice line item."""
+    item = get_object_or_404(InvoiceItem, id=item_id, is_deleted=False)
+    invoice = item.invoice
+
+    if invoice.status in (InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID):
+        return JsonResponse({
+            'success': False,
+            'error': 'Cannot edit items on a paid or partially-paid invoice.'
+        }, status=400)
+
+    try:
+        qty = int(request.POST.get('quantity', item.quantity) or item.quantity)
+        if qty < 1:
+            raise ValueError
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid quantity.'}, status=400)
+
+    try:
+        unit_price = Decimal(request.POST.get('unit_price', str(item.unit_price)) or str(item.unit_price))
+        if unit_price < 0:
+            raise ValueError
+    except (InvalidOperation, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid price.'}, status=400)
+
+    item.quantity = qty
+    item.unit_price = unit_price
+    item.save(update_fields=['quantity', 'unit_price', 'updated_at'])
+
+    invoice.refresh_from_db()
+    return JsonResponse({
+        'success': True,
+        'line_total': int(item.line_total),
+        'subtotal': int(invoice.subtotal),
+        'total': int(invoice.total),
+        'balance_due': int(invoice.balance_due),
+    })
+
+
+@json_error_handler
+@login_required
+@require_POST
 def pos_apply_discount(request, invoice_id):
     """AJAX: Apply or update a discount on the invoice."""
     invoice = get_object_or_404(Invoice, id=invoice_id, is_deleted=False)
@@ -1476,6 +1532,37 @@ def pos_record_payment(request, invoice_id):
                         )
         except Exception:
             pass
+
+    # ── Wallet deduction (if paying from patient wallet) ──────────────────
+    if payment_method == PaymentMethod.WALLET and invoice.patient:
+        try:
+            from .models import PatientWallet, WalletTransaction
+            _wallet = PatientWallet.objects.select_for_update().filter(
+                patient=invoice.patient, is_deleted=False
+            ).first()
+            if not _wallet:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'This patient has no wallet. Top up wallet first.'
+                }, status=400)
+            if _wallet.balance < amount:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Insufficient wallet balance: {int(_wallet.balance):,} FCFA available, {int(amount):,} FCFA required.'
+                }, status=400)
+            _wallet.balance -= amount
+            _wallet.save(update_fields=['balance', 'updated_at'])
+            WalletTransaction.objects.create(
+                wallet=_wallet,
+                transaction_type='DEDUCTION',
+                amount=amount,
+                invoice=invoice,
+                balance_after=_wallet.balance,
+                notes=f'POS payment for invoice {invoice.invoice_number}',
+                created_by=request.user,
+            )
+        except Exception as _we:
+            return JsonResponse({'success': False, 'error': f'Wallet error: {_we}'}, status=500)
 
     Payment.objects.create(
         invoice=invoice,
@@ -1818,6 +1905,8 @@ def patient_pos(request, patient_id):
         total=Sum('amount'),
         cash=Sum('amount', filter=Q(payment_method=PaymentMethod.CASH)),
         mobile=Sum('amount', filter=Q(payment_method=PaymentMethod.MOBILE_MONEY)),
+        card=Sum('amount', filter=Q(payment_method=PaymentMethod.CARD)),
+        transfer=Sum('amount', filter=Q(payment_method=PaymentMethod.TRANSFER)),
     )
     # Tier from today's visit or most recent visit
     from apps.patients.models import Visit as _Visit
@@ -1833,6 +1922,14 @@ def patient_pos(request, patient_id):
     )
     from django.urls import reverse as _rev
     _pqueue_url = _rev('dashboard:home')
+    _ppos_wallet = None
+    if patient:
+        try:
+            from .models import PatientWallet
+            _pw = PatientWallet.objects.filter(patient=patient, is_deleted=False).first()
+            _ppos_wallet = int(_pw.balance) if _pw else 0
+        except Exception:
+            _ppos_wallet = None
     return render(request, 'billing/cashier_pos.html', {
         'token': None,
         'patient': patient,
@@ -1854,8 +1951,11 @@ def patient_pos(request, patient_id):
         'shift_total': shift_totals['total'] or 0,
         'shift_cash': shift_totals['cash'] or 0,
         'shift_mobile': shift_totals['mobile'] or 0,
+        'shift_card': shift_totals['card'] or 0,
+        'shift_transfer': shift_totals['transfer'] or 0,
         'patient_tier': _ppos_tier,
         'queue_url': _pqueue_url,
+        'wallet_balance': _ppos_wallet,
     })
 
 

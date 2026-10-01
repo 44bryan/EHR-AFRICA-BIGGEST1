@@ -24,6 +24,7 @@ urlpatterns = [
     path('invoice/<uuid:invoice_id>/add-item/', views.pos_add_item, name='pos_add_item'),
     path('invoice/<uuid:invoice_id>/discount/', views.pos_apply_discount, name='pos_apply_discount'),
     path('item/<uuid:item_id>/remove/', views.pos_remove_item, name='pos_remove_item'),
+    path('item/<uuid:item_id>/edit/', views.pos_edit_item, name='pos_edit_item'),
     path('invoice/<uuid:invoice_id>/record-payment/', views.pos_record_payment, name='pos_record_payment'),
     path('receipt/<uuid:invoice_id>/', views.receipt_view, name='receipt'),
 

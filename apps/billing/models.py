@@ -24,6 +24,7 @@ class PaymentMethod(models.TextChoices):
     INSURANCE = 'INSURANCE', 'Insurance'
     NHIS = 'NHIS', 'NHIS'
     WAIVER = 'WAIVER', 'Waiver'
+    WALLET = 'WALLET', 'Patient Wallet'
 
 
 class ServiceCategory(models.TextChoices):
