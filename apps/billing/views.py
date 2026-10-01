@@ -5817,15 +5817,38 @@ def chart_of_accounts(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    accounts = GLAccount.objects.filter(is_deleted=False).order_by('code')
-    # Search / filter
+    from collections import defaultdict
+    from django.db.models import Sum, Value, DecimalField, Q as _Q2
+    from django.db.models.functions import Coalesce
     q = request.GET.get('q', '')
     acct_class = request.GET.get('class', '')
+    # Single query: fetch all accounts with parent + annotated debit/credit totals
+    accounts_qs = (
+        GLAccount.objects
+        .filter(is_deleted=False)
+        .select_related('parent')
+        .annotate(
+            _total_debit=Coalesce(
+                Sum('journal_lines__debit_amount',
+                    filter=_Q2(journal_lines__entry__is_deleted=False)),
+                Value(0, output_field=DecimalField())),
+            _total_credit=Coalesce(
+                Sum('journal_lines__credit_amount',
+                    filter=_Q2(journal_lines__entry__is_deleted=False)),
+                Value(0, output_field=DecimalField())),
+        )
+        .order_by('code')
+    )
     if q:
-        accounts = accounts.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(description__icontains=q))
+        accounts_qs = accounts_qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(description__icontains=q))
     if acct_class:
-        accounts = accounts.filter(code__startswith=acct_class)
-    # Group by OHADA class (first digit of code)
+        accounts_qs = accounts_qs.filter(code__startswith=acct_class)
+    # Compute balance in Python (no extra DB hit per account)
+    for a in accounts_qs:
+        if a.account_type in (AccountType.ASSET, AccountType.EXPENSE):
+            a.computed_balance = a._total_debit - a._total_credit
+        else:
+            a.computed_balance = a._total_credit - a._total_debit
     CLASS_NAMES = {
         '1': 'Class 1 — Long-Term Resources (Equity & Liabilities)',
         '2': 'Class 2 — Fixed Assets',
@@ -5837,16 +5860,16 @@ def chart_of_accounts(request):
         '8': 'Class 8 — Exceptional Items',
         '9': 'Class 9 — Cost Accounting',
     }
-    from collections import defaultdict
     grouped = defaultdict(list)
-    for a in accounts:
+    for a in accounts_qs:
         cls = a.code[0] if a.code else '?'
         grouped[cls].append(a)
     groups = [(cls, CLASS_NAMES.get(cls, f'Class {cls}'), grouped[cls])
               for cls in sorted(grouped.keys())]
+    total_accounts = sum(len(v) for v in grouped.values())
     return render(request, 'billing/chart_of_accounts.html', {
         'groups': groups,
-        'total_accounts': accounts.count(),
+        'total_accounts': total_accounts,
         'q': q,
         'acct_class': acct_class,
         'class_choices': sorted(CLASS_NAMES.items()),

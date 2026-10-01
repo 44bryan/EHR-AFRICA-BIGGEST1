@@ -1028,7 +1028,8 @@ def change_visit_tier_view(request, visit_number):
     u = request.user
     _next = request.POST.get('next', '').strip()
     if not (u.is_cashier or u.is_chief_cashier or u.is_medical_director or u.is_super_admin
-            or u.is_admin_director or u.is_ceo or u.is_finance_director):
+            or u.is_admin_director or u.is_ceo or u.is_finance_director
+            or u.is_accountant or u.is_senior_accountant):
         messages.error(request, "You do not have permission to change a patient's service tier.")
         return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
 

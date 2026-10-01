@@ -149,18 +149,24 @@ def dashboard(request):
     if not _can_access_store(request.user) and not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied — Store Keeper or Admin role required.')
     today = timezone.localdate()
-    all_items = list(InventoryItem.objects.filter(is_active=True, is_deleted=False))
-    low_stock = [i for i in all_items if i.needs_reorder]
-
-    # Total stock value
-    stock_value = sum(
-        float(i.current_stock) * float(i.unit_cost)
-        for i in all_items if not i.is_consignment
+    base_qs = InventoryItem.objects.filter(is_active=True, is_deleted=False)
+    # Use DB aggregations instead of loading all items into Python
+    from django.db.models import DecimalField as _DF, ExpressionWrapper
+    totals = base_qs.aggregate(
+        total_items=Count('id'),
+        low_stock_count=Count('id', filter=Q(current_stock__lte=F('reorder_level'))),
+        stock_value=Sum(
+            ExpressionWrapper(F('current_stock') * F('unit_cost'), output_field=_DF()),
+            filter=Q(is_consignment=False)
+        ),
+        consignment_value=Sum(
+            ExpressionWrapper(F('current_stock') * F('unit_cost'), output_field=_DF()),
+            filter=Q(is_consignment=True)
+        ),
     )
-    consignment_value = sum(
-        float(i.current_stock) * float(i.unit_cost)
-        for i in all_items if i.is_consignment
-    )
+    low_stock = list(base_qs.filter(current_stock__lte=F('reorder_level')).select_related('store_location')[:15])
+    stock_value = int(totals['stock_value'] or 0)
+    consignment_value = int(totals['consignment_value'] or 0)
 
     # YTD PO spend
     po_spend_ytd = PurchaseOrder.objects.filter(
@@ -205,9 +211,9 @@ def dashboard(request):
     ).count()
 
     context = {
-        'total_items':        len(all_items),
-        'low_stock_count':    len(low_stock),
-        'low_stock_items':    low_stock[:15],
+        'total_items':        totals['total_items'],
+        'low_stock_count':    totals['low_stock_count'],
+        'low_stock_items':    low_stock,
         'pending_pos':        PurchaseOrder.objects.filter(status__in=['SUBMITTED', 'APPROVED'], is_deleted=False).count(),
         'auto_pos':           auto_pos,
         'vendors_count':      Vendor.objects.filter(is_active=True, is_deleted=False).count(),
@@ -270,9 +276,11 @@ def procurement_dashboard(request):
     # Vendor stats
     active_vendors = Vendor.objects.filter(is_active=True, is_deleted=False).count()
 
-    # Items needing reorder (procurement action required)
-    all_items = list(InventoryItem.objects.filter(is_active=True, is_deleted=False))
-    low_stock_items = [i for i in all_items if i.needs_reorder]
+    # Items needing reorder — DB filter instead of loading all items
+    low_qs = InventoryItem.objects.filter(
+        is_active=True, is_deleted=False, current_stock__lte=F('reorder_level')
+    ).select_related('store_location')
+    low_stock_items = list(low_qs[:10])
 
     # Auto-generated POs awaiting review
     auto_pos = po_qs.filter(status='DRAFT', is_auto_generated=True).count()
@@ -302,8 +310,8 @@ def procurement_dashboard(request):
         'matched_count': matched_count,
         'open_rfqs': open_rfqs,
         'active_vendors': active_vendors,
-        'low_stock_count': len(low_stock_items),
-        'low_stock_items': low_stock_items[:10],
+        'low_stock_count': low_qs.count(),
+        'low_stock_items': low_stock_items,
         'auto_pos': auto_pos,
         'recent_pos': recent_pos,
         'recent_invoices': recent_invoices,
