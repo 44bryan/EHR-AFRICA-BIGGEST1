@@ -9959,3 +9959,607 @@ def maintenance_schedule_create(request, asset_id):
         'frequencies': MaintenanceFrequency.choices,
         'staff': staff,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Month-End Close
+# ─────────────────────────────────────────────────────────────────────────────
+_MONTH_END_TASKS = [
+    'Verify all cashier sessions are closed and reconciled',
+    'Confirm all bank deposits are recorded',
+    'Complete bank reconciliation for all accounts',
+    'Verify all outstanding cheques',
+    'Post all manual journal entries',
+    'Run monthly depreciation (DepreciationRun)',
+    'Reconcile petty cash funds',
+    'Confirm all AP bills are recorded',
+    'Review and approve staff advances',
+    'Reconcile AR aging — follow up overdue invoices',
+    'Run payroll for the month',
+    'Post CNPS contributions',
+    'Post IRPP to DGI',
+    'Review budget vs actual variances',
+    'Prepare TVA return',
+    'Lock fiscal period',
+]
+
+
+@login_required
+def month_end_list(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import MonthEndClose
+    closes = MonthEndClose.objects.prefetch_related('tasks').order_by('-period_year', '-period_month')
+    return render(request, 'billing/month_end_list.html', {'closes': closes})
+
+
+@login_required
+def month_end_create(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import MonthEndClose, MonthEndCloseTask, MonthEndCloseStatus
+    if request.method == 'POST':
+        month = int(request.POST.get('period_month', 0))
+        year  = int(request.POST.get('period_year', 0))
+        if not (1 <= month <= 12) or year < 2000:
+            messages.error(request, 'Invalid period.')
+        elif MonthEndClose.objects.filter(period_month=month, period_year=year).exists():
+            messages.error(request, 'A close checklist already exists for this period.')
+        else:
+            close = MonthEndClose.objects.create(
+                period_month=month, period_year=year,
+                status=MonthEndCloseStatus.OPEN,
+                started_by=request.user,
+                created_by=request.user,
+            )
+            for i, task_name in enumerate(_MONTH_END_TASKS):
+                MonthEndCloseTask.objects.create(close=close, task_name=task_name, task_order=i)
+            messages.success(request, f'Month-end checklist created for {close.period_label}.')
+            return redirect('billing:month_end_detail', close_id=close.pk)
+    today = timezone.localdate()
+    return render(request, 'billing/month_end_form.html', {
+        'today': today,
+        'months': [(i, __import__('calendar').month_name[i]) for i in range(1, 13)],
+    })
+
+
+@login_required
+def month_end_detail(request, close_id):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import MonthEndClose, MonthEndCloseStatus
+    close = get_object_or_404(MonthEndClose, pk=close_id, is_deleted=False)
+    tasks = close.tasks.order_by('task_order')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'toggle_task':
+            task_id = request.POST.get('task_id')
+            task = close.tasks.filter(pk=task_id).first()
+            if task:
+                task.is_completed = not task.is_completed
+                if task.is_completed:
+                    task.completed_by = request.user
+                    task.completed_at = timezone.now()
+                else:
+                    task.completed_by = None
+                    task.completed_at = None
+                task.save()
+                if close.status == MonthEndCloseStatus.OPEN:
+                    close.status = MonthEndCloseStatus.IN_PROGRESS
+                    close.save()
+        elif action == 'close_period' and _can_approve_expense(request.user):
+            if tasks.filter(is_completed=False).exists():
+                messages.error(request, 'All tasks must be completed before closing the period.')
+            else:
+                close.status = MonthEndCloseStatus.CLOSED
+                close.closed_by = request.user
+                close.closed_at = timezone.now()
+                close.save()
+                messages.success(request, f'{close.period_label} closed successfully.')
+        return redirect('billing:month_end_detail', close_id=close_id)
+
+    return render(request, 'billing/month_end_detail.html', {
+        'close': close,
+        'tasks': tasks,
+        'can_close': _can_approve_expense(request.user),
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cash Count Sheet
+# ─────────────────────────────────────────────────────────────────────────────
+@login_required
+def cash_count_list(request):
+    if not (request.user.role in ('cashier', 'chief_cashier') or _can_view_financial_reports(request.user)):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import CashCountSheet
+    qs = CashCountSheet.objects.select_related('cashier', 'verified_by').order_by('-count_date', '-created_at')
+    if request.user.role == 'cashier':
+        qs = qs.filter(cashier=request.user)
+    return render(request, 'billing/cash_count_list.html', {'sheets': qs[:100]})
+
+
+@login_required
+def cash_count_create(request):
+    from .models import CashCountSheet, CashierSession, SessionStatus
+    if not (request.user.role in ('cashier', 'chief_cashier') or _can_view_financial_reports(request.user)):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    session = CashierSession.objects.filter(
+        cashier=request.user, status=SessionStatus.OPEN, is_deleted=False
+    ).order_by('-opened_at').first()
+
+    if request.method == 'POST':
+        denoms = {
+            'denom_10000': int(request.POST.get('d10000', 0) or 0),
+            'denom_5000':  int(request.POST.get('d5000',  0) or 0),
+            'denom_2000':  int(request.POST.get('d2000',  0) or 0),
+            'denom_1000':  int(request.POST.get('d1000',  0) or 0),
+            'denom_500':   int(request.POST.get('d500',   0) or 0),
+            'denom_200':   int(request.POST.get('d200',   0) or 0),
+            'denom_100':   int(request.POST.get('d100',   0) or 0),
+            'denom_50':    int(request.POST.get('d50',    0) or 0),
+            'denom_25':    int(request.POST.get('d25',    0) or 0),
+            'denom_10':    int(request.POST.get('d10',    0) or 0),
+        }
+        expected = Decimal(request.POST.get('expected', '0') or '0')
+        sheet = CashCountSheet(**denoms)
+        sheet.cashier = request.user
+        sheet.session = session
+        sheet.count_date = timezone.localdate()
+        sheet.total_expected = expected
+        sheet.total_counted = sheet.compute_total()
+        sheet.variance = sheet.total_counted - sheet.total_expected
+        sheet.notes = request.POST.get('notes', '')
+        sheet.created_by = request.user
+        sheet.save()
+        # Auto-create variance register entry if variance != 0
+        if sheet.variance != 0 and session:
+            try:
+                from .models import CashVarianceRegister
+                CashVarianceRegister.objects.get_or_create(
+                    session=session,
+                    defaults={
+                        'cashier': request.user,
+                        'variance_date': timezone.localdate(),
+                        'expected_amount': expected,
+                        'declared_amount': sheet.total_counted,
+                        'variance_amount': sheet.variance,
+                        'created_by': request.user,
+                    }
+                )
+            except Exception:
+                pass
+        messages.success(request, f'Cash count recorded. Variance: {sheet.variance:,.0f} FCFA')
+        return redirect('billing:cash_count_list')
+
+    # Expected = session total collected
+    expected = 0
+    if session:
+        expected = int(session.total_collected or 0)
+    return render(request, 'billing/cash_count_form.html', {
+        'session': session,
+        'expected': expected,
+        'today': timezone.localdate(),
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Depreciation Run
+# ─────────────────────────────────────────────────────────────────────────────
+@login_required
+def depreciation_run_list(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import DepreciationRun
+    runs = DepreciationRun.objects.select_related('run_by', 'journal_entry').order_by('-period_year', '-period_month')
+    return render(request, 'billing/depreciation_run_list.html', {'runs': runs})
+
+
+@login_required
+def depreciation_run_create(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import DepreciationRun, DepreciationEntry, AssetRegister, AssetStatus, DepreciationRunStatus
+    from django.db import transaction
+    if request.method == 'POST':
+        month = int(request.POST.get('period_month', 0))
+        year  = int(request.POST.get('period_year', 0))
+        if not (1 <= month <= 12) or year < 2000:
+            messages.error(request, 'Invalid period.')
+        elif DepreciationRun.objects.filter(period_month=month, period_year=year).exists():
+            messages.error(request, 'Depreciation run already exists for this period.')
+        else:
+            assets = AssetRegister.objects.filter(
+                is_deleted=False,
+                status__in=[AssetStatus.ACTIVE, AssetStatus.IN_USE],
+            )
+            total = Decimal('0')
+            entries_data = []
+            for asset in assets:
+                if asset.is_fully_depreciated:
+                    continue
+                monthly_dep = asset.annual_depreciation / 12
+                if monthly_dep <= 0:
+                    continue
+                accum_before = asset.accumulated_depreciation
+                accum_after  = accum_before + monthly_dep
+                nbv          = max(Decimal('0'), asset.purchase_price - accum_after)
+                entries_data.append((asset, monthly_dep, accum_before, accum_after, nbv))
+                total += monthly_dep
+
+            if not entries_data:
+                messages.warning(request, 'No active depreciable assets found.')
+            else:
+                with transaction.atomic():
+                    run = DepreciationRun.objects.create(
+                        period_month=month, period_year=year,
+                        status=DepreciationRunStatus.DRAFT,
+                        total_depreciation=total,
+                        run_by=request.user,
+                        created_by=request.user,
+                    )
+                    for asset, dep, ab, aa, nbv in entries_data:
+                        DepreciationEntry.objects.create(
+                            run=run, asset=asset,
+                            depreciation_amount=dep,
+                            accumulated_before=ab,
+                            accumulated_after=aa,
+                            net_book_value=nbv,
+                        )
+                messages.success(request, f'Depreciation run created: {run} — {len(entries_data)} assets, {total:,.0f} FCFA total.')
+                return redirect('billing:depreciation_run_detail', run_id=run.pk)
+    today = timezone.localdate()
+    return render(request, 'billing/depreciation_run_form.html', {
+        'months': [(i, __import__('calendar').month_name[i]) for i in range(1, 13)],
+        'today': today,
+    })
+
+
+@login_required
+def depreciation_run_detail(request, run_id):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import DepreciationRun, DepreciationRunStatus
+    run = get_object_or_404(DepreciationRun, pk=run_id, is_deleted=False)
+    entries = run.entries.select_related('asset').order_by('asset__asset_name')
+
+    if request.method == 'POST' and request.POST.get('action') == 'post' and _can_approve_expense(request.user):
+        if run.status == DepreciationRunStatus.DRAFT:
+            try:
+                _post_depreciation_gl(run, entries, request.user)
+                run.status = DepreciationRunStatus.POSTED
+                run.save()
+                messages.success(request, f'Depreciation GL entries posted for {run}.')
+            except Exception as e:
+                messages.error(request, f'GL posting failed: {e}')
+        return redirect('billing:depreciation_run_detail', run_id=run_id)
+
+    return render(request, 'billing/depreciation_run_detail.html', {
+        'run': run,
+        'entries': entries,
+        'can_post': _can_approve_expense(request.user),
+    })
+
+
+def _post_depreciation_gl(run, entries, user):
+    from .models import JournalEntry, JournalLine, GLAccount, JournalEntryStatus
+    dep_exp = GLAccount.objects.filter(code__startswith='681', is_deleted=False).first()  # 681000 Dotations amortissements
+    acc_dep = GLAccount.objects.filter(code__startswith='28',  is_deleted=False).first()  # 28xxxx Amortissements cumulés
+    if not dep_exp or not acc_dep:
+        raise ValueError('GL accounts 681xxx (depreciation expense) and 28xxx (accumulated depreciation) not configured.')
+    journal = JournalEntry.objects.create(
+        entry_date=timezone.localdate(),
+        reference=f'DEP-{run.period_year}-{run.period_month:02d}',
+        description=f'Monthly depreciation {run.period_label} — {entries.count()} assets',
+        status=JournalEntryStatus.POSTED,
+        created_by=user,
+    )
+    run.journal_entry = journal
+    run.save(update_fields=['journal_entry'])
+    lines = []
+    for entry in entries:
+        lines.append(JournalLine(journal_entry=journal, account=dep_exp,
+                                  debit_amount=entry.depreciation_amount, credit_amount=0,
+                                  description=f'Amortissement {entry.asset.asset_name}'))
+        lines.append(JournalLine(journal_entry=journal, account=acc_dep,
+                                  debit_amount=0, credit_amount=entry.depreciation_amount,
+                                  description=f'Amortissement cumulé {entry.asset.asset_name}'))
+    JournalLine.objects.bulk_create(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Withholding Tax
+# ─────────────────────────────────────────────────────────────────────────────
+@login_required
+def withholding_tax_list(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import WithholdingTax
+    qs = WithholdingTax.objects.select_related('ap_bill').order_by('-transaction_date')
+    # Filter
+    remitted = request.GET.get('remitted', '')
+    if remitted == '1':
+        qs = qs.filter(is_remitted=True)
+    elif remitted == '0':
+        qs = qs.filter(is_remitted=False)
+    from django.db.models import Sum as _S
+    totals = qs.aggregate(gross=_S('gross_amount'), wht=_S('wht_amount'), net=_S('net_paid'))
+    pending_total = WithholdingTax.objects.filter(is_remitted=False, is_deleted=False).aggregate(t=_S('wht_amount'))['t'] or 0
+    return render(request, 'billing/withholding_tax_list.html', {
+        'taxes': qs[:200],
+        'totals': totals,
+        'pending_total': pending_total,
+        'remitted_filter': remitted,
+    })
+
+
+@login_required
+def withholding_tax_create(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import WithholdingTax, WHTType, APBill
+    if request.method == 'POST':
+        try:
+            gross = Decimal(request.POST.get('gross_amount', '0'))
+            rate  = Decimal(request.POST.get('wht_rate', '5.50'))
+            wht   = (gross * rate / 100).quantize(Decimal('1'))
+            bill_id = request.POST.get('ap_bill_id') or None
+            bill = APBill.objects.filter(pk=bill_id).first() if bill_id else None
+            WithholdingTax.objects.create(
+                transaction_date=request.POST.get('transaction_date'),
+                supplier_name=request.POST.get('supplier_name', '').strip(),
+                ap_bill=bill,
+                tax_type=request.POST.get('tax_type', WHTType.TSR),
+                gross_amount=gross,
+                wht_rate=rate,
+                wht_amount=wht,
+                net_paid=gross - wht,
+                reference=request.POST.get('reference', '').strip(),
+                notes=request.POST.get('notes', '').strip(),
+                created_by=request.user,
+            )
+            messages.success(request, f'Withholding tax recorded: {wht:,.0f} FCFA')
+            return redirect('billing:withholding_tax_list')
+        except Exception as e:
+            messages.error(request, f'Error: {e}')
+    from .models import WHTType, APBill
+    bills = APBill.objects.filter(is_deleted=False).order_by('-bill_date')[:50]
+    return render(request, 'billing/withholding_tax_form.html', {
+        'wht_types': WHTType.choices,
+        'bills': bills,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def withholding_tax_remit(request, wht_id):
+    """Mark a withholding tax as remitted to DGI."""
+    if not _can_approve_expense(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:withholding_tax_list')
+    from .models import WithholdingTax
+    wht = get_object_or_404(WithholdingTax, pk=wht_id, is_deleted=False)
+    if request.method == 'POST':
+        wht.is_remitted = True
+        wht.remittance_date = request.POST.get('remittance_date') or timezone.localdate()
+        wht.remittance_ref  = request.POST.get('remittance_ref', '').strip()
+        wht.save()
+        messages.success(request, f'WHT marked as remitted to DGI.')
+    return redirect('billing:withholding_tax_list')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SYSCOHADA Financial Statements
+# ─────────────────────────────────────────────────────────────────────────────
+@login_required
+def syscohada_bilan(request):
+    """OHADA-formatted Balance Sheet (Bilan SYSCOHADA)."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import GLAccount, JournalLine
+    from django.db.models import Sum as _S, F, Case, When, Value, DecimalField as _DF
+    today = timezone.localdate()
+    as_of = request.GET.get('as_of', str(today))
+    try:
+        from datetime import date as _d
+        as_of_date = _d.fromisoformat(as_of)
+    except Exception:
+        as_of_date = today
+
+    # Get all account balances up to as_of_date
+    balances = {}
+    for row in JournalLine.objects.filter(
+        journal_entry__entry_date__lte=as_of_date,
+        journal_entry__status='POSTED',
+    ).values('account__code', 'account__name', 'account__account_type').annotate(
+        total_dr=_S('debit'), total_cr=_S('credit')
+    ):
+        code = row['account__code'] or ''
+        net = float(row['total_dr'] or 0) - float(row['total_cr'] or 0)
+        balances[code] = {'name': row['account__name'], 'type': row['account__account_type'], 'net': net}
+
+    def _sum_prefix(prefix):
+        return sum(v['net'] for k, v in balances.items() if k.startswith(prefix))
+
+    # ACTIF (Assets)
+    immobilisations = {
+        'Frais établissement': _sum_prefix('201'),
+        'Immob. incorporelles': _sum_prefix('21'),
+        'Immob. corporelles': _sum_prefix('22') + _sum_prefix('23') + _sum_prefix('24'),
+        'Immob. financières': _sum_prefix('26') + _sum_prefix('27'),
+        'Amortissements (-)': _sum_prefix('28') + _sum_prefix('29'),
+    }
+    actif_immo = sum(immobilisations.values())
+
+    actif_circ = {
+        'Stocks': _sum_prefix('31') + _sum_prefix('32') + _sum_prefix('33') + _sum_prefix('34') + _sum_prefix('35'),
+        'Créances clients (AR)': _sum_prefix('41'),
+        'Autres créances': _sum_prefix('42') + _sum_prefix('43') + _sum_prefix('44') + _sum_prefix('45'),
+        'Avances personnel': _sum_prefix('421'),
+        'Provisions créances (-)': _sum_prefix('49'),
+    }
+    actif_ct = sum(actif_circ.values())
+
+    tresorerie_actif = {
+        'Caisse': _sum_prefix('57'),
+        'Banques': _sum_prefix('52'),
+        'Chèques à encaisser': _sum_prefix('515'),
+    }
+    tres_a = sum(tresorerie_actif.values())
+
+    total_actif = actif_immo + actif_ct + tres_a
+
+    # PASSIF (Liabilities + Equity)
+    capitaux = {
+        'Capital social': _sum_prefix('101'),
+        'Réserves': _sum_prefix('11') + _sum_prefix('12') + _sum_prefix('13'),
+        'Résultat exercice': _sum_prefix('12') + _sum_prefix('13'),
+        'Subventions': _sum_prefix('14'),
+        'Provisions réglementées': _sum_prefix('15'),
+    }
+    cap_propres = -sum(capitaux.values())  # credit balances are negative in our model
+
+    dettes_lt = {
+        'Emprunts LT': _sum_prefix('161') + _sum_prefix('162') + _sum_prefix('163'),
+        'Dettes envers établissements crédit': _sum_prefix('164'),
+    }
+    dettes_lt_total = -sum(dettes_lt.values())
+
+    dettes_ct = {
+        'Fournisseurs (AP)': _sum_prefix('40'),
+        'Personnel': _sum_prefix('42'),
+        'Organismes sociaux (CNPS)': _sum_prefix('43'),
+        'État & impôts': _sum_prefix('44') + _sum_prefix('447'),
+        'Autres dettes CT': _sum_prefix('46') + _sum_prefix('47') + _sum_prefix('48'),
+    }
+    dettes_ct_total = -sum(dettes_ct.values())
+
+    tresorerie_passif = {
+        'Concours bancaires': _sum_prefix('519'),
+        'Découverts': _sum_prefix('561'),
+    }
+    tres_p = -sum(tresorerie_passif.values())
+
+    total_passif = cap_propres + dettes_lt_total + dettes_ct_total + tres_p
+
+    return render(request, 'billing/reports/syscohada_bilan.html', {
+        'as_of_date': as_of_date,
+        'immobilisations': immobilisations,
+        'actif_immo': actif_immo,
+        'actif_circ': actif_circ,
+        'actif_ct': actif_ct,
+        'tresorerie_actif': tresorerie_actif,
+        'tres_a': tres_a,
+        'total_actif': total_actif,
+        'capitaux': capitaux,
+        'cap_propres': cap_propres,
+        'dettes_lt': dettes_lt,
+        'dettes_lt_total': dettes_lt_total,
+        'dettes_ct': dettes_ct,
+        'dettes_ct_total': dettes_ct_total,
+        'tresorerie_passif': tresorerie_passif,
+        'tres_p': tres_p,
+        'total_passif': total_passif,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rolling Cash Flow Forecast (30/60/90 days)
+# ─────────────────────────────────────────────────────────────────────────────
+@login_required
+def cash_flow_forecast(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    from .models import (Invoice, InvoiceStatus, APBill, APBillStatus,
+                         BankAccount, SafeBalance, StaffAdvance, AdvanceStatus)
+    from datetime import timedelta
+    from django.db.models import Sum as _S, F, ExpressionWrapper, DecimalField as _DF
+
+    today = timezone.localdate()
+
+    # Current liquidity position
+    bank_total = BankAccount.objects.filter(is_active=True, is_deleted=False).aggregate(
+        t=_S('opening_balance'))['t'] or 0
+    latest_safe = SafeBalance.objects.filter(is_deleted=False).order_by('-date').first()
+    safe_balance = latest_safe.closing_balance if latest_safe else 0
+    current_cash = float(safe_balance) + float(bank_total)
+
+    # Invoice subtotal is a property not a DB field — sum via items (unit_price * quantity)
+    _inv_total_expr = ExpressionWrapper(
+        F('items__unit_price') * F('items__quantity'),
+        output_field=_DF(max_digits=14, decimal_places=2),
+    )
+
+    # Expected inflows: outstanding invoices (AR)
+    ar_30 = Invoice.objects.filter(
+        status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+        is_deleted=False, issue_date__gte=today - timedelta(days=30)
+    ).aggregate(t=_S(_inv_total_expr))['t'] or 0
+
+    ar_60 = Invoice.objects.filter(
+        status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+        is_deleted=False, issue_date__gte=today - timedelta(days=60),
+        issue_date__lt=today - timedelta(days=30)
+    ).aggregate(t=_S(_inv_total_expr))['t'] or 0
+
+    ar_90 = Invoice.objects.filter(
+        status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+        is_deleted=False, issue_date__gte=today - timedelta(days=90),
+        issue_date__lt=today - timedelta(days=60)
+    ).aggregate(t=_S(_inv_total_expr))['t'] or 0
+
+    # Expected outflows: AP bills due
+    ap_30 = APBill.objects.filter(
+        status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+        due_date__lte=today + timedelta(days=30), is_deleted=False
+    ).aggregate(t=_S('amount_due'))['t'] or 0
+
+    ap_60 = APBill.objects.filter(
+        status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+        due_date__gt=today + timedelta(days=30),
+        due_date__lte=today + timedelta(days=60), is_deleted=False
+    ).aggregate(t=_S('amount_due'))['t'] or 0
+
+    ap_90 = APBill.objects.filter(
+        status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL],
+        due_date__gt=today + timedelta(days=60),
+        due_date__lte=today + timedelta(days=90), is_deleted=False
+    ).aggregate(t=_S('amount_due'))['t'] or 0
+
+    # Outstanding advances
+    advances_out = StaffAdvance.objects.filter(
+        status=AdvanceStatus.DISBURSED, is_deleted=False
+    ).aggregate(t=_S('amount_approved'))['t'] or 0
+
+    def _fmt_period(days):
+        return (today + timedelta(days=days)).strftime('%d %b %Y')
+
+    return render(request, 'billing/reports/cash_flow_forecast.html', {
+        'today': today,
+        'current_cash': current_cash,
+        'safe_balance': safe_balance,
+        'bank_total': bank_total,
+        'ar_30': ar_30, 'ar_60': ar_60, 'ar_90': ar_90,
+        'ap_30': ap_30, 'ap_60': ap_60, 'ap_90': ap_90,
+        'advances_out': advances_out,
+        'net_30': float(ar_30) - float(ap_30),
+        'net_60': float(ar_30) + float(ar_60) - float(ap_30) - float(ap_60),
+        'net_90': float(ar_30) + float(ar_60) + float(ar_90) - float(ap_30) - float(ap_60) - float(ap_90),
+        'end_30': _fmt_period(30),
+        'end_60': _fmt_period(60),
+        'end_90': _fmt_period(90),
+    })

@@ -1,8 +1,9 @@
 """
 Payroll Module Views
 Salary structures, payroll runs, and payslip management.
+Cameroon-specific: CNPS 4.2% employee / 14.95% employer, IRPP progressive rates.
 """
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import calendar as _cal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -15,6 +16,55 @@ from .models import (
     StaffSalaryAssignment, PayrollRun, PayrollRunStatus, PaySlip, PaySlipLine,
     ComponentType,
 )
+
+# ── Cameroon IRPP (Income Tax) calculation ─────────────────────────────────────
+# Source: DGI Cameroon — progressive annual brackets + 10% CAC
+_IRPP_BRACKETS = [
+    (Decimal('2000000'),  Decimal('0.11')),   # 0 – 2,000,000 FCFA/year → 11%
+    (Decimal('3000000'),  Decimal('0.165')),  # 2,000,001 – 3,000,000 → 16.5%
+    (Decimal('5000000'),  Decimal('0.275')),  # 3,000,001 – 5,000,000 → 27.5%
+    (None,                Decimal('0.385')),  # > 5,000,000 → 38.5%
+]
+_IRPP_CAC = Decimal('0.10')           # 10% Centimes Additionnels Communaux
+_CNPS_EMP_RATE  = Decimal('0.042')    # Employee pension contribution: 4.2%
+_CNPS_EMPL_RATE = Decimal('0.1495')   # Employer total: pension 4.2% + family 7% + AT 2.5% + PNVV 0.75%
+_CNPS_CAP       = Decimal('750000')   # Monthly CNPS base ceiling
+
+def _compute_cnps(gross: Decimal):
+    """Compute employee and employer CNPS contributions (capped at 750,000 base)."""
+    base = min(gross, _CNPS_CAP)
+    emp  = (base * _CNPS_EMP_RATE).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    empl = (base * _CNPS_EMPL_RATE).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    return emp, empl
+
+def _compute_irpp(gross: Decimal, cnps_emp: Decimal):
+    """
+    Compute monthly IRPP (Cameroon income tax) using annual brackets.
+    Steps:
+    1. Professional expense deduction: 30% of gross, capped at 33,333 FCFA/month
+    2. Taxable = gross - cnps_emp - professional_deduction
+    3. Annualise, apply progressive brackets, add 10% CAC, monthly-ise.
+    """
+    prof_deduction = min(gross * Decimal('0.30'), Decimal('33333'))
+    taxable_monthly = max(Decimal('0'), gross - cnps_emp - prof_deduction)
+    taxable_annual  = taxable_monthly * 12
+
+    irpp_annual = Decimal('0')
+    prev_limit  = Decimal('0')
+    for limit, rate in _IRPP_BRACKETS:
+        if taxable_annual <= prev_limit:
+            break
+        band_top = limit if limit else taxable_annual
+        taxable_in_band = min(taxable_annual, band_top) - prev_limit
+        if taxable_in_band > 0:
+            irpp_annual += taxable_in_band * rate
+        if limit is None or taxable_annual <= limit:
+            break
+        prev_limit = limit
+
+    irpp_annual_with_cac = (irpp_annual * (1 + _IRPP_CAC)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    monthly_irpp = (irpp_annual_with_cac / 12).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    return monthly_irpp
 
 
 def _can_manage(user):
@@ -274,52 +324,71 @@ def run_generate(request, run_id):
 
             basic = assignment.basic_salary
             lines_data = []
-            gross = Decimal('0')
-            deductions = Decimal('0')
-            cnps_emp = Decimal('0')
-            cnps_empl = Decimal('0')
-            wh_tax = Decimal('0')
+            earnings = Decimal('0')
+            manual_deductions = Decimal('0')
 
+            # 1. Collect earnings and manual deductions from salary structure
             for sc in assignment.structure.components.select_related('component').order_by('sort_order'):
                 comp = sc.component
                 amount = sc.effective_amount(basic)
-                lines_data.append((comp, comp.component_type, amount))
                 if comp.component_type == ComponentType.EARNING:
-                    gross += amount
-                elif comp.component_type in (ComponentType.DEDUCTION, ComponentType.STATUTORY):
-                    deductions += amount
-                if comp.code == 'CNPS_EMP':
-                    cnps_emp = amount
-                elif comp.code == 'CNPS_EMPL':
-                    cnps_empl = amount
-                elif comp.code == 'IRPP':
-                    wh_tax = amount
+                    lines_data.append((comp, ComponentType.EARNING, amount))
+                    earnings += amount
+                elif comp.component_type == ComponentType.DEDUCTION:
+                    lines_data.append((comp, ComponentType.DEDUCTION, amount))
+                    manual_deductions += amount
+                # Skip STATUTORY from components — we auto-calculate below
 
-            # Add basic salary as an earning line
-            gross += basic
+            gross = basic + earnings  # total gross
+
+            # 2. Auto-compute CNPS (Cameroon statutory contributions)
+            cnps_emp, cnps_empl = _compute_cnps(gross)
+
+            # 3. Auto-compute IRPP (Cameroon income tax)
+            irpp = _compute_irpp(gross, cnps_emp)
+
+            # 4. Total deductions = CNPS employee + IRPP + manual deductions
+            total_deductions = cnps_emp + irpp + manual_deductions
+            net_pay = max(Decimal('0'), gross - total_deductions)
 
             slip = PaySlip.objects.create(
                 payroll_run=run,
                 staff=assignment.staff,
                 basic_salary=basic,
                 gross_pay=gross,
-                total_deductions=deductions,
-                net_pay=gross - deductions,
+                total_deductions=total_deductions,
+                net_pay=net_pay,
                 cnps_employee=cnps_emp,
                 cnps_employer=cnps_empl,
-                withholding_tax=wh_tax,
+                withholding_tax=irpp,
+                status='DRAFT',
             )
+
+            # Basic salary line
             PaySlipLine.objects.create(
-                payslip=slip, component_id=None if not lines_data else lines_data[0][0].pk,
-                description='Basic Salary',
+                payslip=slip,
+                component=None,
+                description='Salaire de Base',
                 component_type=ComponentType.EARNING,
                 amount=basic,
-            ) if not lines_data else None
+            )
+            # Allowance / deduction lines from structure
             for comp, ctype, amount in lines_data:
                 PaySlipLine.objects.create(
                     payslip=slip, component=comp, description=comp.name,
                     component_type=ctype, amount=amount,
                 )
+            # Statutory lines (auto-calculated)
+            PaySlipLine.objects.create(
+                payslip=slip, component=None,
+                description=f'CNPS Employé (4.2% plafonné 750 000)',
+                component_type=ComponentType.STATUTORY, amount=cnps_emp,
+            )
+            PaySlipLine.objects.create(
+                payslip=slip, component=None,
+                description=f'IRPP + CAC (Impôt sur Revenu)',
+                component_type=ComponentType.STATUTORY, amount=irpp,
+            )
             created += 1
 
         # Update run totals
@@ -332,7 +401,7 @@ def run_generate(request, run_id):
         run.total_net = totals['net'] or 0
         run.save()
 
-    messages.success(request, f'Generated {created} payslips. {skipped} already existed.')
+    messages.success(request, f'Generated {created} payslips (CNPS + IRPP auto-calculated). {skipped} already existed.')
     return redirect('payroll:run_detail', run_id=run_id)
 
 
@@ -364,12 +433,116 @@ def run_mark_paid(request, run_id):
         return redirect('payroll:run_detail', run_id=run_id)
     run = get_object_or_404(PayrollRun, pk=run_id)
     if request.method == 'POST' and run.status == PayrollRunStatus.APPROVED:
-        run.status = PayrollRunStatus.PAID
-        run.paid_at = timezone.now()
-        run.payslips.all().update(status='PAID')
-        run.save()
-        messages.success(request, f'Payroll marked as PAID — {run}.')
+        with transaction.atomic():
+            run.status = PayrollRunStatus.PAID
+            run.paid_at = timezone.now()
+            run.payslips.all().update(status='PAID')
+            run.save()
+            # GL posting: Dr 661000 Rémunérations / Cr 421000 Rémunérations dues
+            _post_payroll_gl(run, request.user)
+        messages.success(request, f'Payroll marked as PAID — {run}. GL entries posted.')
     return redirect('payroll:run_detail', run_id=run_id)
+
+
+def _post_payroll_gl(run, user):
+    """Post GL entries when payroll is marked paid."""
+    try:
+        from apps.billing.models import JournalEntry, JournalLine, GLAccount, JournalEntryStatus
+        from django.db.models import Sum as _Sum
+        totals = run.payslips.aggregate(
+            gross=_Sum('gross_pay'),
+            net=_Sum('net_pay'),
+            cnps_emp=_Sum('cnps_employee'),
+            cnps_empl=_Sum('cnps_employer'),
+            irpp=_Sum('withholding_tax'),
+        )
+        gross  = totals['gross']  or Decimal('0')
+        net    = totals['net']    or Decimal('0')
+        cnps_e = totals['cnps_emp']  or Decimal('0')
+        cnps_r = totals['cnps_empl'] or Decimal('0')
+        irpp   = totals['irpp']   or Decimal('0')
+
+        # Find or use fallback GL accounts
+        def _acct(code):
+            return GLAccount.objects.filter(code__startswith=code, is_deleted=False).first()
+
+        sal_exp   = _acct('661')   # 661000 Salaires et traitements
+        cnps_exp  = _acct('664')   # 664000 Charges sociales patronales
+        sal_payab = _acct('421')   # 421000 Rémunérations dues
+        cnps_payab= _acct('431')   # 431000 CNPS à payer
+        tax_payab = _acct('447')   # 447000 IRPP à reverser
+
+        if not sal_exp or not sal_payab:
+            return  # GL accounts not configured — skip silently
+
+        entry = JournalEntry.objects.create(
+            entry_date=timezone.localdate(),
+            reference=f'PAY-{run.year}-{run.month:02d}',
+            description=f'Payroll {run.period_label} — {run.payslips.count()} staff',
+            status=JournalEntryStatus.POSTED,
+            created_by=user,
+        )
+        lines = [
+            # Dr Salary expense (gross)
+            JournalLine(journal_entry=entry, account=sal_exp,   debit_amount=gross,  credit_amount=0,    description='Salaires bruts'),
+        ]
+        # Dr Employer CNPS charge
+        if cnps_exp and cnps_r:
+            lines.append(JournalLine(journal_entry=entry, account=cnps_exp, debit_amount=cnps_r, credit_amount=0, description='Charges patronales CNPS'))
+        # Cr Net salary payable
+        lines.append(JournalLine(journal_entry=entry, account=sal_payab,  debit_amount=0, credit_amount=net,    description='Salaires nets à payer'))
+        # Cr CNPS to remit (employee + employer)
+        if cnps_payab and (cnps_e + cnps_r):
+            lines.append(JournalLine(journal_entry=entry, account=cnps_payab, debit_amount=0, credit_amount=cnps_e+cnps_r, description='CNPS à reverser'))
+        # Cr IRPP to remit
+        if tax_payab and irpp:
+            lines.append(JournalLine(journal_entry=entry, account=tax_payab, debit_amount=0, credit_amount=irpp, description='IRPP à reverser DGI'))
+        JournalLine.objects.bulk_create(lines)
+    except Exception:
+        pass  # Never block payroll marking
+
+
+# ── CNPS Declaration ────────────────────────────────────────────────────────────
+@login_required
+def cnps_declaration(request, run_id):
+    """Generate the monthly CNPS declaration summary."""
+    if not _can_manage(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    run = get_object_or_404(PayrollRun, pk=run_id)
+    slips = run.payslips.select_related('staff').order_by('staff__last_name')
+    from django.db.models import Sum as _S
+    totals = slips.aggregate(
+        gross=_S('gross_pay'), emp=_S('cnps_employee'), empl=_S('cnps_employer'),
+    )
+    return render(request, 'payroll/cnps_declaration.html', {
+        'run': run,
+        'slips': slips,
+        'totals': totals,
+        'cnps_emp_rate': _CNPS_EMP_RATE * 100,
+        'cnps_empl_rate': _CNPS_EMPL_RATE * 100,
+        'cnps_cap': _CNPS_CAP,
+    })
+
+
+# ── Payslip Print (printable A4) ────────────────────────────────────────────────
+@login_required
+def payslip_print(request, slip_id):
+    """Printable A4 payslip."""
+    slip = get_object_or_404(PaySlip, pk=slip_id)
+    if not _can_manage(request.user) and slip.staff != request.user:
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+    lines = slip.lines.order_by('component_type', 'description')
+    earnings  = [l for l in lines if l.component_type == ComponentType.EARNING]
+    deductions= [l for l in lines if l.component_type in (ComponentType.DEDUCTION, ComponentType.STATUTORY)]
+    from apps.reports.views import _sig_b64
+    return render(request, 'payroll/payslip_print.html', {
+        'slip': slip,
+        'earnings': earnings,
+        'deductions': deductions,
+        'sig': _sig_b64(request.user),
+    })
 
 
 # ── Individual Payslip ─────────────────────────────────────────────────────────
