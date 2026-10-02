@@ -19,5 +19,7 @@ urlpatterns = [
     path('runs/<uuid:run_id>/approve/', views.run_approve, name='run_approve'),
     path('runs/<uuid:run_id>/mark-paid/', views.run_mark_paid, name='run_mark_paid'),
     path('payslips/<uuid:slip_id>/', views.payslip_detail, name='payslip_detail'),
-    path('my-payslips/', views.my_payslips, name='my_payslips'),
+    path('payslips/<uuid:slip_id>/print/', views.payslip_print, name='payslip_print'),
+    path('payslips/<uuid:slip_id>/pdf/', views.payslip_pdf, name='payslip_pdf'),
+    path('runs/<uuid:run_id>/cnps/', views.cnps_declaration, name='cnps_declaration'),
 ]

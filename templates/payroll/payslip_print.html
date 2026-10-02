@@ -1,0 +1,372 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bulletin de Paie — {{ slip.staff.get_full_name }} — {{ slip.payroll_run.period_label }}</title>
+<style>
+/* ── Reset ── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+
+/* ── Screen wrapper ── */
+body{font-family:"Segoe UI",Arial,sans-serif;font-size:9.5pt;color:#1a1a1a;background:#e0e5ee;
+  display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px;}
+
+/* ── Action bar (screen only) ── */
+.action-bar{width:210mm;display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 18px;border-radius:5px;
+  font-size:9pt;font-weight:600;cursor:pointer;border:none;text-decoration:none;}
+.btn-primary{background:#1a3a6c;color:#fff;}
+.btn-primary:hover{background:#142d55;}
+.btn-secondary{background:#fff;color:#1a3a6c;border:1.5px solid #1a3a6c;}
+.btn-secondary:hover{background:#f0f4fa;}
+.btn-back{background:#fff;color:#555;border:1px solid #ccc;}
+.btn-back:hover{background:#f5f5f5;}
+
+/* ── Document sheet ── */
+.doc{width:210mm;background:#fff;box-shadow:0 4px 28px rgba(0,0,0,.15);}
+
+/* ── Letterhead ── */
+.lh{border-bottom:4px solid #1a3a6c;padding:14px 20px 12px;}
+.lh-inner{display:flex;align-items:center;gap:14px;}
+.lh-logo{width:64px;height:64px;object-fit:contain;border-radius:8px;flex-shrink:0;}
+.lh-info{flex:1;}
+.lh-name{font-size:15pt;font-weight:800;color:#1a3a6c;line-height:1.1;}
+.lh-sub{font-size:8.5pt;color:#1a3a6c;font-style:italic;margin-bottom:2px;}
+.lh-detail{font-size:8pt;color:#555;}
+.lh-seal{text-align:right;flex-shrink:0;}
+.lh-seal-label{font-size:7pt;color:#888;text-align:right;margin-top:2px;line-height:1.5;}
+
+/* ── Title bar ── */
+.slip-title{background:#1a3a6c;color:#fff;text-align:center;padding:6px 12px;
+  font-size:12pt;font-weight:800;letter-spacing:3px;text-transform:uppercase;margin-bottom:14px;}
+
+/* ── Employee info grid ── */
+.emp-grid{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #c0cfe0;
+  border-radius:4px;overflow:hidden;margin:0 16px 14px;}
+.emp-cell{padding:5px 10px;border-right:1px solid #c0cfe0;border-bottom:1px solid #c0cfe0;}
+.emp-cell:nth-child(3n){border-right:none;}
+.emp-cell:nth-last-child(-n+3){border-bottom:none;}
+.emp-label{font-size:6.5pt;text-transform:uppercase;letter-spacing:.06em;color:#5472a0;font-weight:700;}
+.emp-value{font-size:9pt;font-weight:700;color:#1a1a1a;margin-top:1px;}
+
+/* ── Pay tables section ── */
+.pay-section{padding:0 16px 10px;}
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+
+.pay-sec-title{background:#1a3a6c;color:#fff;font-size:7.5pt;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;padding:4px 8px;border-radius:3px 3px 0 0;}
+
+.pay-table{width:100%;border-collapse:collapse;font-size:8.5pt;border:1px solid #c0cfe0;border-top:none;}
+.pay-table th{background:#e8eef6;padding:4px 7px;font-size:7.5pt;font-weight:700;
+  text-align:left;border-bottom:1.5px solid #c0cfe0;color:#1a3a6c;}
+.pay-table th.r{text-align:right;}
+.pay-table td{padding:4px 7px;border-bottom:1px solid #e8eef6;}
+.pay-table td.r{text-align:right;}
+.pay-table td.code{font-family:monospace;font-size:7.5pt;color:#888;width:55px;}
+.pay-table td.rate{color:#5472a0;font-size:7.5pt;text-align:center;width:60px;}
+.pay-table .earn{color:#1b5e20;font-weight:700;text-align:right;}
+.pay-table .ded{color:#b71c1c;font-weight:700;text-align:right;}
+.pay-table .total-row td{font-weight:800;background:#e8eef6;border-top:1.5px solid #c0cfe0;
+  border-bottom:none;font-size:9pt;}
+
+/* ── Summary + Net ── */
+.summary-net{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+
+.recap-box{border:1px solid #c0cfe0;border-radius:4px;overflow:hidden;}
+.recap-row{display:flex;justify-content:space-between;align-items:center;
+  padding:5px 10px;font-size:9pt;border-bottom:1px solid #e8eef6;}
+.recap-row:last-child{border-bottom:none;}
+.recap-row.earn .rv{color:#1b5e20;font-weight:700;}
+.recap-row.ded  .rv{color:#b71c1c;font-weight:700;}
+.recap-row.total{background:#e8eef6;}
+.recap-row.total .rl{font-weight:800;color:#1a3a6c;}
+.recap-row.total .rv{color:#b71c1c;font-weight:800;font-size:10pt;}
+
+.net-box{background:#1a3a6c;color:#fff;text-align:center;padding:14px 10px;border-radius:4px;}
+.net-label{font-size:7.5pt;letter-spacing:2px;text-transform:uppercase;opacity:.85;}
+.net-value{font-size:22pt;font-weight:900;margin-top:4px;letter-spacing:1px;}
+
+/* ── Info boxes ── */
+.employer-row{margin:0 16px 10px;background:#fff8e1;border:1px solid #ffe082;
+  border-radius:3px;padding:6px 10px;font-size:8pt;color:#5d4037;}
+.cnps-detail{margin:0 16px 10px;background:#e8f5e9;border:1px solid #a5d6a7;
+  border-radius:3px;padding:7px 12px;font-size:8pt;color:#1b5e20;}
+.cnps-detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px;}
+.cnps-item .ci-label{font-size:6.5pt;color:#2e7d32;text-transform:uppercase;font-weight:700;}
+.cnps-item .ci-val{font-size:9pt;font-weight:700;color:#1b5e20;}
+
+/* ── Legal + Signatures ── */
+.legal{margin:0 16px 12px;text-align:center;font-size:7.5pt;color:#888;
+  background:#f5f5f5;border:1px solid #e0e0e0;border-radius:3px;padding:5px 10px;font-style:italic;}
+.sig-section{padding:0 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.sig-heading{font-size:7.5pt;color:#555;margin-bottom:30px;}
+.sig-line{border-top:1.5px solid #333;padding-top:4px;font-size:8.5pt;font-weight:700;}
+.sig-sub{font-size:7.5pt;color:#888;margin-top:2px;}
+
+/* ── Screen-only ── */
+@media screen{
+  .doc-footer{width:210mm;text-align:center;padding:8px 0;font-size:8pt;color:#888;margin-top:4px;}
+}
+
+/* ── Print ── */
+@media print{
+  body{background:#fff;padding:0;display:block;}
+  .action-bar,.doc-footer{display:none;}
+  .doc{width:100%;box-shadow:none;}
+}
+@page{size:A4;margin:0;}
+</style>
+</head>
+<body>
+
+<!-- Action bar (screen only) -->
+<div class="action-bar">
+  <a href="{% url 'payroll:payslip_pdf' slip_id=slip.pk %}" class="btn btn-primary" target="_blank">
+    &#128462; Télécharger PDF
+  </a>
+  <button onclick="window.print()" class="btn btn-secondary">
+    &#128438; Imprimer
+  </button>
+  <a href="{% url 'payroll:payslip_detail' slip_id=slip.pk %}" class="btn btn-back">
+    &#8592; Retour
+  </a>
+</div>
+
+<div class="doc">
+
+  <!-- Letterhead -->
+  <div class="lh">
+    <div class="lh-inner">
+      {% if hospital_logo %}
+      <img src="{{ hospital_logo }}" alt="Logo" class="lh-logo">
+      {% endif %}
+      <div class="lh-info">
+        <div class="lh-name">{{ HOSPITAL_NAME }}</div>
+        <div class="lh-sub">Hôpital Spécialisé en Ophtalmologie · Cameroun</div>
+        {% if HOSPITAL_ADDRESS %}<div class="lh-detail">{{ HOSPITAL_ADDRESS }}</div>{% endif %}
+        {% if HOSPITAL_PHONE %}<div class="lh-detail">Tél: {{ HOSPITAL_PHONE }}</div>{% endif %}
+      </div>
+      <div class="lh-seal">
+        <div class="lh-seal-label">CONFIDENTIEL<br>BULLETIN DE PAIE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Title bar -->
+  <div class="slip-title">Bulletin de Paie &mdash; {{ slip.payroll_run.period_label }}</div>
+
+  <!-- Employee info -->
+  <div class="emp-grid">
+    <div class="emp-cell">
+      <div class="emp-label">Nom &amp; Prénom</div>
+      <div class="emp-value">{{ slip.staff.get_full_name }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Matricule</div>
+      <div class="emp-value">{{ slip.staff.employee_id|default:"—" }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Poste / Fonction</div>
+      <div class="emp-value">{{ slip.staff.get_role_display }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Département / Service</div>
+      <div class="emp-value">{{ slip.staff.department.name|default:"—" }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Période de Paie</div>
+      <div class="emp-value">{{ slip.payroll_run.period_label }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Date de Paiement</div>
+      <div class="emp-value">{{ slip.payment_date|date:"d/m/Y"|default:"—" }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Mode de Paiement</div>
+      <div class="emp-value">{{ slip.payment_method|default:"—" }}</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Salaire de Base</div>
+      <div class="emp-value">{{ slip.basic_salary|floatformat:0|intcomma }} FCFA</div>
+    </div>
+    <div class="emp-cell">
+      <div class="emp-label">Statut</div>
+      <div class="emp-value">
+        {% if slip.status == 'PAID' %}&#10003; Payé
+        {% elif slip.status == 'APPROVED' %}Approuvé
+        {% else %}Brouillon{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Earnings & Deductions -->
+  <div class="pay-section">
+    <div class="pay-grid">
+
+      <!-- GAINS -->
+      <div>
+        <div class="pay-sec-title">Éléments de Rémunération (Gains)</div>
+        <table class="pay-table">
+          <thead>
+            <tr>
+              <th>Libellé</th>
+              <th class="r">Montant (FCFA)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in earnings %}
+            <tr>
+              <td>{{ line.description }}</td>
+              <td class="earn">{{ line.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="2" style="color:#888;font-style:italic;padding:8px;">Aucune ligne de gain</td></tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td>TOTAL BRUT</td>
+              <td class="earn">{{ slip.gross_pay|floatformat:0|intcomma }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RETENUES -->
+      <div>
+        <div class="pay-sec-title">Retenues &amp; Cotisations Sociales</div>
+        <table class="pay-table">
+          <thead>
+            <tr>
+              <th>Libellé</th>
+              <th class="r" style="width:50px;">Taux</th>
+              <th class="r">Montant (FCFA)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- CNPS employee statutory -->
+            <tr>
+              <td>NSIF / CNPS Employé<br><small style="color:#888;font-size:7pt;">Retraite-Invalidité-Décès (plafond 750 000 FCFA)</small></td>
+              <td class="rate">4,20 %</td>
+              <td class="ded">{{ slip.cnps_employee|floatformat:0|intcomma }}</td>
+            </tr>
+            <!-- IRPP -->
+            <tr>
+              <td>IRPP + CAC<br><small style="color:#888;font-size:7pt;">Impôt progressif + 10% Centimes Additionnels Communaux</small></td>
+              <td class="rate">Barème</td>
+              <td class="ded">{{ slip.withholding_tax|floatformat:0|intcomma }}</td>
+            </tr>
+            <!-- Other deduction lines from payslip -->
+            {% for line in deductions %}
+            <tr>
+              <td>{{ line.description }}</td>
+              <td class="rate">—</td>
+              <td class="ded">{{ line.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td colspan="2">TOTAL RETENUES</td>
+              <td class="ded">{{ slip.total_deductions|floatformat:0|intcomma }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- Summary + Net à Payer -->
+    <div class="summary-net">
+      <div class="recap-box">
+        <div class="recap-row earn">
+          <span class="rl">Salaire Brut</span>
+          <span class="rv">{{ slip.gross_pay|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="recap-row ded">
+          <span class="rl">( — ) NSIF / CNPS Employé <small style="color:#999;">(4,2%)</small></span>
+          <span class="rv">{{ slip.cnps_employee|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        <div class="recap-row ded">
+          <span class="rl">( — ) IRPP + CAC <small style="color:#999;">(barème progressif)</small></span>
+          <span class="rv">{{ slip.withholding_tax|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        {% for line in deductions %}
+        <div class="recap-row ded">
+          <span class="rl">( — ) {{ line.description }}</span>
+          <span class="rv">{{ line.amount|floatformat:0|intcomma }} FCFA</span>
+        </div>
+        {% endfor %}
+        <div class="recap-row total">
+          <span class="rl">TOTAL RETENUES</span>
+          <span class="rv">{{ slip.total_deductions|floatformat:0|intcomma }} FCFA</span>
+        </div>
+      </div>
+      <div class="net-box">
+        <div class="net-label">Net à Payer</div>
+        <div class="net-value">{{ slip.net_pay|floatformat:0|intcomma }} FCFA</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CNPS breakdown (informational) -->
+  <div class="cnps-detail">
+    <strong>Cotisations CNPS / NSIF détaillées :</strong>
+    <div class="cnps-detail-grid" style="margin-top:5px;">
+      <div class="cnps-item">
+        <div class="ci-label">Assiette CNPS</div>
+        <div class="ci-val">{{ cnps_base|floatformat:0|intcomma }} FCFA</div>
+      </div>
+      <div class="cnps-item">
+        <div class="ci-label">CNPS Employé (4,2%)</div>
+        <div class="ci-val" style="color:#b71c1c;">{{ slip.cnps_employee|floatformat:0|intcomma }} FCFA</div>
+      </div>
+      <div class="cnps-item">
+        <div class="ci-label">Charge Patronale (14,95%)</div>
+        <div class="ci-val">{{ slip.cnps_employer|floatformat:0|intcomma }} FCFA</div>
+      </div>
+      <div class="cnps-item">
+        <div class="ci-label">Revenu Imposable (IRPP)</div>
+        <div class="ci-val">{{ taxable_income|floatformat:0|intcomma }} FCFA</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Employer note -->
+  <div class="employer-row">
+    <strong>&#9432; Pour information :</strong>
+    La charge patronale CNPS/NSIF de <strong>{{ slip.cnps_employer|floatformat:0|intcomma }} FCFA</strong>
+    (14,95 % — pension 4,2% + allocations familiales 7% + AT/MP 2,5% + PNVV 1,25%)
+    est à la charge exclusive de l'employeur et n'est pas déduite du salaire de l'employé.
+  </div>
+
+  <!-- Legal notice -->
+  <div class="legal">
+    Ce bulletin de paie doit être conservé par le salarié sans limitation de durée.
+    &nbsp;·&nbsp;
+    Loi n° 92/007 du 14 Août 1992 portant Code du Travail de la République du Cameroun.
+  </div>
+
+  <!-- Signature blocks -->
+  <div class="sig-section">
+    <div>
+      <div class="sig-heading">Lu et approuvé — L'employé(e)</div>
+      <div class="sig-line">{{ slip.staff.get_full_name }}</div>
+      <div class="sig-sub">Matricule : {{ slip.staff.employee_id|default:"—" }} &nbsp;|&nbsp; Date : _______________</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="sig-heading" style="text-align:right;">Pour la Direction — {{ HOSPITAL_NAME }}</div>
+      {% if sig %}
+      <img src="{{ sig }}" alt="Signature" style="height:55px;max-width:180px;object-fit:contain;display:block;margin-left:auto;margin-bottom:4px;">
+      {% endif %}
+      <div class="sig-line" style="margin-left:auto;width:220px;">Direction des Ressources Humaines</div>
+      <div class="sig-sub">Cachet &amp; Signature</div>
+    </div>
+  </div>
+
+</div><!-- /.doc -->
+
+<div class="doc-footer">
+  Généré le {% now "d/m/Y à H:i" %} &nbsp;·&nbsp; {{ HOSPITAL_NAME }} &nbsp;·&nbsp; Confidentiel
+</div>
+
+</body>
+</html>

@@ -525,22 +525,84 @@ def cnps_declaration(request, run_id):
     })
 
 
+# ── Payslip PDF (WeasyPrint — Cameroon-compliant bulletin de paie) ───────────────
+@login_required
+def payslip_pdf(request, slip_id):
+    """Generate a Cameroon-compliant payslip as a downloadable/inline PDF."""
+    slip = get_object_or_404(PaySlip, pk=slip_id)
+    if not _can_manage(request.user) and slip.staff != request.user:
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:home')
+
+    lines = slip.lines.order_by('component_type', 'description')
+    earnings   = [l for l in lines if l.component_type == ComponentType.EARNING]
+    # Only non-statutory deduction lines (CNPS + IRPP already shown separately in template)
+    deductions = [l for l in lines if l.component_type == ComponentType.DEDUCTION]
+    other_ded_total = sum(l.amount for l in deductions)
+
+    from apps.reports.views import _sig_b64, render_pdf
+    from django.conf import settings
+
+    # Use Finance Director / HR authorizer signature — fall back to request.user sig
+    authorizer_sig = ''
+    try:
+        from apps.accounts.models import UserRole
+        hr = slip.payroll_run.created_by
+        if hr:
+            authorizer_sig = _sig_b64(hr)
+    except Exception:
+        pass
+
+    cnps_base = min(slip.gross_pay, _CNPS_CAP)
+    prof_deduction = min(slip.gross_pay * Decimal('0.30'), Decimal('33333'))
+    taxable_income = max(Decimal('0'), slip.gross_pay - slip.cnps_employee - prof_deduction)
+
+    context = {
+        'slip': slip,
+        'earnings': earnings,
+        'deductions': deductions,
+        'other_deductions_total': other_ded_total if other_ded_total else None,
+        'cnps_base': cnps_base,
+        'taxable_income': taxable_income,
+        'authorizer_signature': authorizer_sig,
+        'today': timezone.localdate(),
+        'hospital_name': getattr(settings, 'HOSPITAL_NAME', ''),
+        'hospital_address': getattr(settings, 'HOSPITAL_ADDRESS', ''),
+        'hospital_phone': getattr(settings, 'HOSPITAL_PHONE', ''),
+        'pdf_filename': (
+            f"bulletin_paie_{slip.staff.employee_id or slip.staff.username}"
+            f"_{slip.payroll_run.year}_{slip.payroll_run.month:02d}.pdf"
+        ),
+        'pdf_seal_label': 'BULLETIN DE PAIE',
+    }
+    return render_pdf('payroll/payslip_pdf.html', context)
+
+
 # ── Payslip Print (printable A4) ────────────────────────────────────────────────
 @login_required
 def payslip_print(request, slip_id):
-    """Printable A4 payslip."""
+    """Printable A4 payslip view — links to PDF download."""
     slip = get_object_or_404(PaySlip, pk=slip_id)
     if not _can_manage(request.user) and slip.staff != request.user:
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
     lines = slip.lines.order_by('component_type', 'description')
-    earnings  = [l for l in lines if l.component_type == ComponentType.EARNING]
-    deductions= [l for l in lines if l.component_type in (ComponentType.DEDUCTION, ComponentType.STATUTORY)]
+    earnings   = [l for l in lines if l.component_type == ComponentType.EARNING]
+    # Non-statutory deductions only — CNPS + IRPP shown separately in template
+    deductions = [l for l in lines if l.component_type == ComponentType.DEDUCTION]
+
+    # Compute display helpers: CNPS base (capped) and taxable income
+    cnps_base = min(slip.gross_pay, _CNPS_CAP)
+    prof_deduction = min(slip.gross_pay * Decimal('0.30'), Decimal('33333'))
+    taxable_income = max(Decimal('0'), slip.gross_pay - slip.cnps_employee - prof_deduction)
+
     from apps.reports.views import _sig_b64
     return render(request, 'payroll/payslip_print.html', {
         'slip': slip,
         'earnings': earnings,
         'deductions': deductions,
+        'cnps_base': cnps_base,
+        'taxable_income': taxable_income,
         'sig': _sig_b64(request.user),
     })
 

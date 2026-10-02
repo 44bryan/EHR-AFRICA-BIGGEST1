@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+{% include 'reports/pdf/_base_styles.html' %}
+<style>
+  /* ── Payslip-specific overrides ── */
+  body { font-size: 9.5pt; }
+
+  .slip-title-bar {
+    background: #1a3a6c;
+    color: #fff;
+    text-align: center;
+    padding: 5px 12px;
+    font-size: 12pt;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    border-radius: 3px;
+  }
+
+  .emp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    border: 1px solid #c0cfe0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    font-size: 8.5pt;
+  }
+  .emp-cell {
+    padding: 5px 9px;
+    border-right: 1px solid #c0cfe0;
+    border-bottom: 1px solid #c0cfe0;
+  }
+  .emp-cell:nth-child(3n) { border-right: none; }
+  .emp-cell:nth-last-child(-n+3) { border-bottom: none; }
+  .emp-label { font-size: 7pt; text-transform: uppercase; letter-spacing: .05em; color: #5472a0; font-weight: 700; }
+  .emp-value { font-weight: 700; color: #1a1a1a; margin-top: 1px; }
+
+  .pay-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .pay-section-title {
+    background: #1a3a6c;
+    color: #fff;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding: 4px 8px;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .pay-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+    border: 1px solid #c0cfe0;
+    border-top: none;
+  }
+  .pay-table th {
+    background: #e8eef6;
+    padding: 4px 7px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-align: left;
+    border-bottom: 1.5px solid #c0cfe0;
+    color: #2c4a7c;
+  }
+  .pay-table th.right { text-align: right; }
+  .pay-table td {
+    padding: 4px 7px;
+    border-bottom: 1px solid #e8eef6;
+  }
+  .pay-table td.right { text-align: right; }
+  .pay-table .earn-amt { color: #1b5e20; font-weight: 600; text-align: right; }
+  .pay-table .ded-amt  { color: #b71c1c; font-weight: 600; text-align: right; }
+  .pay-table .total-row td {
+    font-weight: 800;
+    background: #e8eef6;
+    border-top: 1.5px solid #c0cfe0;
+    border-bottom: none;
+    font-size: 9pt;
+  }
+
+  .summary-box {
+    border: 1px solid #c0cfe0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 10px;
+    font-size: 9pt;
+    border-bottom: 1px solid #e8eef6;
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .s-label { color: #444; }
+  .summary-row .s-val   { font-weight: 700; }
+  .summary-row.earn  .s-val { color: #1b5e20; }
+  .summary-row.ded   .s-val { color: #b71c1c; }
+
+  .net-box {
+    background: #1a3a6c;
+    color: #fff;
+    text-align: center;
+    padding: 12px 10px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+  }
+  .net-label { font-size: 7.5pt; letter-spacing: 2px; text-transform: uppercase; opacity: .85; }
+  .net-value { font-size: 22pt; font-weight: 900; margin-top: 3px; letter-spacing: 1px; }
+  .net-words { font-size: 8pt; opacity: .8; margin-top: 3px; font-style: italic; }
+
+  .employer-info {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-size: 8pt;
+    color: #5d4037;
+    margin-bottom: 12px;
+  }
+
+  .legal-notice {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    padding: 5px 10px;
+    font-size: 7.5pt;
+    color: #757575;
+    text-align: center;
+    margin-bottom: 14px;
+    font-style: italic;
+  }
+
+  .sig-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-top: 8px;
+  }
+  .sig-col { flex: 1; }
+  .sig-heading { font-size: 7.5pt; color: #555; margin-bottom: 32px; }
+  .sig-line {
+    border-top: 1.5px solid #333;
+    padding-top: 4px;
+    font-size: 8pt;
+    font-weight: 700;
+    color: #1a1a1a;
+  }
+  .sig-sub { font-size: 7pt; color: #888; margin-top: 1px; }
+
+  @page { size: A4 portrait; margin: 1.2cm 1.6cm; }
+</style>
+</head>
+<body>
+
+{% include 'reports/pdf/_letterhead.html' with pdf_seal_label="BULLETIN DE PAIE" %}
+
+<div class="slip-title-bar">Bulletin de Paie — {{ slip.payroll_run.period_label }}</div>
+
+<!-- Employee information grid -->
+<div class="emp-grid">
+  <div class="emp-cell">
+    <div class="emp-label">Nom &amp; Prénom</div>
+    <div class="emp-value">{{ slip.staff.get_full_name }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Matricule</div>
+    <div class="emp-value">{{ slip.staff.employee_id|default:"—" }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Poste / Fonction</div>
+    <div class="emp-value">{{ slip.staff.get_role_display }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Département / Service</div>
+    <div class="emp-value">{{ slip.staff.department.name|default:"—" }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Période de Paie</div>
+    <div class="emp-value">{{ slip.payroll_run.period_label }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Date de Paiement</div>
+    <div class="emp-value">{{ slip.payment_date|date:"d/m/Y"|default:"—" }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Mode de Paiement</div>
+    <div class="emp-value">{{ slip.payment_method|default:"—" }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Statut</div>
+    <div class="emp-value">{{ slip.get_status_display }}</div>
+  </div>
+  <div class="emp-cell">
+    <div class="emp-label">Salaire de Base</div>
+    <div class="emp-value">{{ slip.basic_salary|floatformat:0 }} FCFA</div>
+  </div>
+</div>
+
+<!-- Earnings & Deductions side-by-side -->
+<div class="pay-grid">
+
+  <!-- GAINS -->
+  <div>
+    <div class="pay-section-title">Éléments de Rémunération (Gains)</div>
+    <table class="pay-table">
+      <thead><tr><th>Libellé</th><th class="right">Montant (FCFA)</th></tr></thead>
+      <tbody>
+        {% for line in earnings %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td class="earn-amt">{{ line.amount|floatformat:0 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" style="color:#888;font-style:italic;">Aucune ligne</td></tr>
+        {% endfor %}
+        <tr class="total-row">
+          <td>TOTAL BRUT</td>
+          <td class="earn-amt">{{ slip.gross_pay|floatformat:0 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- RETENUES -->
+  <div>
+    <div class="pay-section-title">Retenues &amp; Cotisations Sociales</div>
+    <table class="pay-table">
+      <thead>
+        <tr><th>Libellé</th><th class="right" style="width:48px;">Taux</th><th class="right">Montant (FCFA)</th></tr>
+      </thead>
+      <tbody>
+        <!-- CNPS employee statutory line -->
+        <tr>
+          <td>NSIF / CNPS Employé<br><small style="color:#888;font-size:7pt;">Retraite-Invalidité-Décès (plafond 750 000)</small></td>
+          <td style="text-align:center;color:#5472a0;font-size:7.5pt;">4,20 %</td>
+          <td class="ded-amt">{{ slip.cnps_employee|floatformat:0 }}</td>
+        </tr>
+        <!-- IRPP statutory line -->
+        <tr>
+          <td>IRPP + CAC<br><small style="color:#888;font-size:7pt;">Impôt progressif + 10% Centimes Additionnels</small></td>
+          <td style="text-align:center;color:#5472a0;font-size:7.5pt;">Barème</td>
+          <td class="ded-amt">{{ slip.withholding_tax|floatformat:0 }}</td>
+        </tr>
+        <!-- Other deduction lines from payslip -->
+        {% for line in deductions %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td style="text-align:center;color:#aaa;">—</td>
+          <td class="ded-amt">{{ line.amount|floatformat:0 }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+          <td colspan="2">TOTAL RETENUES</td>
+          <td class="ded-amt">{{ slip.total_deductions|floatformat:0 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- CNPS computation detail -->
+<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:3px;padding:7px 12px;font-size:8pt;color:#1b5e20;margin-bottom:10px;">
+  <strong>Cotisations CNPS / NSIF détaillées :</strong>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:5px;">
+    <div>
+      <div style="font-size:6.5pt;text-transform:uppercase;font-weight:700;color:#2e7d32;">Assiette CNPS</div>
+      <div style="font-weight:700;">{{ cnps_base|floatformat:0 }} FCFA</div>
+    </div>
+    <div>
+      <div style="font-size:6.5pt;text-transform:uppercase;font-weight:700;color:#2e7d32;">CNPS Employé (4,2%)</div>
+      <div style="font-weight:700;color:#b71c1c;">{{ slip.cnps_employee|floatformat:0 }} FCFA</div>
+    </div>
+    <div>
+      <div style="font-size:6.5pt;text-transform:uppercase;font-weight:700;color:#2e7d32;">Charge Patronale (14,95%)</div>
+      <div style="font-weight:700;">{{ slip.cnps_employer|floatformat:0 }} FCFA</div>
+    </div>
+    <div>
+      <div style="font-size:6.5pt;text-transform:uppercase;font-weight:700;color:#2e7d32;">Revenu Imposable IRPP</div>
+      <div style="font-weight:700;">{{ taxable_income|floatformat:0 }} FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary + Net pay -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
+
+  <div class="summary-box">
+    <div class="summary-row earn">
+      <span class="s-label">Salaire Brut</span>
+      <span class="s-val">{{ slip.gross_pay|floatformat:0 }} FCFA</span>
+    </div>
+    <div class="summary-row ded">
+      <span class="s-label">( - ) CNPS Employé</span>
+      <span class="s-val">{{ slip.cnps_employee|floatformat:0 }} FCFA</span>
+    </div>
+    <div class="summary-row ded">
+      <span class="s-label">( - ) IRPP + CAC</span>
+      <span class="s-val">{{ slip.withholding_tax|floatformat:0 }} FCFA</span>
+    </div>
+    {% if other_deductions_total %}
+    <div class="summary-row ded">
+      <span class="s-label">( - ) Autres Retenues</span>
+      <span class="s-val">{{ other_deductions_total|floatformat:0 }} FCFA</span>
+    </div>
+    {% endif %}
+    <div class="summary-row" style="background:#e8eef6;font-size:10pt;">
+      <span class="s-label" style="font-weight:800;color:#1a3a6c;">TOTAL RETENUES</span>
+      <span class="s-val" style="color:#b71c1c;font-size:10pt;">{{ slip.total_deductions|floatformat:0 }} FCFA</span>
+    </div>
+  </div>
+
+  <div>
+    <div class="net-box">
+      <div class="net-label">Net à Payer</div>
+      <div class="net-value">{{ slip.net_pay|floatformat:0 }} FCFA</div>
+    </div>
+    <div class="employer-info">
+      <strong>Information employeur :</strong>
+      Charge patronale CNPS = <strong>{{ slip.cnps_employer|floatformat:0 }} FCFA</strong>
+      — non déduite du salaire, à la charge de l'employeur.
+    </div>
+  </div>
+
+</div>
+
+<div class="legal-notice">
+  Ce bulletin de paie doit être conservé par le salarié sans limitation de durée.
+  &nbsp;|&nbsp; Loi n° 92/007 du 14 Août 1992 portant Code du Travail du Cameroun.
+</div>
+
+<!-- Signature block -->
+<div class="sig-row">
+  <div class="sig-col">
+    <div class="sig-heading">Lu et approuvé — L'employé(e)</div>
+    <div class="sig-line">{{ slip.staff.get_full_name }}</div>
+    <div class="sig-sub">Matricule : {{ slip.staff.employee_id|default:"—" }} &nbsp;|&nbsp; Date : _______________</div>
+  </div>
+  <div class="sig-col" style="text-align:right;">
+    <div class="sig-heading" style="text-align:right;">Pour la Direction — {{ hospital_name }}</div>
+    {% if authorizer_signature %}
+    <img src="{{ authorizer_signature }}" alt="Signature Direction"
+         style="height:55px;max-width:200px;object-fit:contain;display:block;margin-left:auto;margin-bottom:4px;">
+    {% endif %}
+    <div class="sig-line" style="margin-left:auto;">Direction des Ressources Humaines</div>
+    <div class="sig-sub">Cachet &amp; Signature</div>
+  </div>
+</div>
+
+<div class="pdf-footer">
+  <span>{{ hospital_name }} &nbsp;|&nbsp; {{ hospital_address }}</span>
+  <span>Bulletin généré le {{ today|date:"d/m/Y" }} &nbsp;|&nbsp; CONFIDENTIEL</span>
+</div>
+
+</body>
+</html>
