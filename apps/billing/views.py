@@ -6530,57 +6530,89 @@ def trial_balance(request):
     if not _can_access_gl(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
-    date_to = request.GET.get('as_at') or request.GET.get('date_to') or str(timezone.localdate())
 
-    # Bulk aggregate — one query for all accounts
-    bulk = (
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_to   = request.GET.get('date_to')   or str(today)
+
+    # Opening balance: all entries strictly BEFORE date_from
+    open_bulk = (
         JournalLine.objects.filter(
-            entry__is_deleted=False, entry__entry_date__lte=date_to,
+            entry__is_deleted=False, entry__entry_date__lt=date_from,
         ).values('account_id').annotate(
             total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
     )
-    bal_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in bulk}
+    open_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in open_bulk}
+
+    # Movement: entries within [date_from, date_to]
+    move_bulk = (
+        JournalLine.objects.filter(
+            entry__is_deleted=False,
+            entry__entry_date__gte=date_from,
+            entry__entry_date__lte=date_to,
+        ).values('account_id').annotate(
+            total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
+        )
+    )
+    move_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in move_bulk}
 
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
     type_order = [
-        (AccountType.ASSET, 'Assets'),
-        (AccountType.LIABILITY, 'Liabilities'),
-        (AccountType.EQUITY, 'Equity'),
-        (AccountType.REVENUE, 'Revenue'),
-        (AccountType.EXPENSE, 'Expenses'),
+        (AccountType.ASSET,     'Actif / Assets'),
+        (AccountType.LIABILITY, 'Passif / Liabilities'),
+        (AccountType.EQUITY,    'Capitaux Propres / Equity'),
+        (AccountType.REVENUE,   'Produits / Revenue'),
+        (AccountType.EXPENSE,   'Charges / Expenses'),
     ]
     sections = []
-    grand_dr = Decimal('0')
-    grand_cr = Decimal('0')
+    # Totals for footer (movement columns drive the balanced check)
+    tot_open_dr = Decimal('0'); tot_open_cr = Decimal('0')
+    tot_move_dr = Decimal('0'); tot_move_cr = Decimal('0')
+    tot_clos_dr = Decimal('0'); tot_clos_cr = Decimal('0')
+
     for acct_type, label in type_order:
         rows = []
-        sub_dr = Decimal('0')
-        sub_cr = Decimal('0')
+        sub = {'open_dr': Decimal('0'), 'open_cr': Decimal('0'),
+               'move_dr': Decimal('0'), 'move_cr': Decimal('0'),
+               'clos_dr': Decimal('0'), 'clos_cr': Decimal('0')}
         for acct in accounts.filter(account_type=acct_type):
-            dr, cr = bal_map.get(acct.id, (Decimal('0'), Decimal('0')))
-            if dr or cr:
-                rows.append({
-                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
-                    'type_display': acct.get_account_type_display(),
-                    'debit': dr, 'credit': cr,
-                })
-                sub_dr += dr
-                sub_cr += cr
+            o_dr, o_cr = open_map.get(acct.id, (Decimal('0'), Decimal('0')))
+            m_dr, m_cr = move_map.get(acct.id, (Decimal('0'), Decimal('0')))
+            if not (o_dr or o_cr or m_dr or m_cr):
+                continue
+            # Closing = opening net + movement net → express as Dr or Cr balance
+            net = (o_dr + m_dr) - (o_cr + m_cr)
+            c_dr = max(Decimal('0'), net)
+            c_cr = max(Decimal('0'), -net)
+            rows.append({
+                'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                'open_dr': o_dr, 'open_cr': o_cr,
+                'move_dr': m_dr, 'move_cr': m_cr,
+                'clos_dr': c_dr, 'clos_cr': c_cr,
+            })
+            for k, v in [('open_dr', o_dr), ('open_cr', o_cr),
+                         ('move_dr', m_dr), ('move_cr', m_cr),
+                         ('clos_dr', c_dr), ('clos_cr', c_cr)]:
+                sub[k] += v
         if rows:
-            sections.append({'label': label, 'rows': rows, 'subtotal_dr': sub_dr, 'subtotal_cr': sub_cr})
-        grand_dr += sub_dr
-        grand_cr += sub_cr
+            sections.append({'label': label, 'rows': rows, **sub})
+        tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
+        tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
+        tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
-    diff = grand_dr - grand_cr
+    move_diff = tot_move_dr - tot_move_cr
+    clos_diff = tot_clos_dr - tot_clos_cr
     return render(request, 'billing/trial_balance.html', {
-        'sections': sections,
-        'grand_dr': grand_dr,
-        'grand_cr': grand_cr,
-        'is_balanced': abs(diff) < Decimal('0.01'),
-        'balance_diff': diff,
-        'as_at_label': date_to,
-        'date_to': date_to,
+        'sections':    sections,
+        'date_from':   date_from,
+        'date_to':     date_to,
+        'tot_open_dr': tot_open_dr, 'tot_open_cr': tot_open_cr,
+        'tot_move_dr': tot_move_dr, 'tot_move_cr': tot_move_cr,
+        'tot_clos_dr': tot_clos_dr, 'tot_clos_cr': tot_clos_cr,
+        'is_balanced': abs(move_diff) < Decimal('0.01'),
+        'move_diff':   move_diff,
+        'clos_diff':   clos_diff,
     })
 
 
