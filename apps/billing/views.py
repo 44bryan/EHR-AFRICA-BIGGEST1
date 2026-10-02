@@ -6834,6 +6834,9 @@ def trial_balance(request):
         )
         return resp
 
+    from apps.accounts.models import HospitalConfig
+    hconfig = HospitalConfig.get()
+
     return render(request, 'billing/trial_balance.html', {
         'sections':       sections,
         'date_from':      date_from,
@@ -6850,6 +6853,7 @@ def trial_balance(request):
         'is_balanced':    abs(move_diff) < Decimal('0.01'),
         'move_diff':      move_diff,
         'clos_diff':      clos_diff,
+        'hconfig':        hconfig,
     })
 
 
