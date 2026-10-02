@@ -6544,14 +6544,14 @@ def trial_balance(request):
 
     # ── OHADA SYCEBNL classes 1–8 ─────────────────────────────────────────────
     OHADA_CLASSES = [
-        ('1', 'Classe 1 — Capitaux Permanents'),
-        ('2', 'Classe 2 — Valeurs Immobilisées'),
-        ('3', 'Classe 3 — Stocks'),
-        ('4', 'Classe 4 — Comptes de Tiers'),
-        ('5', 'Classe 5 — Trésorerie'),
-        ('6', 'Classe 6 — Charges'),
-        ('7', 'Classe 7 — Produits'),
-        ('8', 'Classe 8 — Comptes Spéciaux'),
+        ('1', 'Class 1 — Permanent Capital'),
+        ('2', 'Class 2 — Fixed Assets'),
+        ('3', 'Class 3 — Inventory'),
+        ('4', 'Class 4 — Third-Party Accounts'),
+        ('5', 'Class 5 — Cash & Bank'),
+        ('6', 'Class 6 — Expenses'),
+        ('7', 'Class 7 — Revenue'),
+        ('8', 'Class 8 — Special Accounts'),
     ]
     classes_to_show = [(c, lbl) for c, lbl in OHADA_CLASSES
                        if not classe_filter or c == classe_filter]
@@ -6702,10 +6702,10 @@ def trial_balance(request):
             f'attachment; filename="balance_{balance_type}_{date_from}_{date_to}.csv"'
         )
         w = csv.writer(resp)
-        w.writerow(['Code', 'Intitulé',
-                    'Ouverture Débit', 'Ouverture Crédit',
-                    'Mouvements Débit', 'Mouvements Crédit',
-                    'Clôture Débit', 'Clôture Crédit'])
+        w.writerow(['Code', 'Account Name',
+                    'Opening Debit', 'Opening Credit',
+                    'Movement Debit', 'Movement Credit',
+                    'Closing Debit', 'Closing Credit'])
         for sec in sections:
             w.writerow([sec['label'], '', '', '', '', '', '', ''])
             for row in sec['rows']:
@@ -6713,11 +6713,11 @@ def trial_balance(request):
                             row['open_dr'], row['open_cr'],
                             row['move_dr'], row['move_cr'],
                             row['clos_dr'], row['clos_cr']])
-            w.writerow(['Sous-total ' + sec['label'], '',
+            w.writerow(['Subtotal — ' + sec['label'], '',
                         sec['open_dr'], sec['open_cr'],
                         sec['move_dr'], sec['move_cr'],
                         sec['clos_dr'], sec['clos_cr']])
-        w.writerow(['TOTAUX GÉNÉRAUX', '',
+        w.writerow(['GRAND TOTALS', '',
                     tot_open_dr, tot_open_cr,
                     tot_move_dr, tot_move_cr,
                     tot_clos_dr, tot_clos_cr])
@@ -6751,14 +6751,14 @@ def trial_balance(request):
 
         # Title
         ws.merge_cells('A1:H1')
-        lbl = 'BALANCE GÉNÉRALE' if balance_type == 'general' else 'BALANCE AUXILIAIRE'
+        lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
         cls_lbl = f' · Classe {classe_filter}' if classe_filter else ''
         ws['A1'] = f'{lbl}{cls_lbl} — Du {date_from} au {date_to}'
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center')
 
         # Group header row 2
-        headers_top = ['', '', 'Soldes d\'ouverture', '', 'Mouvements de période', '', 'Soldes de clôture', '']
+        headers_top = ['', '', 'Opening Balances', '', 'Period Movements', '', 'Closing Balances', '']
         for col, val in enumerate(headers_top, 1):
             c = ws.cell(row=2, column=col, value=val)
             c.fill = hdr_fill; c.font = hdr_font
@@ -6766,7 +6766,7 @@ def trial_balance(request):
         ws.merge_cells('C2:D2'); ws.merge_cells('E2:F2'); ws.merge_cells('G2:H2')
 
         # Sub-header row 3
-        headers_sub = ['Code', 'Intitulé', 'Débit', 'Crédit', 'Débit', 'Crédit', 'Débit', 'Crédit']
+        headers_sub = ['Code', 'Account Name', 'Debit', 'Credit', 'Debit', 'Credit', 'Debit', 'Credit']
         for col, val in enumerate(headers_sub, 1):
             c = ws.cell(row=3, column=col, value=val)
             c.fill = hdr_fill; c.font = hdr_font
@@ -6793,7 +6793,7 @@ def trial_balance(request):
                         c.alignment = Alignment(horizontal='right')
                 row_num += 1
             # Section subtotal
-            sub_vals = ['Sous-total ' + sec['label'], '',
+            sub_vals = ['Subtotal — ' + sec['label'], '',
                         float(sec['open_dr']), float(sec['open_cr']),
                         float(sec['move_dr']), float(sec['move_cr']),
                         float(sec['clos_dr']), float(sec['clos_cr'])]
@@ -6806,7 +6806,7 @@ def trial_balance(request):
             row_num += 1
 
         # Grand total
-        tot_vals = ['TOTAUX GÉNÉRAUX', '',
+        tot_vals = ['GRAND TOTALS', '',
                     float(tot_open_dr), float(tot_open_cr),
                     float(tot_move_dr), float(tot_move_cr),
                     float(tot_clos_dr), float(tot_clos_cr)]

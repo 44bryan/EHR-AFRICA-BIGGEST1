@@ -1,10 +1,10 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Balance des Comptes{% endblock %}
+{% block title %}Trial Balance{% endblock %}
 {% block page_header %}
 <div class="mb-1">
-  <h4 class="fw-bold mb-0">Balance des Comptes</h4>
-  <p class="text-muted small mb-0">OHADA SYCEBNL — Soldes d'ouverture · Mouvements · Soldes de clôture</p>
+  <h4 class="fw-bold mb-0">Trial Balance</h4>
+  <p class="text-muted small mb-0">OHADA SYCEBNL — Opening Balances · Period Movements · Closing Balances</p>
 </div>
 {% endblock %}
 
@@ -16,27 +16,23 @@
       <div class="row g-2 align-items-end">
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">Type</label>
-          <select name="balance_type" class="form-select form-select-sm" style="width:160px">
-            <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>Balance Générale</option>
-            <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Balance Auxiliaire</option>
+          <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:170px">
+            <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
+            <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
           </select>
         </div>
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">Du</label>
-          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:145px">
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From date" style="width:145px">
         </div>
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">Au</label>
-          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="width:145px">
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" title="To date" style="width:145px">
         </div>
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">Classe OHADA</label>
-          <select name="classe" class="form-select form-select-sm" style="width:210px">
-            <option value="" {% if not classe_filter %}selected{% endif %}>Toutes les classes</option>
+          <select name="classe" class="form-select form-select-sm" title="OHADA Class" style="width:210px">
+            <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
             {% for cls, lbl in ohada_classes %}
             <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
             {% endfor %}
@@ -44,35 +40,33 @@
         </div>
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">De compte</label>
           <input type="text" name="code_from" class="form-control form-control-sm font-monospace"
-                 value="{{ code_from }}" placeholder="ex: 400000" style="width:110px">
+                 value="{{ code_from }}" placeholder="From acct" title="From account code" style="width:115px">
         </div>
 
         <div class="col-auto">
-          <label class="form-label fw-semibold small mb-1">À compte</label>
           <input type="text" name="code_to" class="form-control form-control-sm font-monospace"
-                 value="{{ code_to }}" placeholder="ex: 499999" style="width:110px">
+                 value="{{ code_to }}" placeholder="To acct" title="To account code" style="width:115px">
         </div>
 
-        <div class="col-auto d-flex align-items-end pb-1">
+        <div class="col-auto d-flex align-items-center">
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
                    id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
-            <label class="form-check-label small fw-semibold" for="chkMvt">Avec mouvements uniquement</label>
+            <label class="form-check-label small fw-semibold" for="chkMvt">With movements only</label>
           </div>
         </div>
 
         <div class="col-auto ms-auto d-flex gap-2 align-items-end">
           <button type="submit" class="btn btn-sm btn-primary">
-            <i class="bi bi-calculator me-1"></i>Calculer
+            <i class="bi bi-calculator me-1"></i>Calculate
           </button>
           <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">
-            Réinitialiser
+            Reset
           </a>
           <div class="dropdown">
             <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
-              <i class="bi bi-download me-1"></i>Exporter
+              <i class="bi bi-download me-1"></i>Export
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
               <li>
@@ -88,7 +82,7 @@
               <li><hr class="dropdown-divider"></li>
               <li>
                 <a class="dropdown-item" href="#" onclick="window.print(); return false;">
-                  <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
+                  <i class="bi bi-printer me-2 text-secondary"></i>Print / PDF
                 </a>
               </li>
             </ul>
@@ -121,9 +115,9 @@
   <i class="bi {% if is_balanced %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-2 fs-5"></i>
   <div>
     {% if is_balanced %}
-      <strong>Équilibrée.</strong> Mouvements Débit = Crédit = {{ tot_move_dr|floatformat:0|intcomma }} XAF
+      <strong>Balanced.</strong> Movement Debit = Credit = {{ tot_move_dr|floatformat:0|intcomma }} XAF
     {% else %}
-      <strong>Déséquilibre !</strong> Différence mouvements : {{ move_diff|floatformat:0|intcomma }} XAF
+      <strong>Imbalance!</strong> Movement difference: {{ move_diff|floatformat:0|intcomma }} XAF
       (Dr {{ tot_move_dr|floatformat:0|intcomma }} / Cr {{ tot_move_cr|floatformat:0|intcomma }})
     {% endif %}
   </div>
@@ -132,34 +126,33 @@
 <div class="card shadow-sm">
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
     <span class="fw-semibold small">
-      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire — Comptes de Détail{% else %}Balance Générale — Comptes Sommaires{% endif %}
-      {% if classe_filter %}&nbsp;·&nbsp; Classe {{ classe_filter }}{% endif %}
-      &nbsp;·&nbsp; Du {{ date_from }} au {{ date_to }}
+      {% if balance_type == 'auxiliaire' %}Auxiliary Balance — Detail Accounts{% else %}General Balance — Summary Accounts{% endif %}
+      {% if classe_filter %}&nbsp;·&nbsp; Class {{ classe_filter }}{% endif %}
+      &nbsp;·&nbsp; {{ date_from }} to {{ date_to }}
     </span>
-    <span class="badge bg-secondary">{{ sections|length }} classe(s)</span>
+    <span class="badge bg-secondary">{{ sections|length }} class(es)</span>
   </div>
   <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 align-middle" id="trialBalanceTable" style="font-size:.82rem">
       <thead class="table-light">
         <tr style="border-bottom:1px solid #ccc">
           <th rowspan="2" style="width:90px;vertical-align:middle">Code</th>
-          <th rowspan="2" style="vertical-align:middle">Intitulé du Compte</th>
-          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Soldes d'ouverture</th>
-          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Mouvements de période</th>
-          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Soldes de clôture</th>
+          <th rowspan="2" style="vertical-align:middle">Account Name</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Opening Balances</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Period Movements</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Closing Balances</th>
         </tr>
         <tr style="border-bottom:2px solid #aaa">
-          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Débit</th>
-          <th class="text-end text-success fw-bold" style="width:130px">Crédit</th>
-          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Débit</th>
-          <th class="text-end text-success fw-bold" style="width:130px">Crédit</th>
-          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Débit</th>
-          <th class="text-end text-success fw-bold" style="width:130px">Crédit</th>
+          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
+          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
+          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
         </tr>
       </thead>
       <tbody>
         {% for section in sections %}
-        <!-- Section header -->
         <tr class="table-secondary">
           <td colspan="8" class="fw-bold small text-uppercase ps-3 py-1">{{ section.label }}</td>
         </tr>
@@ -180,21 +173,18 @@
             <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
                class="text-decoration-none {% if row.is_summary %}text-dark fw-semibold{% else %}text-dark{% endif %}">{{ row.name }}</a>
           </td>
-          <!-- Opening -->
           <td class="text-end {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
           <td class="text-end {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">
             {% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
-          <!-- Movement -->
           <td class="text-end {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
           <td class="text-end {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">
             {% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
-          <!-- Closing -->
           <td class="text-end {% if row.clos_dr %}text-danger fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
@@ -203,11 +193,10 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted small text-center">Aucun mouvement</td></tr>
+        <tr><td colspan="8" class="text-muted small text-center">No movements</td></tr>
         {% endfor %}
-        <!-- Section subtotal -->
         <tr class="table-light fw-semibold" style="border-top:2px solid #bbb">
-          <td colspan="2" class="text-end pe-3 small text-muted">Sous-total {{ section.label }}</td>
+          <td colspan="2" class="text-end pe-3 small text-muted">Subtotal — {{ section.label }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ section.open_dr|floatformat:0|intcomma }}</td>
           <td class="text-end text-success">{{ section.open_cr|floatformat:0|intcomma }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ section.move_dr|floatformat:0|intcomma }}</td>
@@ -219,7 +208,7 @@
       </tbody>
       <tfoot class="table-secondary fw-bold" style="border-top:3px solid #aaa">
         <tr>
-          <td colspan="2" class="text-end pe-3 small text-uppercase">Totaux Généraux</td>
+          <td colspan="2" class="text-end pe-3 small text-uppercase">Grand Totals</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_open_dr|floatformat:0|intcomma }}</td>
           <td class="text-end text-success">{{ tot_open_cr|floatformat:0|intcomma }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_move_dr|floatformat:0|intcomma }}</td>
@@ -232,11 +221,42 @@
   </div>
 </div>
 
+<div id="printHeader" style="display:none">
+  <div style="text-align:center;margin-bottom:12px;border-bottom:2px solid #333;padding-bottom:8px">
+    <div style="font-size:14pt;font-weight:700;text-transform:uppercase">Africa Eye Foundation / MICEI</div>
+    <div style="font-size:10pt;color:#555">OHADA SYCEBNL — Accounting System</div>
+    <div style="font-size:13pt;font-weight:700;margin-top:6px">
+      {% if balance_type == 'auxiliaire' %}AUXILIARY BALANCE — DETAIL ACCOUNTS{% else %}GENERAL BALANCE — SUMMARY ACCOUNTS{% endif %}
+    </div>
+    <div style="font-size:9pt;color:#333;margin-top:2px">
+      Period: {{ date_from }} to {{ date_to }}
+      {% if classe_filter %} &nbsp;|&nbsp; Class {{ classe_filter }}{% endif %}
+    </div>
+  </div>
+</div>
+
 <style>
 @media print {
-  .btn, form { display: none !important; }
-  .card { box-shadow: none !important; border: 1px solid #ccc !important; }
-  table { font-size: 9pt !important; }
+  @page { size: A4 landscape; margin: 12mm 10mm 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .card.shadow-sm.mb-3, form, .btn, .dropdown, nav, header, .sidebar,
+  [class*="topbar"], [class*="navbar"] { display: none !important; }
+  #printHeader { display: block !important; }
+  .card { box-shadow: none !important; border: none !important; }
+  .card-header { background: #1e3a5f !important; color: #fff !important;
+                 -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table { font-size: 7.5pt !important; width: 100% !important; border-collapse: collapse; }
+  th, td { padding: 2px 4px !important; }
+  .table-secondary { background: #e9ecef !important;
+                     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .table-light { background: #f8f9fa !important;
+                 -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .text-danger { color: #dc3545 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .text-success { color: #198754 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  a { color: inherit !important; text-decoration: none !important; }
+  tfoot { background: #1e3a5f !important; color: #fff !important;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tfoot td { color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
 {% endblock %}
