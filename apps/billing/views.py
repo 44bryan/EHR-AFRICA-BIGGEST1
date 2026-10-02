@@ -6607,6 +6607,147 @@ def trial_balance(request):
 
     move_diff = tot_move_dr - tot_move_cr
     clos_diff = tot_clos_dr - tot_clos_cr
+
+    export_fmt = request.GET.get('export', '').lower()
+
+    if export_fmt == 'csv':
+        import csv
+        from django.http import HttpResponse
+        resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        resp['Content-Disposition'] = (
+            f'attachment; filename="balance_comptes_{date_from}_{date_to}.csv"'
+        )
+        w = csv.writer(resp)
+        w.writerow(['Code', 'Intitulé',
+                    'Ouverture Débit', 'Ouverture Crédit',
+                    'Mouvements Débit', 'Mouvements Crédit',
+                    'Clôture Débit', 'Clôture Crédit'])
+        for sec in sections:
+            w.writerow([sec['label'], '', '', '', '', '', '', ''])
+            for row in sec['rows']:
+                w.writerow([row['code'], row['name'],
+                            row['open_dr'], row['open_cr'],
+                            row['move_dr'], row['move_cr'],
+                            row['clos_dr'], row['clos_cr']])
+            w.writerow(['Sous-total ' + sec['label'], '',
+                        sec['open_dr'], sec['open_cr'],
+                        sec['move_dr'], sec['move_cr'],
+                        sec['clos_dr'], sec['clos_cr']])
+        w.writerow(['TOTAUX GÉNÉRAUX', '',
+                    tot_open_dr, tot_open_cr,
+                    tot_move_dr, tot_move_cr,
+                    tot_clos_dr, tot_clos_cr])
+        return resp
+
+    if export_fmt == 'xlsx':
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+            from django.http import HttpResponse as HR
+        except ImportError:
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest('openpyxl not installed')
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Balance des Comptes'
+
+        # Styles
+        hdr_fill  = PatternFill('solid', fgColor='1E3A5F')
+        hdr_font  = Font(bold=True, color='FFFFFF', size=10)
+        sec_fill  = PatternFill('solid', fgColor='D9E1F2')
+        sec_font  = Font(bold=True, size=9)
+        sub_fill  = PatternFill('solid', fgColor='F2F2F2')
+        tot_fill  = PatternFill('solid', fgColor='1E3A5F')
+        tot_font  = Font(bold=True, color='FFFFFF', size=10)
+        num_fmt   = '#,##0'
+        thin      = Side(style='thin')
+        border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        # Title
+        ws.merge_cells('A1:H1')
+        ws['A1'] = f'BALANCE DES COMPTES — Du {date_from} au {date_to}'
+        ws['A1'].font = Font(bold=True, size=12)
+        ws['A1'].alignment = Alignment(horizontal='center')
+
+        # Group header row 2
+        headers_top = ['', '', 'Soldes d\'ouverture', '', 'Mouvements de période', '', 'Soldes de clôture', '']
+        for col, val in enumerate(headers_top, 1):
+            c = ws.cell(row=2, column=col, value=val)
+            c.fill = hdr_fill; c.font = hdr_font
+            c.alignment = Alignment(horizontal='center')
+        ws.merge_cells('C2:D2'); ws.merge_cells('E2:F2'); ws.merge_cells('G2:H2')
+
+        # Sub-header row 3
+        headers_sub = ['Code', 'Intitulé', 'Débit', 'Crédit', 'Débit', 'Crédit', 'Débit', 'Crédit']
+        for col, val in enumerate(headers_sub, 1):
+            c = ws.cell(row=3, column=col, value=val)
+            c.fill = hdr_fill; c.font = hdr_font
+            c.alignment = Alignment(horizontal='right' if col > 2 else 'left')
+
+        row_num = 4
+        for sec in sections:
+            # Section header
+            ws.merge_cells(f'A{row_num}:H{row_num}')
+            c = ws.cell(row=row_num, column=1, value=sec['label'].upper())
+            c.fill = sec_fill; c.font = sec_font
+            row_num += 1
+            # Account rows
+            for row in sec['rows']:
+                vals = [row['code'], row['name'],
+                        float(row['open_dr']), float(row['open_cr']),
+                        float(row['move_dr']), float(row['move_cr']),
+                        float(row['clos_dr']), float(row['clos_cr'])]
+                for col, val in enumerate(vals, 1):
+                    c = ws.cell(row=row_num, column=col, value=val)
+                    c.border = border
+                    if col > 2:
+                        c.number_format = num_fmt
+                        c.alignment = Alignment(horizontal='right')
+                row_num += 1
+            # Section subtotal
+            sub_vals = ['Sous-total ' + sec['label'], '',
+                        float(sec['open_dr']), float(sec['open_cr']),
+                        float(sec['move_dr']), float(sec['move_cr']),
+                        float(sec['clos_dr']), float(sec['clos_cr'])]
+            for col, val in enumerate(sub_vals, 1):
+                c = ws.cell(row=row_num, column=col, value=val)
+                c.fill = sub_fill; c.font = Font(bold=True, size=9)
+                if col > 2:
+                    c.number_format = num_fmt
+                    c.alignment = Alignment(horizontal='right')
+            row_num += 1
+
+        # Grand total
+        tot_vals = ['TOTAUX GÉNÉRAUX', '',
+                    float(tot_open_dr), float(tot_open_cr),
+                    float(tot_move_dr), float(tot_move_cr),
+                    float(tot_clos_dr), float(tot_clos_cr)]
+        for col, val in enumerate(tot_vals, 1):
+            c = ws.cell(row=row_num, column=col, value=val)
+            c.fill = tot_fill; c.font = tot_font
+            if col > 2:
+                c.number_format = num_fmt
+                c.alignment = Alignment(horizontal='right')
+
+        # Column widths
+        ws.column_dimensions['A'].width = 12
+        ws.column_dimensions['B'].width = 40
+        for col in 'CDEFGH':
+            ws.column_dimensions[col].width = 18
+
+        import io
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        resp = HR(buf.read(),
+                  content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = (
+            f'attachment; filename="balance_comptes_{date_from}_{date_to}.xlsx"'
+        )
+        return resp
+
     return render(request, 'billing/trial_balance.html', {
         'sections':    sections,
         'date_from':   date_from,

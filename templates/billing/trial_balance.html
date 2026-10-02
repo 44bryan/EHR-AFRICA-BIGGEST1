@@ -27,12 +27,52 @@
   <div class="col-md-2">
     <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary w-100">Réinitialiser</a>
   </div>
-  <div class="col-auto ms-auto">
+  <div class="col-auto ms-auto d-flex gap-2">
+    <!-- Export dropdown -->
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Exporter
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <a class="dropdown-item" id="exportCsvBtn" href="#">
+            <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" id="exportXlsxBtn" href="#">
+            <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
+          </a>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="#" onclick="window.print(); return false;">
+            <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
+          </a>
+        </li>
+      </ul>
+    </div>
     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
       <i class="bi bi-printer me-1"></i>Imprimer
     </button>
   </div>
 </form>
+
+<script>
+(function(){
+  function exportUrl(fmt) {
+    var p = new URLSearchParams(window.location.search);
+    p.set('export', fmt);
+    return window.location.pathname + '?' + p.toString();
+  }
+  document.getElementById('exportCsvBtn').addEventListener('click', function(e){
+    e.preventDefault(); window.location.href = exportUrl('csv');
+  });
+  document.getElementById('exportXlsxBtn').addEventListener('click', function(e){
+    e.preventDefault(); window.location.href = exportUrl('xlsx');
+  });
+})();
+</script>
 
 <!-- Balance check banner -->
 <div class="alert {% if is_balanced %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center py-2">
@@ -54,22 +94,22 @@
   </div>
   <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 align-middle" id="trialBalanceTable" style="font-size:.82rem">
-      <thead class="table-dark">
+      <thead style="background:#1e3a5f;color:#fff;">
         <!-- Group header -->
         <tr>
-          <th rowspan="2" style="width:90px;vertical-align:middle">Code</th>
-          <th rowspan="2" style="vertical-align:middle">Intitulé du Compte</th>
-          <th colspan="2" class="text-center border-start border-secondary" style="width:260px">Soldes d'ouverture</th>
-          <th colspan="2" class="text-center border-start border-secondary" style="width:260px">Mouvements de période</th>
-          <th colspan="2" class="text-center border-start border-secondary" style="width:260px">Soldes de clôture</th>
+          <th rowspan="2" style="width:90px;vertical-align:middle;background:#1e3a5f">Code</th>
+          <th rowspan="2" style="vertical-align:middle;background:#1e3a5f">Intitulé du Compte</th>
+          <th colspan="2" class="text-center" style="width:260px;background:#1a5276;border-left:2px solid #5d9cec">Soldes d'ouverture</th>
+          <th colspan="2" class="text-center" style="width:260px;background:#145a32;border-left:2px solid #5d9cec">Mouvements de période</th>
+          <th colspan="2" class="text-center" style="width:260px;background:#4a235a;border-left:2px solid #5d9cec">Soldes de clôture</th>
         </tr>
         <tr>
-          <th class="text-end border-start border-secondary" style="width:130px">Débit</th>
-          <th class="text-end" style="width:130px">Crédit</th>
-          <th class="text-end border-start border-secondary" style="width:130px">Débit</th>
-          <th class="text-end" style="width:130px">Crédit</th>
-          <th class="text-end border-start border-secondary" style="width:130px">Débit</th>
-          <th class="text-end" style="width:130px">Crédit</th>
+          <th class="text-end" style="width:130px;background:#1a5276;border-left:2px solid #5d9cec">Débit</th>
+          <th class="text-end" style="width:130px;background:#1a5276">Crédit</th>
+          <th class="text-end" style="width:130px;background:#145a32;border-left:2px solid #5d9cec">Débit</th>
+          <th class="text-end" style="width:130px;background:#145a32">Crédit</th>
+          <th class="text-end" style="width:130px;background:#4a235a;border-left:2px solid #5d9cec">Débit</th>
+          <th class="text-end" style="width:130px;background:#4a235a">Crédit</th>
         </tr>
       </thead>
       <tbody>
@@ -122,14 +162,14 @@
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot class="table-dark fw-bold border-top border-2">
+      <tfoot style="background:#1e3a5f;color:#fff;font-weight:700">
         <tr>
           <td colspan="2" class="text-end pe-3">TOTAUX GÉNÉRAUX</td>
-          <td class="text-end border-start border-secondary">{{ tot_open_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="border-left:2px solid #5d9cec">{{ tot_open_dr|floatformat:0|intcomma }}</td>
           <td class="text-end">{{ tot_open_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end border-start border-secondary">{{ tot_move_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="border-left:2px solid #5d9cec">{{ tot_move_dr|floatformat:0|intcomma }}</td>
           <td class="text-end">{{ tot_move_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end border-start border-secondary">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="border-left:2px solid #5d9cec">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
           <td class="text-end">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
         </tr>
       </tfoot>
