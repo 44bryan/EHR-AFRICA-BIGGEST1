@@ -1,98 +1,56 @@
 {% extends 'layouts/base_authenticated.html' %}
-{% load humanize %}
+{% load humanize static %}
 {% block title %}Trial Balance{% endblock %}
+
 {% block page_header %}
-<div class="mb-1">
-  <h4 class="fw-bold mb-0">Trial Balance</h4>
-  <p class="text-muted small mb-0">OHADA SYCEBNL — Opening Balances · Period Movements · Closing Balances</p>
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Trial Balance</h4>
+    <p class="text-muted small mb-0">OHADA SYCEBNL — Opening Balances · Period Movements · Closing Balances</p>
+  </div>
+  <div class="dropdown">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown" id="exportDropdownBtn">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" id="exportCsvBtn" href="#"><i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)</a></li>
+      <li><a class="dropdown-item" id="exportXlsxBtn" href="#"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)</a></li>
+      <li><hr class="dropdown-divider"></li>
+      <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+    </ul>
+  </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<!-- ── Filter toolbar ─────────────────────────────────────────────────────── -->
-<div class="card shadow-sm mb-3">
-  <div class="card-body py-2 px-3">
-    <form method="get" id="tbForm">
-      <div class="row g-2 align-items-end">
-
-        <div class="col-auto">
-          <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:170px">
-            <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
-            <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
-          </select>
-        </div>
-
-        <div class="col-auto">
-          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From date" style="width:145px">
-        </div>
-
-        <div class="col-auto">
-          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" title="To date" style="width:145px">
-        </div>
-
-        <div class="col-auto">
-          <select name="classe" class="form-select form-select-sm" title="OHADA Class" style="width:210px">
-            <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
-            {% for cls, lbl in ohada_classes %}
-            <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div class="col-auto">
-          <input type="text" name="code_from" class="form-control form-control-sm font-monospace"
-                 value="{{ code_from }}" placeholder="From acct" title="From account code" style="width:115px">
-        </div>
-
-        <div class="col-auto">
-          <input type="text" name="code_to" class="form-control form-control-sm font-monospace"
-                 value="{{ code_to }}" placeholder="To acct" title="To account code" style="width:115px">
-        </div>
-
-        <div class="col-auto d-flex align-items-center">
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
-                   id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
-            <label class="form-check-label small fw-semibold" for="chkMvt">With movements only</label>
-          </div>
-        </div>
-
-        <div class="col-auto ms-auto d-flex gap-2 align-items-end">
-          <button type="submit" class="btn btn-sm btn-primary">
-            <i class="bi bi-calculator me-1"></i>Calculate
-          </button>
-          <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">
-            Reset
-          </a>
-          <div class="dropdown">
-            <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
-              <i class="bi bi-download me-1"></i>Export
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li>
-                <a class="dropdown-item" id="exportCsvBtn" href="#">
-                  <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
-                </a>
-              </li>
-              <li>
-                <a class="dropdown-item" id="exportXlsxBtn" href="#">
-                  <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
-                </a>
-              </li>
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <a class="dropdown-item" href="#" onclick="window.print(); return false;">
-                  <i class="bi bi-printer me-2 text-secondary"></i>Print / PDF
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-      </div>
-    </form>
+<!-- ── Filters (no card wrapper — flat like other pages) ──────────────────── -->
+<form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:165px">
+    <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
+    <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
+  </select>
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From date" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To date"   style="width:140px">
+  <select name="classe" class="form-select form-select-sm" title="OHADA Class" style="width:205px">
+    <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
+    {% for cls, lbl in ohada_classes %}
+    <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+    {% endfor %}
+  </select>
+  <input type="text" name="code_from" class="form-control form-control-sm font-monospace"
+         value="{{ code_from }}" placeholder="From acct" title="From account code" style="width:110px">
+  <input type="text" name="code_to" class="form-control form-control-sm font-monospace"
+         value="{{ code_to }}" placeholder="To acct" title="To account code" style="width:110px">
+  <div class="form-check mb-0">
+    <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
+           id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
+    <label class="form-check-label small fw-semibold" for="chkMvt">With movements only</label>
   </div>
-</div>
+  <button type="submit" class="btn btn-sm btn-primary">
+    <i class="bi bi-funnel me-1"></i>Filter
+  </button>
+  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
 
 <script>
 (function(){
@@ -111,7 +69,7 @@
 </script>
 
 <!-- Balance check banner -->
-<div class="alert {% if is_balanced %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center py-2">
+<div class="alert {% if is_balanced %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center py-2 mb-3">
   <i class="bi {% if is_balanced %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-2 fs-5"></i>
   <div>
     {% if is_balanced %}
@@ -147,8 +105,8 @@
           <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
           <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
           <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
-          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
-          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
+          <th class="text-end fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end fw-bold" style="width:130px">Credit</th>
         </tr>
       </thead>
       <tbody>
@@ -173,36 +131,40 @@
             <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
                class="text-decoration-none {% if row.is_summary %}text-dark fw-semibold{% else %}text-dark{% endif %}">{{ row.name }}</a>
           </td>
+          <!-- Opening: debit=red, credit=green, zero=muted -->
           <td class="text-end {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
           <td class="text-end {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">
             {% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
+          <!-- Movement: debit=red, credit=green, zero=muted -->
           <td class="text-end {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
           <td class="text-end {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">
             {% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
-          <td class="text-end {% if row.clos_dr %}text-danger fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
+          <!-- Closing: dark bold (net position — no red/green, just the number) -->
+          <td class="text-end {% if row.clos_dr %}text-dark fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
             {% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
-          <td class="text-end {% if row.clos_cr %}text-success fw-semibold{% else %}text-muted{% endif %}">
+          <td class="text-end {% if row.clos_cr %}text-dark fw-semibold{% else %}text-muted{% endif %}">
             {% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
           </td>
         </tr>
         {% empty %}
         <tr><td colspan="8" class="text-muted small text-center">No movements</td></tr>
         {% endfor %}
+        <!-- Subtotal row: opening/movement colored, closing dark -->
         <tr class="table-light fw-semibold" style="border-top:2px solid #bbb">
           <td colspan="2" class="text-end pe-3 small text-muted">Subtotal — {{ section.label }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ section.open_dr|floatformat:0|intcomma }}</td>
           <td class="text-end text-success">{{ section.open_cr|floatformat:0|intcomma }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ section.move_dr|floatformat:0|intcomma }}</td>
           <td class="text-end text-success">{{ section.move_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ section.clos_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end text-success">{{ section.clos_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-dark" style="border-left:2px solid #ccc">{{ section.clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-dark">{{ section.clos_cr|floatformat:0|intcomma }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -213,15 +175,14 @@
           <td class="text-end text-success">{{ tot_open_cr|floatformat:0|intcomma }}</td>
           <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_move_dr|floatformat:0|intcomma }}</td>
           <td class="text-end text-success">{{ tot_move_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end text-success">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="border-left:2px solid #ccc">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
         </tr>
       </tfoot>
     </table>
   </div>
 </div>
 
-{% load static %}
 <div id="printHeader" style="display:none">
   <!-- Top letterhead bar -->
   <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
