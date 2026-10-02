@@ -15,19 +15,19 @@ logger = logging.getLogger(__name__)
 # ── HARDCODED FALLBACKS (used when GLMapping table is empty or not yet seeded) ─
 
 _SYSTEM_DEFAULTS = {
-    'CASH_ACCOUNT':       '572000',
-    'BANK_ACCOUNT':       '521000',
-    'MOBILE_MONEY':       '521100',
-    'AR_PATIENT':         '411000',
-    'AR_INSURANCE':       '412000',
-    'AR_CORPORATE':       '413000',
-    'AP_VENDORS':         '401000',
-    'PATIENT_DEPOSITS':   '499000',
-    'STAFF_ADVANCES':     '421000',
-    'LOSS_ON_DISPOSAL':   '654000',
-    'GAIN_ON_DISPOSAL':   '754000',
-    'ACCUM_DEPRECIATION': '281000',
-    'FIXED_ASSETS':       '241000',
+    'CASH_ACCOUNT':       '571000',   # Cash in Hand (OHADA 571)
+    'BANK_ACCOUNT':       '521100',   # Local Bank (OHADA 521)
+    'MOBILE_MONEY':       '552000',   # Electronic Money (MTN MoMo)
+    'AR_PATIENT':         '412000',   # Clients-usagers Patients (OHADA 412)
+    'AR_INSURANCE':       '412000',   # Insurance claims (same 412 unless split)
+    'AR_CORPORATE':       '412000',   # Corporate clients
+    'AP_VENDORS':         '401100',   # Local Suppliers (OHADA 401)
+    'PATIENT_DEPOSITS':   '499100',   # Provisions / deposits
+    'STAFF_ADVANCES':     '421100',   # Personnel Advance (OHADA 421)
+    'LOSS_ON_DISPOSAL':   '654000',   # Loss on disposal
+    'GAIN_ON_DISPOSAL':   '754000',   # Gain on disposal
+    'ACCUM_DEPRECIATION': '281000',   # Accumulated depreciation
+    'FIXED_ASSETS':       '241000',   # Fixed assets
 }
 
 _REVENUE_DEFAULTS = {
@@ -171,7 +171,14 @@ def get_payment_account(method_key):
 
 def get_system_account(key):
     """Get a system GL account code (AR, AP, Cash, etc.)."""
-    return _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+    # Allow aliases: CASH_SAFE → CASH_ACCOUNT fallback, BANK_LOCAL → BANK_ACCOUNT
+    code = _get_mapping('SYSTEM', key, _SYSTEM_DEFAULTS.get(key))
+    if not code:
+        _alias = {'CASH_SAFE': 'CASH_ACCOUNT', 'BANK_LOCAL': 'BANK_ACCOUNT',
+                  'AP_SUPPLIER': 'AP_VENDORS', 'STAFF_ADVANCES': 'STAFF_ADVANCES'}
+        fallback_key = _alias.get(key, key)
+        code = _SYSTEM_DEFAULTS.get(fallback_key)
+    return code
 
 
 # Backward-compatible dicts — these now delegate to DB
@@ -261,8 +268,9 @@ def post_invoice_issued(invoice, user=None):
         amount = Decimal(str(total))
         lines = []
 
-        # Debit: Patient AR (411)
-        lines.append((AR_PATIENT, amount, 0,
+        # Debit: Patient AR — resolved from DB mapping (SYSTEM AR_PATIENT)
+        ar_patient = get_system_account('AR_PATIENT')
+        lines.append((ar_patient, amount, 0,
                        f"Invoice {invoice.invoice_number} — {invoice.patient.full_name}"))
 
         # Credit: Revenue split by service category (item-level GL when available)
@@ -326,10 +334,11 @@ def post_payment(payment):
         if amount <= 0:
             return
 
+        ar_patient = get_system_account('AR_PATIENT')
         lines = [
             (debit_code,  amount, 0,
              f"Receipt {payment.receipt_number} — {payment.get_payment_method_display()}"),
-            (AR_PATIENT,  0,      amount,
+            (ar_patient,  0,      amount,
              f"Settlement — Inv {invoice.invoice_number} — {invoice.patient.full_name}"),
         ]
 
@@ -353,7 +362,7 @@ def post_expense(expense):
     """
     try:
         debit_code  = get_expense_code(expense.category)
-        credit_code = CASH_ACCOUNT if expense.payment_method == 'CASH' else BANK_ACCOUNT
+        credit_code = get_system_account('CASH_SAFE') if expense.payment_method == 'CASH' else get_system_account('BANK_LOCAL')
         amount = Decimal(str(expense.amount))
 
         lines = [
@@ -380,10 +389,11 @@ def post_ap_payment(ap_payment):
     """
     try:
         amount = Decimal(str(ap_payment.amount))
-        credit_code = CASH_ACCOUNT if ap_payment.payment_method == 'CASH' else BANK_ACCOUNT
+        credit_code = get_system_account('CASH_SAFE') if ap_payment.payment_method == 'CASH' else get_system_account('BANK_LOCAL')
+        ap_vendors = get_system_account('AP_SUPPLIER') or get_system_account('AP_VENDORS') or AP_VENDORS
 
         lines = [
-            (AP_VENDORS,   amount, 0,      f"Payment to {ap_payment.bill.vendor.name}"),
+            (ap_vendors,   amount, 0,      f"Payment to {ap_payment.bill.vendor.name}"),
             (credit_code,  0,      amount, f"AP Bill {ap_payment.bill.bill_number}"),
         ]
         _create_entry(
@@ -410,9 +420,10 @@ def post_ap_bill(bill):
             debit_code = bill.gl_account.code
         amount = Decimal(str(bill.amount_due))
 
+        ap_vendors = get_system_account('AP_SUPPLIER') or get_system_account('AP_VENDORS') or AP_VENDORS
         lines = [
             (debit_code, amount, 0,      bill.description),
-            (AP_VENDORS, 0,      amount, f"Bill from {bill.vendor.name}"),
+            (ap_vendors, 0,      amount, f"Bill from {bill.vendor.name}"),
         ]
         _create_entry(
             date=bill.bill_date,
@@ -475,7 +486,7 @@ def post_cash_to_bank(deposit, user=None):
             source_id=deposit.pk,
             lines=[
                 (bank_code, deposit.amount, 0, f"Bank deposit — {deposit.bank_account.bank_name}"),
-                (CASH_ACCOUNT, 0, deposit.amount, "Cash withdrawn from safe"),
+                (get_system_account('CASH_SAFE'), 0, deposit.amount, "Cash withdrawn from safe"),
             ],
             user=user,
         )
@@ -489,9 +500,11 @@ def post_advance_disbursement(advance, user=None):
     Dr  Staff Advance 421000  |  Cr  Cash/Bank
     """
     try:
-        cr_code = get_payment_account(advance.payment_method) or CASH_ACCOUNT
+        cash_safe = get_system_account('CASH_SAFE')
+        cr_code = get_payment_account(advance.payment_method) or cash_safe
         if cr_code is None:
-            cr_code = CASH_ACCOUNT
+            cr_code = cash_safe
+        staff_adv = get_system_account('STAFF_ADVANCES') or STAFF_ADVANCES
         amount = advance.amount_approved or advance.amount_requested
         return _create_entry(
             date=advance.disbursed_date,
@@ -500,7 +513,7 @@ def post_advance_disbursement(advance, user=None):
             source_type='advance_disburse',
             source_id=advance.pk,
             lines=[
-                (STAFF_ADVANCES, amount, 0, f"Advance to {advance.staff.get_full_name()}"),
+                (staff_adv, amount, 0, f"Advance to {advance.staff.get_full_name()}"),
                 (cr_code, 0, amount, "Cash/bank disbursement"),
             ],
             user=user,
@@ -516,6 +529,7 @@ def post_advance_settlement(advance, user=None):
     """
     try:
         amount = advance.amount_approved or advance.amount_requested
+        staff_adv = get_system_account('STAFF_ADVANCES') or STAFF_ADVANCES
         return _create_entry(
             date=advance.settled_date,
             description=f"Advance settlement — {advance.staff.get_full_name()}",
@@ -523,8 +537,8 @@ def post_advance_settlement(advance, user=None):
             source_type='advance_settle',
             source_id=advance.pk,
             lines=[
-                (CASH_ACCOUNT, amount, 0, "Cash received for advance settlement"),
-                (STAFF_ADVANCES, 0, amount, f"Settlement of advance by {advance.staff.get_full_name()}"),
+                (get_system_account('CASH_SAFE'), amount, 0, "Cash received for advance settlement"),
+                (staff_adv, 0, amount, f"Settlement of advance by {advance.staff.get_full_name()}"),
             ],
             user=user,
         )
@@ -548,24 +562,29 @@ def post_asset_disposal(disposal, user=None):
         nbv = cost - accum_dep
         proceeds = disposal.actual_proceeds
 
+        _accum_dep_code  = get_system_account('ACCUM_DEPRECIATION') or ACCUM_DEPRECIATION
+        _fixed_asset_code = get_system_account('FIXED_ASSETS') or FIXED_ASSETS
+        _loss_code       = get_system_account('LOSS_ON_DISPOSAL') or LOSS_ON_DISPOSAL
+        _gain_code       = get_system_account('GAIN_ON_DISPOSAL') or GAIN_ON_DISPOSAL
+
         lines = [
-            (ACCUM_DEPRECIATION, accum_dep, 0, f"Accumulated depreciation on {asset.name}"),
-            (FIXED_ASSETS, 0, cost, f"Disposal of {asset.name} (cost)"),
+            (_accum_dep_code, accum_dep, 0, f"Accumulated depreciation on {asset.name}"),
+            (_fixed_asset_code, 0, cost, f"Disposal of {asset.name} (cost)"),
         ]
 
         if proceeds > 0:
             lines.append(
-                (CASH_ACCOUNT, proceeds, 0, f"Proceeds from disposal of {asset.name}")
+                (get_system_account('CASH_SAFE'), proceeds, 0, f"Proceeds from disposal of {asset.name}")
             )
 
         diff = nbv - proceeds
         if diff > 0:
             lines.append(
-                (LOSS_ON_DISPOSAL, diff, 0, f"Loss on disposal of {asset.name}")
+                (_loss_code, diff, 0, f"Loss on disposal of {asset.name}")
             )
         elif diff < 0:
             lines.append(
-                (GAIN_ON_DISPOSAL, 0, abs(diff), f"Gain on disposal of {asset.name}")
+                (_gain_code, 0, abs(diff), f"Gain on disposal of {asset.name}")
             )
 
         entry = _create_entry(
@@ -603,9 +622,9 @@ def post_refund(refund, user=None):
     """
     try:
         from apps.billing.models import ServiceCategory
-        credit_code = get_payment_account(refund.payment_method) or CASH_ACCOUNT
+        credit_code = get_payment_account(refund.payment_method) or get_system_account('CASH_SAFE')
         if credit_code is None:
-            credit_code = CASH_ACCOUNT
+            credit_code = get_system_account('CASH_SAFE')
 
         invoice = refund.invoice
         items = invoice.items.filter(is_deleted=False)
@@ -945,14 +964,17 @@ def post_insurance_invoice_split(invoice, user=None):
 
         lines = []
 
-        # Debit: Patient AR (411) for patient's copay share
+        ar_patient   = get_system_account('AR_PATIENT')
+        ar_insurance = get_system_account('AR_INSURANCE') or ar_patient
+
+        # Debit: Patient AR for patient's copay share
         if patient_amount > 0:
-            lines.append((AR_PATIENT, patient_amount, 0,
+            lines.append((ar_patient, patient_amount, 0,
                           f"Patient copay — Inv {invoice.invoice_number} — {invoice.patient.full_name}"))
 
-        # Debit: Insurance AR (412) for insurer's share
+        # Debit: Insurance AR for insurer's share
         if ins_amount > 0:
-            lines.append((AR_INSURANCE, ins_amount, 0,
+            lines.append((ar_insurance, ins_amount, 0,
                           f"Insurance claim — Inv {invoice.invoice_number} — {invoice.patient.full_name}"))
 
         # Credit: Revenue split by service category

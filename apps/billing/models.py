@@ -1389,9 +1389,20 @@ class JournalEntry(AuditModel):
 
     def save(self, *args, **kwargs):
         if not self.entry_number:
+            from django.db import transaction as _tx
             year = timezone.now().year
-            count = JournalEntry.objects.filter(created_at__year=year).count() + 1
-            self.entry_number = f"JNL-{year}-{count:05d}"
+            for attempt in range(20):
+                count = JournalEntry.objects.filter(created_at__year=year).count() + 1 + attempt
+                candidate = f"JNL-{year}-{count:05d}"
+                try:
+                    with _tx.atomic():
+                        self.entry_number = candidate
+                        super().save(*args, **kwargs)
+                    return
+                except Exception:
+                    self.entry_number = ''
+                    continue
+            raise RuntimeError('Unable to generate unique entry_number after 20 attempts')
         super().save(*args, **kwargs)
 
     @property
@@ -2588,5 +2599,199 @@ class MaintenanceWorkOrder(AuditModel):
             year = tz.now().year
             count = MaintenanceWorkOrder.objects.filter(created_at__year=year).count() + 1
             self.wo_number = f"WO-{year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Month-End Close
+# ─────────────────────────────────────────────────────────────────────────────
+class MonthEndCloseStatus(models.TextChoices):
+    OPEN       = 'OPEN',       'Open'
+    IN_PROGRESS= 'IN_PROGRESS','In Progress'
+    CLOSED     = 'CLOSED',     'Closed'
+
+
+class MonthEndClose(AuditModel):
+    """Monthly accounting close checklist."""
+    period_month  = models.PositiveSmallIntegerField()   # 1-12
+    period_year   = models.PositiveSmallIntegerField()
+    status        = models.CharField(max_length=20, choices=MonthEndCloseStatus.choices, default=MonthEndCloseStatus.OPEN)
+    started_by    = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name='month_closes_started')
+    closed_by     = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name='month_closes_approved')
+    closed_at     = models.DateTimeField(null=True, blank=True)
+    notes         = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = [('period_month', 'period_year')]
+        ordering = ['-period_year', '-period_month']
+
+    def __str__(self):
+        import calendar
+        return f"Month-End Close {calendar.month_name[self.period_month]} {self.period_year}"
+
+    @property
+    def period_label(self):
+        import calendar
+        return f"{calendar.month_name[self.period_month]} {self.period_year}"
+
+    @property
+    def completion_pct(self):
+        tasks = self.tasks.all()
+        if not tasks:
+            return 0
+        done = tasks.filter(is_completed=True).count()
+        return round(done / tasks.count() * 100)
+
+
+class MonthEndCloseTask(models.Model):
+    close       = models.ForeignKey(MonthEndClose, on_delete=models.CASCADE, related_name='tasks')
+    task_name   = models.CharField(max_length=200)
+    task_order  = models.PositiveSmallIntegerField(default=0)
+    is_completed= models.BooleanField(default=False)
+    completed_by= models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='close_tasks_done')
+    completed_at= models.DateTimeField(null=True, blank=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['task_order']
+
+    def __str__(self):
+        return self.task_name
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cash Count Sheet (end-of-day denomination breakdown)
+# ─────────────────────────────────────────────────────────────────────────────
+class CashCountSheet(AuditModel):
+    """Physical cash count with FCFA denomination breakdown."""
+    cashier       = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True,
+                                      related_name='cash_count_sheets')
+    session       = models.ForeignKey('CashierSession', on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name='count_sheets')
+    count_date    = models.DateField()
+    # FCFA denominations (count of notes/coins)
+    denom_10000   = models.PositiveIntegerField(default=0)
+    denom_5000    = models.PositiveIntegerField(default=0)
+    denom_2000    = models.PositiveIntegerField(default=0)
+    denom_1000    = models.PositiveIntegerField(default=0)
+    denom_500     = models.PositiveIntegerField(default=0)
+    denom_200     = models.PositiveIntegerField(default=0)
+    denom_100     = models.PositiveIntegerField(default=0)
+    denom_50      = models.PositiveIntegerField(default=0)
+    denom_25      = models.PositiveIntegerField(default=0)
+    denom_10      = models.PositiveIntegerField(default=0)
+    # Totals
+    total_counted  = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_expected = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    variance       = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    verified_by    = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='count_sheets_verified')
+    notes          = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-count_date', '-created_at']
+
+    def __str__(self):
+        return f"Cash Count {self.count_date} — {self.cashier}"
+
+    def compute_total(self):
+        return (
+            self.denom_10000 * 10000 +
+            self.denom_5000  * 5000  +
+            self.denom_2000  * 2000  +
+            self.denom_1000  * 1000  +
+            self.denom_500   * 500   +
+            self.denom_200   * 200   +
+            self.denom_100   * 100   +
+            self.denom_50    * 50    +
+            self.denom_25    * 25    +
+            self.denom_10    * 10
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Depreciation Run (monthly auto-posting)
+# ─────────────────────────────────────────────────────────────────────────────
+class DepreciationRunStatus(models.TextChoices):
+    DRAFT  = 'DRAFT',  'Draft'
+    POSTED = 'POSTED', 'Posted'
+
+
+class DepreciationRun(AuditModel):
+    """Monthly depreciation batch — one per accounting period."""
+    period_month   = models.PositiveSmallIntegerField()
+    period_year    = models.PositiveSmallIntegerField()
+    status         = models.CharField(max_length=10, choices=DepreciationRunStatus.choices, default=DepreciationRunStatus.DRAFT)
+    total_depreciation = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    journal_entry  = models.OneToOneField('JournalEntry', on_delete=models.SET_NULL, null=True, blank=True,
+                                           related_name='depreciation_run')
+    run_by         = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True,
+                                       related_name='depreciation_runs')
+
+    class Meta:
+        unique_together = [('period_month', 'period_year')]
+        ordering = ['-period_year', '-period_month']
+
+    def __str__(self):
+        import calendar
+        return f"Depreciation {calendar.month_name[self.period_month]} {self.period_year}"
+
+    @property
+    def period_label(self):
+        import calendar
+        return f"{calendar.month_name[self.period_month]} {self.period_year}"
+
+
+class DepreciationEntry(models.Model):
+    """Per-asset depreciation line within a DepreciationRun."""
+    run                  = models.ForeignKey(DepreciationRun, on_delete=models.CASCADE, related_name='entries')
+    asset                = models.ForeignKey('AssetRegister', on_delete=models.PROTECT, related_name='depreciation_entries')
+    depreciation_amount  = models.DecimalField(max_digits=12, decimal_places=2)
+    accumulated_before   = models.DecimalField(max_digits=12, decimal_places=2)
+    accumulated_after    = models.DecimalField(max_digits=12, decimal_places=2)
+    net_book_value       = models.DecimalField(max_digits=12, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.asset.asset_name} — {self.depreciation_amount}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Withholding Tax (Retenues à la source on supplier payments)
+# ─────────────────────────────────────────────────────────────────────────────
+class WHTType(models.TextChoices):
+    IRC  = 'IRC',  'IRC — Impôt sur Revenu des Capitaux'
+    IRCM = 'IRCM', 'IRCM — Impôt sur Revenu des Capitaux Mobiliers'
+    TSR  = 'TSR',  'TSR — Taxe Spéciale sur les Revenus'
+    OTHER= 'OTHER','Other'
+
+
+class WithholdingTax(AuditModel):
+    """Tracks withholding taxes deducted from supplier/service payments."""
+    transaction_date = models.DateField()
+    supplier_name    = models.CharField(max_length=200)
+    ap_bill          = models.ForeignKey('APBill', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='withholding_taxes')
+    tax_type         = models.CharField(max_length=10, choices=WHTType.choices, default=WHTType.TSR)
+    gross_amount     = models.DecimalField(max_digits=14, decimal_places=2)
+    wht_rate         = models.DecimalField(max_digits=5, decimal_places=2, help_text='e.g. 5.50 for 5.5%')
+    wht_amount       = models.DecimalField(max_digits=12, decimal_places=2)
+    net_paid         = models.DecimalField(max_digits=14, decimal_places=2)
+    reference        = models.CharField(max_length=100, blank=True)
+    is_remitted      = models.BooleanField(default=False, help_text='Paid to DGI?')
+    remittance_date  = models.DateField(null=True, blank=True)
+    remittance_ref   = models.CharField(max_length=100, blank=True)
+    notes            = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-transaction_date']
+
+    def __str__(self):
+        return f"WHT {self.tax_type} — {self.supplier_name} {self.wht_amount}"
+
+    def save(self, *args, **kwargs):
+        self.net_paid = self.gross_amount - self.wht_amount
         super().save(*args, **kwargs)
 
