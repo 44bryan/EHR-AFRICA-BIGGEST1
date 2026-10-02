@@ -168,8 +168,11 @@ def _can_manage_petty_cash(user):
 
 @login_required
 def billing_dashboard(request):
+    # Cashiers have their own workstation — redirect away from this Finance dashboard
+    if request.user.role == UserRole.CASHIER:
+        return redirect('dashboard:home')
     if not (request.user.is_super_admin or request.user.role in (
-        UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
+        UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
         UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
         UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN_DIRECTOR,
         UserRole.ADMIN,
@@ -915,38 +918,35 @@ def waive_invoice(request, invoice_id):
 # POS (Point of Sale) — Cashier Station
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Map DB category → POS tab key (used by _build_catalog_grouped)
-_CAT_TO_PANE = {
-    'REG':       'REG',
-    'CONSULT':   'CONSULT',
-    'CLINICAL':  'CLINICAL',
-    'INVEST':    'INVEST',
-    'LAB':       'LAB',
-    'PHARMACY':  'PHARM',
-    'OPTICAL':   'PHARM',
-    'SURGICAL':  'SURGERY',
-    'OTHER':     'OTHER',
-    'ADMISSION': 'OTHER',
+_CAT_FALLBACK_LABELS = {
+    'REG': 'Registration', 'CONSULT': 'Consultations', 'CLINICAL': 'Clinical',
+    'INVEST': 'Investigations', 'LAB': 'Laboratory', 'PHARMACY': 'Pharmacy',
+    'OPTICAL': 'Optical', 'SURGICAL': 'Surgeries', 'OTHER': 'Other', 'ADMISSION': 'Admission',
 }
 
 
-def _build_catalog_grouped(catalog):
+def _build_catalog_tabs(catalog):
     """
-    Returns {pane_key: OrderedDict{subcat_name_or_empty: [svcs]}}
-    Services without a sub-category are grouped under '' (empty string).
-    Already sorted by sub_category__sort_order from the DB query.
+    Returns list of {key, label, services} — one entry per sub-category (family).
+    Services with no sub-category fall into a tab named after their DB category.
+    The list is ordered by sub_category__sort_order then by first appearance.
     """
     from collections import OrderedDict
-    grouped = {}
+    groups = OrderedDict()
     for svc in catalog:
-        pane = _CAT_TO_PANE.get(svc['category'], 'OTHER')
-        subcat = svc.get('sub_category__name') or ''
-        if pane not in grouped:
-            grouped[pane] = OrderedDict()
-        if subcat not in grouped[pane]:
-            grouped[pane][subcat] = []
-        grouped[pane][subcat].append(svc)
-    return grouped
+        subcat_id   = svc.get('sub_category__id')
+        subcat_name = svc.get('sub_category__name')
+        if subcat_id and subcat_name:
+            key   = f'sub_{subcat_id}'
+            label = subcat_name
+        else:
+            cat   = svc.get('category', 'OTHER')
+            key   = f'cat_{cat}'
+            label = _CAT_FALLBACK_LABELS.get(cat, cat.title())
+        if key not in groups:
+            groups[key] = {'key': key, 'label': label, 'services': []}
+        groups[key]['services'].append(svc)
+    return list(groups.values())
 
 
 def _get_service_catalog(cashier_station=None):
@@ -969,7 +969,7 @@ def _get_service_catalog(cashier_station=None):
             .values('id', 'name', 'category', 'tier', 'price', 'nhis_price',
                     'insurance_price', 'requires_price_entry', 'code',
                     'gl_account__code', 'sub_category__gl_account__code',
-                    'sub_category__name', 'sub_category__sort_order',
+                    'sub_category__id', 'sub_category__name', 'sub_category__sort_order',
                     'tax_rate', 'is_taxable', 'price_ht')
         )
     except Exception:
@@ -1312,7 +1312,7 @@ def cashier_pos(request, token_id):
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
         'service_catalog': (_sc := _get_service_catalog(cashier_station=_pos_tier)),
-        'catalog_grouped': _build_catalog_grouped(_sc),
+        'catalog_tabs': _build_catalog_tabs(_sc),
         'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
@@ -2077,7 +2077,8 @@ def patient_pos(request, patient_id):
         'payments': payments,
         'categories': ServiceCategory.choices,
         'payment_methods': PaymentMethod.choices,
-        'service_catalog': _get_service_catalog(cashier_station=_ppos_tier),
+        'service_catalog': (_psc := _get_service_catalog(cashier_station=_ppos_tier)),
+        'catalog_tabs': _build_catalog_tabs(_psc),
         'today': today,
         'active_consultation': active_consultation,
         'prior_unpaid_invoices': prior_unpaid_invoices,
@@ -7642,9 +7643,12 @@ def discount_approval_list(request):
     if not _can_approve_discount(request.user):
         messages.error(request, 'Access denied.')
         return redirect('dashboard:home')
+    from django.db.models import Prefetch
     pending = DiscountApproval.objects.filter(
         status=DiscountApprovalStatus.PENDING, is_deleted=False
-    ).select_related('invoice', 'invoice__patient', 'requested_by').order_by('-created_at')
+    ).select_related('invoice', 'invoice__patient', 'requested_by').prefetch_related(
+        Prefetch('invoice__items', queryset=InvoiceItem.objects.filter(is_deleted=False).order_by('created_at'))
+    ).order_by('-created_at')
     recent = DiscountApproval.objects.exclude(
         status=DiscountApprovalStatus.PENDING
     ).filter(is_deleted=False).select_related(
@@ -7687,6 +7691,19 @@ def discount_decide(request, approval_id):
         approval.invoice.discount_reason = f'Approved by {request.user.get_full_name() or request.user.username}: {notes}'
         approval.invoice.save(update_fields=['discount_amount', 'discount_reason', 'updated_at'])
         messages.success(request, f'Discount of {approved_amount:,.0f} XAF approved and applied.')
+        # Notify cashier POS via WebSocket
+        from apps.core.ws_notify import notify_queue
+        notify_queue(
+            f'discount-{approval.invoice_id}',
+            action='discount_approved',
+            data={
+                'approved_amount': int(approved_amount),
+                'new_total': int(approval.invoice.total),
+                'new_balance': int(approval.invoice.balance_due),
+                'decided_by': request.user.get_full_name() or request.user.username,
+                'notes': notes,
+            }
+        )
     elif decision == 'REJECT':
         approval.status         = DiscountApprovalStatus.REJECTED
         approval.approved_by    = request.user
@@ -7694,6 +7711,16 @@ def discount_decide(request, approval_id):
         approval.decision_notes = notes
         approval.save()
         messages.info(request, 'Discount request rejected.')
+        # Notify cashier POS via WebSocket
+        from apps.core.ws_notify import notify_queue
+        notify_queue(
+            f'discount-{approval.invoice_id}',
+            action='discount_rejected',
+            data={
+                'decided_by': request.user.get_full_name() or request.user.username,
+                'notes': notes,
+            }
+        )
     else:
         messages.error(request, 'Invalid decision.')
 
