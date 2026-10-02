@@ -2,9 +2,24 @@
 {% load humanize %}
 {% block title %}Balance des Comptes{% endblock %}
 {% block page_header %}
-<div class="mb-3">
-  <h4 class="fw-bold mb-0">Balance des Comptes (Trial Balance)</h4>
-  <p class="text-muted small mb-0">Soldes d'ouverture · Mouvements de période · Soldes de clôture — OHADA SYCEBNL</p>
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <h4 class="fw-bold mb-0">
+      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire{% else %}Balance Générale{% endif %}
+      — des Comptes
+    </h4>
+    <p class="text-muted small mb-0">Soldes d'ouverture · Mouvements · Soldes de clôture — OHADA SYCEBNL</p>
+  </div>
+  <div class="btn-group" role="group">
+    <a href="?balance_type=general&date_from={{ date_from }}&date_to={{ date_to }}"
+       class="btn btn-sm {% if balance_type == 'general' or not balance_type %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-diagram-3 me-1"></i>Générale
+    </a>
+    <a href="?balance_type=auxiliaire&date_from={{ date_from }}&date_to={{ date_to }}"
+       class="btn btn-sm {% if balance_type == 'auxiliaire' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-list-nested me-1"></i>Auxiliaire
+    </a>
+  </div>
 </div>
 {% endblock %}
 {% block content %}
@@ -89,7 +104,10 @@
 
 <div class="card shadow-sm">
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
-    <span class="fw-semibold small">Balance des Comptes — Du {{ date_from }} au {{ date_to }}</span>
+    <span class="fw-semibold small">
+      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire (Comptes Détail){% else %}Balance Générale (Comptes Sommaires){% endif %}
+      — Du {{ date_from }} au {{ date_to }}
+    </span>
     <span class="badge bg-secondary">{{ sections|length }} classe(s)</span>
   </div>
   <div class="table-responsive">
@@ -119,11 +137,21 @@
           <td colspan="8" class="fw-bold small text-uppercase ps-3 py-1">{{ section.label }}</td>
         </tr>
         {% for row in section.rows %}
-        <tr>
-          <td class="text-muted font-monospace">{{ row.code }}</td>
+        {% if balance_type == 'auxiliaire' and row.parent_code %}
+        {% ifchanged row.parent_code %}
+        <tr style="background:#f0f3f8">
+          <td class="font-monospace small text-muted ps-4">{{ row.parent_code }}</td>
+          <td colspan="7" class="fw-semibold small text-secondary ps-1">
+            <i class="bi bi-folder2-open me-1"></i>{{ row.parent_name }}
+          </td>
+        </tr>
+        {% endifchanged %}
+        {% endif %}
+        <tr {% if row.is_summary %}style="background:#fafafa;font-weight:600"{% endif %}>
+          <td class="font-monospace small {% if balance_type == 'auxiliaire' and row.parent_code %}ps-5 text-muted{% else %}text-muted{% endif %}">{{ row.code }}</td>
           <td>
             <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
-               class="text-decoration-none text-dark">{{ row.name }}</a>
+               class="text-decoration-none {% if row.is_summary %}text-dark fw-semibold{% else %}text-dark{% endif %}">{{ row.name }}</a>
           </td>
           <!-- Opening -->
           <td class="text-end {% if not row.open_dr %}text-muted{% endif %}" style="border-left:2px solid #888">

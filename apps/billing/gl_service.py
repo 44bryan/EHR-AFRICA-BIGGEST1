@@ -211,6 +211,12 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
         acct = _get_account(code)
         if acct is None:
             return None
+        if acct.is_summary:
+            logger.error(
+                f"Cannot post to summary account {code} ({acct.name}) for {source_type} {source_id}. "
+                f"Summary accounts aggregate children — post to a leaf account instead."
+            )
+            return None
         resolved.append((acct, Decimal(str(debit)), Decimal(str(credit)), desc))
 
     total_dr = sum(d for _, d, _, _ in resolved)

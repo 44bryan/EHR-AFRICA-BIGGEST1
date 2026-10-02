@@ -1274,6 +1274,10 @@ class GLAccount(AuditModel):
     )
     description = models.TextField(blank=True)
     is_active   = models.BooleanField(default=True)
+    is_summary  = models.BooleanField(
+        default=False,
+        help_text='Summary/parent account — aggregates children, never receives journal lines directly'
+    )
     allow_manual_posting = models.BooleanField(
         default=True, help_text='Allow manual journal entries to post to this account'
     )

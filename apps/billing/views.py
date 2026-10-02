@@ -6531,11 +6531,14 @@ def trial_balance(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
-    today = timezone.localdate()
-    date_from = request.GET.get('date_from') or str(today.replace(month=1, day=1))
-    date_to   = request.GET.get('date_to')   or str(today)
+    from django.db.models import Q as _Q
 
-    # Opening balance: all entries strictly BEFORE date_from
+    today        = timezone.localdate()
+    date_from    = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_to      = request.GET.get('date_to')   or str(today)
+    balance_type = request.GET.get('balance_type', 'general')  # 'general' | 'auxiliaire'
+
+    # ── Two DB queries: raw per-leaf-account aggregates ───────────────────────
     open_bulk = (
         JournalLine.objects.filter(
             entry__is_deleted=False, entry__entry_date__lt=date_from,
@@ -6543,9 +6546,9 @@ def trial_balance(request):
             total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
     )
-    open_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in open_bulk}
+    open_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0'))
+                for r in open_bulk}
 
-    # Movement: entries within [date_from, date_to]
     move_bulk = (
         JournalLine.objects.filter(
             entry__is_deleted=False,
@@ -6555,9 +6558,40 @@ def trial_balance(request):
             total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
         )
     )
-    move_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0')) for r in move_bulk}
+    move_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0'))
+                for r in move_bulk}
 
-    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    # ── Load ALL active accounts once ─────────────────────────────────────────
+    all_accounts = list(GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code'))
+    # Lookups keyed by account.id
+    parent_of    = {a.id: a.parent_id   for a in all_accounts}   # id -> parent_id or None
+    parent_code_of = {}; parent_name_of = {}
+    for a in all_accounts:
+        if a.parent_id:
+            # will be filled properly below after we index all accounts
+            pass
+    acct_by_id   = {a.id: a for a in all_accounts}
+    for a in all_accounts:
+        if a.parent_id and a.parent_id in acct_by_id:
+            p = acct_by_id[a.parent_id]
+            parent_code_of[a.id] = p.code
+            parent_name_of[a.id] = p.name
+        else:
+            parent_code_of[a.id] = ''
+            parent_name_of[a.id] = ''
+
+    # ── Roll-up helper: merge leaf lines under their parent key ───────────────
+    D0 = Decimal('0')
+
+    def _rollup(raw_map):
+        result = {}
+        for acct_id, (dr, cr) in raw_map.items():
+            key = parent_of.get(acct_id) or acct_id
+            pd, pc = result.get(key, (D0, D0))
+            result[key] = (pd + dr, pc + cr)
+        return result
+
+    # ── Build sections ─────────────────────────────────────────────────────────
     type_order = [
         (AccountType.ASSET,     'Actif / Assets'),
         (AccountType.LIABILITY, 'Passif / Liabilities'),
@@ -6566,44 +6600,79 @@ def trial_balance(request):
         (AccountType.EXPENSE,   'Charges / Expenses'),
     ]
     sections = []
-    # Totals for footer (movement columns drive the balanced check)
-    tot_open_dr = Decimal('0'); tot_open_cr = Decimal('0')
-    tot_move_dr = Decimal('0'); tot_move_cr = Decimal('0')
-    tot_clos_dr = Decimal('0'); tot_clos_cr = Decimal('0')
+    tot_open_dr = D0; tot_open_cr = D0
+    tot_move_dr = D0; tot_move_cr = D0
+    tot_clos_dr = D0; tot_clos_cr = D0
 
-    for acct_type, label in type_order:
-        rows = []
-        sub = {'open_dr': Decimal('0'), 'open_cr': Decimal('0'),
-               'move_dr': Decimal('0'), 'move_cr': Decimal('0'),
-               'clos_dr': Decimal('0'), 'clos_cr': Decimal('0')}
-        for acct in accounts.filter(account_type=acct_type):
-            o_raw_dr, o_raw_cr = open_map.get(acct.id, (Decimal('0'), Decimal('0')))
-            m_dr, m_cr = move_map.get(acct.id, (Decimal('0'), Decimal('0')))
-            if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
-                continue
-            # Opening balance: NET position (standard OHADA — Dr OR Cr, never both)
-            open_net = o_raw_dr - o_raw_cr
-            o_dr = max(Decimal('0'), open_net)
-            o_cr = max(Decimal('0'), -open_net)
-            # Closing = opening net + period movements net → also NET
-            clos_net = open_net + m_dr - m_cr
-            c_dr = max(Decimal('0'), clos_net)
-            c_cr = max(Decimal('0'), -clos_net)
-            rows.append({
-                'code': acct.code, 'name': acct.name, 'pk': acct.pk,
-                'open_dr': o_dr, 'open_cr': o_cr,
-                'move_dr': m_dr, 'move_cr': m_cr,
-                'clos_dr': c_dr, 'clos_cr': c_cr,
-            })
-            for k, v in [('open_dr', o_dr), ('open_cr', o_cr),
-                         ('move_dr', m_dr), ('move_cr', m_cr),
-                         ('clos_dr', c_dr), ('clos_cr', c_cr)]:
-                sub[k] += v
-        if rows:
-            sections.append({'label': label, 'rows': rows, **sub})
-        tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
-        tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
-        tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
+    if balance_type == 'general':
+        # Roll leaf lines up to parent level (or keep standalone)
+        gen_open = _rollup(open_map)
+        gen_move = _rollup(move_map)
+        # Display: summary accounts + standalone leaf accounts (no parent, not summary)
+        display_accts = [
+            a for a in all_accounts
+            if a.is_summary or (not a.parent_id and not a.is_summary)
+        ]
+        for acct_type, label in type_order:
+            rows = []
+            sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
+            for acct in [a for a in display_accts if a.account_type == acct_type]:
+                o_raw_dr, o_raw_cr = gen_open.get(acct.id, (D0, D0))
+                m_dr,     m_cr     = gen_move.get(acct.id, (D0, D0))
+                if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
+                    continue
+                open_net = o_raw_dr - o_raw_cr
+                o_dr = max(D0, open_net);  o_cr = max(D0, -open_net)
+                clos_net = open_net + m_dr - m_cr
+                c_dr = max(D0, clos_net);  c_cr = max(D0, -clos_net)
+                rows.append({
+                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                    'is_summary': acct.is_summary,
+                    'open_dr': o_dr, 'open_cr': o_cr,
+                    'move_dr': m_dr, 'move_cr': m_cr,
+                    'clos_dr': c_dr, 'clos_cr': c_cr,
+                    'parent_code': '', 'parent_name': '',
+                })
+                for k, v in [('open_dr',o_dr),('open_cr',o_cr),('move_dr',m_dr),
+                              ('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
+                    sub[k] += v
+            if rows:
+                sections.append({'label': label, 'rows': rows, **sub})
+            tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
+            tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
+            tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
+
+    else:  # auxiliaire — leaf accounts only, grouped by parent
+        leaf_accts = [a for a in all_accounts if not a.is_summary]
+        for acct_type, label in type_order:
+            rows = []
+            sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
+            for acct in [a for a in leaf_accts if a.account_type == acct_type]:
+                o_raw_dr, o_raw_cr = open_map.get(acct.id, (D0, D0))
+                m_dr,     m_cr     = move_map.get(acct.id, (D0, D0))
+                if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
+                    continue
+                open_net = o_raw_dr - o_raw_cr
+                o_dr = max(D0, open_net);  o_cr = max(D0, -open_net)
+                clos_net = open_net + m_dr - m_cr
+                c_dr = max(D0, clos_net);  c_cr = max(D0, -clos_net)
+                rows.append({
+                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                    'is_summary': False,
+                    'open_dr': o_dr, 'open_cr': o_cr,
+                    'move_dr': m_dr, 'move_cr': m_cr,
+                    'clos_dr': c_dr, 'clos_cr': c_cr,
+                    'parent_code': parent_code_of.get(acct.id, ''),
+                    'parent_name': parent_name_of.get(acct.id, ''),
+                })
+                for k, v in [('open_dr',o_dr),('open_cr',o_cr),('move_dr',m_dr),
+                              ('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
+                    sub[k] += v
+            if rows:
+                sections.append({'label': label, 'rows': rows, **sub})
+            tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
+            tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
+            tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
     move_diff = tot_move_dr - tot_move_cr
     clos_diff = tot_clos_dr - tot_clos_cr
@@ -6615,7 +6684,7 @@ def trial_balance(request):
         from django.http import HttpResponse
         resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
         resp['Content-Disposition'] = (
-            f'attachment; filename="balance_comptes_{date_from}_{date_to}.csv"'
+            f'attachment; filename="balance_{balance_type}_{date_from}_{date_to}.csv"'
         )
         w = csv.writer(resp)
         w.writerow(['Code', 'Intitulé',
@@ -6667,7 +6736,8 @@ def trial_balance(request):
 
         # Title
         ws.merge_cells('A1:H1')
-        ws['A1'] = f'BALANCE DES COMPTES — Du {date_from} au {date_to}'
+        lbl = 'BALANCE GÉNÉRALE' if balance_type == 'general' else 'BALANCE AUXILIAIRE'
+        ws['A1'] = f'{lbl} — Du {date_from} au {date_to}'
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center')
 
@@ -6749,15 +6819,16 @@ def trial_balance(request):
         return resp
 
     return render(request, 'billing/trial_balance.html', {
-        'sections':    sections,
-        'date_from':   date_from,
-        'date_to':     date_to,
-        'tot_open_dr': tot_open_dr, 'tot_open_cr': tot_open_cr,
-        'tot_move_dr': tot_move_dr, 'tot_move_cr': tot_move_cr,
-        'tot_clos_dr': tot_clos_dr, 'tot_clos_cr': tot_clos_cr,
-        'is_balanced': abs(move_diff) < Decimal('0.01'),
-        'move_diff':   move_diff,
-        'clos_diff':   clos_diff,
+        'sections':      sections,
+        'date_from':     date_from,
+        'date_to':       date_to,
+        'balance_type':  balance_type,
+        'tot_open_dr':   tot_open_dr, 'tot_open_cr': tot_open_cr,
+        'tot_move_dr':   tot_move_dr, 'tot_move_cr': tot_move_cr,
+        'tot_clos_dr':   tot_clos_dr, 'tot_clos_cr': tot_clos_cr,
+        'is_balanced':   abs(move_diff) < Decimal('0.01'),
+        'move_diff':     move_diff,
+        'clos_diff':     clos_diff,
     })
 
 
