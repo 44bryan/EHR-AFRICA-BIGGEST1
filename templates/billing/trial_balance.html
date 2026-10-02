@@ -2,17 +2,18 @@
 {% load humanize %}
 {% block title %}Balance des Comptes{% endblock %}
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-start mb-2">
+<div class="d-flex justify-content-between align-items-center mb-1">
   <div>
-    <h4 class="fw-bold mb-0">
-      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire{% else %}Balance Générale{% endif %}
-      — des Comptes
-    </h4>
-    <p class="text-muted small mb-0">Soldes d'ouverture · Mouvements · Soldes de clôture — OHADA SYCEBNL</p>
+    <h4 class="fw-bold mb-0">Balance des Comptes</h4>
+    <p class="text-muted small mb-0">
+      {% if balance_type == 'auxiliaire' %}Comptes de détail (Balance Auxiliaire){% else %}Comptes sommaires (Balance Générale){% endif %}
+      &nbsp;·&nbsp; OHADA SYCEBNL &nbsp;·&nbsp; Du {{ date_from }} au {{ date_to }}
+    </p>
   </div>
+  <!-- Type toggle — top right of header -->
   <div class="btn-group" role="group">
     <a href="?balance_type=general&date_from={{ date_from }}&date_to={{ date_to }}"
-       class="btn btn-sm {% if balance_type == 'general' or not balance_type %}btn-primary{% else %}btn-outline-primary{% endif %}">
+       class="btn btn-sm {% if balance_type != 'auxiliaire' %}btn-primary{% else %}btn-outline-primary{% endif %}">
       <i class="bi bi-diagram-3 me-1"></i>Générale
     </a>
     <a href="?balance_type=auxiliaire&date_from={{ date_from }}&date_to={{ date_to }}"
@@ -22,56 +23,52 @@
   </div>
 </div>
 {% endblock %}
-{% block content %}
 
-<!-- Period filter -->
-<form method="get" class="row g-2 mb-4 align-items-end">
-  <div class="col-md-3">
-    <label class="form-label fw-semibold small">Du (Date début)</label>
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
-  </div>
-  <div class="col-md-3">
-    <label class="form-label fw-semibold small">Au (Date fin)</label>
-    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
-  </div>
-  <div class="col-md-2">
-    <button type="submit" class="btn btn-sm btn-primary w-100">
+{% block content %}
+<!-- ── Toolbar: filter left, export right ─────────────────────────────────── -->
+<div class="d-flex align-items-end gap-2 mb-4 flex-wrap">
+  <form method="get" class="d-flex align-items-end gap-2 flex-wrap flex-grow-1">
+    <input type="hidden" name="balance_type" value="{{ balance_type }}">
+    <div>
+      <label class="form-label fw-semibold small mb-1">Du</label>
+      <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:150px">
+    </div>
+    <div>
+      <label class="form-label fw-semibold small mb-1">Au</label>
+      <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="width:150px">
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary">
       <i class="bi bi-calculator me-1"></i>Calculer
     </button>
-  </div>
-  <div class="col-md-2">
-    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary w-100">Réinitialiser</a>
-  </div>
-  <div class="col-auto ms-auto d-flex gap-2">
-    <!-- Export dropdown -->
-    <div class="dropdown">
-      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
-        <i class="bi bi-download me-1"></i>Exporter
-      </button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        <li>
-          <a class="dropdown-item" id="exportCsvBtn" href="#">
-            <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
-          </a>
-        </li>
-        <li>
-          <a class="dropdown-item" id="exportXlsxBtn" href="#">
-            <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
-          </a>
-        </li>
-        <li><hr class="dropdown-divider"></li>
-        <li>
-          <a class="dropdown-item" href="#" onclick="window.print(); return false;">
-            <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
-          </a>
-        </li>
-      </ul>
-    </div>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-      <i class="bi bi-printer me-1"></i>Imprimer
+    <a href="{% url 'billing:trial_balance' %}?balance_type={{ balance_type }}" class="btn btn-sm btn-outline-secondary">
+      Réinitialiser
+    </a>
+  </form>
+  <!-- Export — right side of toolbar -->
+  <div class="dropdown ms-auto">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      <i class="bi bi-download me-1"></i>Exporter
     </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li>
+        <a class="dropdown-item" id="exportCsvBtn" href="#">
+          <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
+        </a>
+      </li>
+      <li>
+        <a class="dropdown-item" id="exportXlsxBtn" href="#">
+          <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+      <li>
+        <a class="dropdown-item" href="#" onclick="window.print(); return false;">
+          <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
+        </a>
+      </li>
+    </ul>
   </div>
-</form>
+</div>
 
 <script>
 (function(){
@@ -105,29 +102,29 @@
 <div class="card shadow-sm">
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
     <span class="fw-semibold small">
-      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire (Comptes Détail){% else %}Balance Générale (Comptes Sommaires){% endif %}
-      — Du {{ date_from }} au {{ date_to }}
+      {% if balance_type == 'auxiliaire' %}Balance Auxiliaire — Comptes de Détail{% else %}Balance Générale — Comptes Sommaires{% endif %}
     </span>
     <span class="badge bg-secondary">{{ sections|length }} classe(s)</span>
   </div>
   <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 align-middle" id="trialBalanceTable" style="font-size:.82rem">
       <thead>
-        <!-- Group header -->
+        <!-- Group header row 1: section labels -->
         <tr style="background:#d6dce4;color:#1a1a1a;border-bottom:1px solid #aaa">
           <th rowspan="2" style="width:90px;vertical-align:middle;border-right:1px solid #aaa">Code</th>
           <th rowspan="2" style="vertical-align:middle;border-right:2px solid #888">Intitulé du Compte</th>
-          <th colspan="2" class="text-center" style="width:260px;border-right:2px solid #888">Soldes d'ouverture</th>
-          <th colspan="2" class="text-center" style="width:260px;border-right:2px solid #888">Mouvements de période</th>
+          <th colspan="2" class="text-center" style="width:260px;border-right:2px solid #aaa">Soldes d'ouverture</th>
+          <th colspan="2" class="text-center" style="width:260px;border-right:2px solid #aaa">Mouvements de période</th>
           <th colspan="2" class="text-center" style="width:260px">Soldes de clôture</th>
         </tr>
-        <tr style="background:#e9ecef;color:#1a1a1a;border-bottom:2px solid #888">
-          <th class="text-end" style="width:130px;border-left:2px solid #888">Débit</th>
-          <th class="text-end" style="width:130px;border-right:2px solid #888">Crédit</th>
-          <th class="text-end" style="width:130px">Débit</th>
-          <th class="text-end" style="width:130px;border-right:2px solid #888">Crédit</th>
-          <th class="text-end" style="width:130px">Débit</th>
-          <th class="text-end" style="width:130px">Crédit</th>
+        <!-- Row 2: Débit = blue, Crédit = red/maroon -->
+        <tr style="border-bottom:2px solid #888">
+          <th class="text-end fw-bold" style="width:130px;background:#dce8f7;color:#1a4a8a;border-left:2px solid #aaa">Débit</th>
+          <th class="text-end fw-bold" style="width:130px;background:#fde8e8;color:#8a1a1a;border-right:2px solid #aaa">Crédit</th>
+          <th class="text-end fw-bold" style="width:130px;background:#dce8f7;color:#1a4a8a">Débit</th>
+          <th class="text-end fw-bold" style="width:130px;background:#fde8e8;color:#8a1a1a;border-right:2px solid #aaa">Crédit</th>
+          <th class="text-end fw-bold" style="width:130px;background:#dce8f7;color:#1a4a8a">Débit</th>
+          <th class="text-end fw-bold" style="width:130px;background:#fde8e8;color:#8a1a1a">Crédit</th>
         </tr>
       </thead>
       <tbody>
@@ -179,26 +176,26 @@
         <tr><td colspan="8" class="text-muted small text-center">Aucun mouvement</td></tr>
         {% endfor %}
         <!-- Section subtotal -->
-        <tr style="background:#eef0f3;font-weight:600;border-top:1px solid #aaa;border-bottom:1px solid #aaa">
-          <td colspan="2" class="text-end pe-3 small">Sous-total {{ section.label }}</td>
-          <td class="text-end" style="border-left:2px solid #888">{{ section.open_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end" style="border-right:2px solid #888">{{ section.open_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ section.move_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end" style="border-right:2px solid #888">{{ section.move_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ section.clos_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ section.clos_cr|floatformat:0|intcomma }}</td>
+        <tr style="font-weight:600;border-top:2px solid #aaa;border-bottom:1px solid #ccc">
+          <td colspan="2" class="text-end pe-3 small" style="background:#eef0f3">Sous-total {{ section.label }}</td>
+          <td class="text-end" style="background:#d0e4f5;color:#1a4a8a;border-left:2px solid #aaa">{{ section.open_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#fadcdc;color:#8a1a1a;border-right:2px solid #aaa">{{ section.open_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#d0e4f5;color:#1a4a8a">{{ section.move_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#fadcdc;color:#8a1a1a;border-right:2px solid #aaa">{{ section.move_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#d0e4f5;color:#1a4a8a">{{ section.clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#fadcdc;color:#8a1a1a">{{ section.clos_cr|floatformat:0|intcomma }}</td>
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot style="background:#d6dce4;color:#1a1a1a;font-weight:700;border-top:2px solid #888">
+      <tfoot style="font-weight:700;border-top:3px solid #888">
         <tr>
-          <td colspan="2" class="text-end pe-3 small text-uppercase">Totaux Généraux</td>
-          <td class="text-end" style="border-left:2px solid #888">{{ tot_open_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end" style="border-right:2px solid #888">{{ tot_open_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ tot_move_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end" style="border-right:2px solid #888">{{ tot_move_cr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
+          <td colspan="2" class="text-end pe-3 small text-uppercase" style="background:#d6dce4">Totaux Généraux</td>
+          <td class="text-end" style="background:#1a4a8a;color:#fff;border-left:2px solid #888">{{ tot_open_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#8a1a1a;color:#fff;border-right:2px solid #aaa">{{ tot_open_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#1a4a8a;color:#fff">{{ tot_move_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#8a1a1a;color:#fff;border-right:2px solid #aaa">{{ tot_move_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#1a4a8a;color:#fff">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="background:#8a1a1a;color:#fff">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
         </tr>
       </tfoot>
     </table>
