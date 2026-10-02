@@ -6533,10 +6533,28 @@ def trial_balance(request):
 
     from django.db.models import Q as _Q
 
-    today        = timezone.localdate()
-    date_from    = request.GET.get('date_from') or str(today.replace(month=1, day=1))
-    date_to      = request.GET.get('date_to')   or str(today)
-    balance_type = request.GET.get('balance_type', 'general')  # 'general' | 'auxiliaire'
+    today         = timezone.localdate()
+    date_from     = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_to       = request.GET.get('date_to')   or str(today)
+    balance_type  = request.GET.get('balance_type', 'general')   # 'general' | 'auxiliaire'
+    classe_filter = request.GET.get('classe', '')                 # '' = all, '1'..'8'
+    code_from     = request.GET.get('code_from', '').strip()
+    code_to       = request.GET.get('code_to', '').strip()
+    avec_mouvement = request.GET.get('avec_mouvement', '1')       # '1' = only with movement (default)
+
+    # ── OHADA SYCEBNL classes 1–8 ─────────────────────────────────────────────
+    OHADA_CLASSES = [
+        ('1', 'Classe 1 — Capitaux Permanents'),
+        ('2', 'Classe 2 — Valeurs Immobilisées'),
+        ('3', 'Classe 3 — Stocks'),
+        ('4', 'Classe 4 — Comptes de Tiers'),
+        ('5', 'Classe 5 — Trésorerie'),
+        ('6', 'Classe 6 — Charges'),
+        ('7', 'Classe 7 — Produits'),
+        ('8', 'Classe 8 — Comptes Spéciaux'),
+    ]
+    classes_to_show = [(c, lbl) for c, lbl in OHADA_CLASSES
+                       if not classe_filter or c == classe_filter]
 
     # ── Two DB queries: raw per-leaf-account aggregates ───────────────────────
     open_bulk = (
@@ -6563,14 +6581,10 @@ def trial_balance(request):
 
     # ── Load ALL active accounts once ─────────────────────────────────────────
     all_accounts = list(GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code'))
-    # Lookups keyed by account.id
-    parent_of    = {a.id: a.parent_id   for a in all_accounts}   # id -> parent_id or None
-    parent_code_of = {}; parent_name_of = {}
-    for a in all_accounts:
-        if a.parent_id:
-            # will be filled properly below after we index all accounts
-            pass
     acct_by_id   = {a.id: a for a in all_accounts}
+    parent_of    = {a.id: a.parent_id for a in all_accounts}
+    parent_code_of = {}
+    parent_name_of = {}
     for a in all_accounts:
         if a.parent_id and a.parent_id in acct_by_id:
             p = acct_by_id[a.parent_id]
@@ -6591,14 +6605,15 @@ def trial_balance(request):
             result[key] = (pd + dr, pc + cr)
         return result
 
-    # ── Build sections ─────────────────────────────────────────────────────────
-    type_order = [
-        (AccountType.ASSET,     'Actif / Assets'),
-        (AccountType.LIABILITY, 'Passif / Liabilities'),
-        (AccountType.EQUITY,    'Capitaux Propres / Equity'),
-        (AccountType.REVENUE,   'Produits / Revenue'),
-        (AccountType.EXPENSE,   'Charges / Expenses'),
-    ]
+    # Account range filter helper
+    def _in_range(acct):
+        if code_from and acct.code < code_from:
+            return False
+        if code_to and acct.code > code_to:
+            return False
+        return True
+
+    # ── Build sections grouped by OHADA class (first digit of code) ───────────
     sections = []
     tot_open_dr = D0; tot_open_cr = D0
     tot_move_dr = D0; tot_move_cr = D0
@@ -6611,15 +6626,15 @@ def trial_balance(request):
         # Display: summary accounts + standalone leaf accounts (no parent, not summary)
         display_accts = [
             a for a in all_accounts
-            if a.is_summary or (not a.parent_id and not a.is_summary)
+            if (a.is_summary or (not a.parent_id and not a.is_summary)) and _in_range(a)
         ]
-        for acct_type, label in type_order:
+        for cls, label in classes_to_show:
             rows = []
             sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-            for acct in [a for a in display_accts if a.account_type == acct_type]:
+            for acct in [a for a in display_accts if a.code.startswith(cls)]:
                 o_raw_dr, o_raw_cr = gen_open.get(acct.id, (D0, D0))
                 m_dr,     m_cr     = gen_move.get(acct.id, (D0, D0))
-                if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
+                if avec_mouvement == '1' and not (o_raw_dr or o_raw_cr or m_dr or m_cr):
                     continue
                 open_net = o_raw_dr - o_raw_cr
                 o_dr = max(D0, open_net);  o_cr = max(D0, -open_net)
@@ -6642,15 +6657,15 @@ def trial_balance(request):
             tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
             tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
-    else:  # auxiliaire — leaf accounts only, grouped by parent
-        leaf_accts = [a for a in all_accounts if not a.is_summary]
-        for acct_type, label in type_order:
+    else:  # auxiliaire — leaf accounts only, grouped under parent headers
+        leaf_accts = [a for a in all_accounts if not a.is_summary and _in_range(a)]
+        for cls, label in classes_to_show:
             rows = []
             sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-            for acct in [a for a in leaf_accts if a.account_type == acct_type]:
+            for acct in [a for a in leaf_accts if a.code.startswith(cls)]:
                 o_raw_dr, o_raw_cr = open_map.get(acct.id, (D0, D0))
                 m_dr,     m_cr     = move_map.get(acct.id, (D0, D0))
-                if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
+                if avec_mouvement == '1' and not (o_raw_dr or o_raw_cr or m_dr or m_cr):
                     continue
                 open_net = o_raw_dr - o_raw_cr
                 o_dr = max(D0, open_net);  o_cr = max(D0, -open_net)
@@ -6737,7 +6752,8 @@ def trial_balance(request):
         # Title
         ws.merge_cells('A1:H1')
         lbl = 'BALANCE GÉNÉRALE' if balance_type == 'general' else 'BALANCE AUXILIAIRE'
-        ws['A1'] = f'{lbl} — Du {date_from} au {date_to}'
+        cls_lbl = f' · Classe {classe_filter}' if classe_filter else ''
+        ws['A1'] = f'{lbl}{cls_lbl} — Du {date_from} au {date_to}'
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center')
 
@@ -6819,16 +6835,21 @@ def trial_balance(request):
         return resp
 
     return render(request, 'billing/trial_balance.html', {
-        'sections':      sections,
-        'date_from':     date_from,
-        'date_to':       date_to,
-        'balance_type':  balance_type,
-        'tot_open_dr':   tot_open_dr, 'tot_open_cr': tot_open_cr,
-        'tot_move_dr':   tot_move_dr, 'tot_move_cr': tot_move_cr,
-        'tot_clos_dr':   tot_clos_dr, 'tot_clos_cr': tot_clos_cr,
-        'is_balanced':   abs(move_diff) < Decimal('0.01'),
-        'move_diff':     move_diff,
-        'clos_diff':     clos_diff,
+        'sections':       sections,
+        'date_from':      date_from,
+        'date_to':        date_to,
+        'balance_type':   balance_type,
+        'classe_filter':  classe_filter,
+        'code_from':      code_from,
+        'code_to':        code_to,
+        'avec_mouvement': avec_mouvement,
+        'ohada_classes':  OHADA_CLASSES,
+        'tot_open_dr':    tot_open_dr, 'tot_open_cr': tot_open_cr,
+        'tot_move_dr':    tot_move_dr, 'tot_move_cr': tot_move_cr,
+        'tot_clos_dr':    tot_clos_dr, 'tot_clos_cr': tot_clos_cr,
+        'is_balanced':    abs(move_diff) < Decimal('0.01'),
+        'move_diff':      move_diff,
+        'clos_diff':      clos_diff,
     })
 
 

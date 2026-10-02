@@ -9,54 +9,94 @@
 {% endblock %}
 
 {% block content %}
-<!-- ── Toolbar: filter + type toggle left, export right ───────────────────── -->
-<div class="d-flex align-items-end gap-2 mb-4 flex-wrap">
-  <form method="get" class="d-flex align-items-end gap-2 flex-wrap flex-grow-1">
-    <div>
-      <label class="form-label fw-semibold small mb-1">Type</label>
-      <select name="balance_type" class="form-select form-select-sm" style="width:160px" onchange="this.form.submit()">
-        <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>Balance Générale</option>
-        <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Balance Auxiliaire</option>
-      </select>
-    </div>
-    <div>
-      <label class="form-label fw-semibold small mb-1">Du</label>
-      <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:150px">
-    </div>
-    <div>
-      <label class="form-label fw-semibold small mb-1">Au</label>
-      <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="width:150px">
-    </div>
-    <button type="submit" class="btn btn-sm btn-primary" style="margin-top:auto">
-      <i class="bi bi-calculator me-1"></i>Calculer
-    </button>
-    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary" style="margin-top:auto">
-      Réinitialiser
-    </a>
-  </form>
-  <!-- Export — right side of toolbar -->
-  <div class="dropdown" style="margin-top:auto">
-    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
-      <i class="bi bi-download me-1"></i>Exporter
-    </button>
-    <ul class="dropdown-menu dropdown-menu-end">
-      <li>
-        <a class="dropdown-item" id="exportCsvBtn" href="#">
-          <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
-        </a>
-      </li>
-      <li>
-        <a class="dropdown-item" id="exportXlsxBtn" href="#">
-          <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
-        </a>
-      </li>
-      <li><hr class="dropdown-divider"></li>
-      <li>
-        <a class="dropdown-item" href="#" onclick="window.print(); return false;">
-          <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
-        </a>
-      </li>
-    </ul>
+<!-- ── Filter toolbar ─────────────────────────────────────────────────────── -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body py-2 px-3">
+    <form method="get" id="tbForm">
+      <div class="row g-2 align-items-end">
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">Type</label>
+          <select name="balance_type" class="form-select form-select-sm" style="width:160px">
+            <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>Balance Générale</option>
+            <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Balance Auxiliaire</option>
+          </select>
+        </div>
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">Du</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:145px">
+        </div>
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">Au</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="width:145px">
+        </div>
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">Classe OHADA</label>
+          <select name="classe" class="form-select form-select-sm" style="width:210px">
+            <option value="" {% if not classe_filter %}selected{% endif %}>Toutes les classes</option>
+            {% for cls, lbl in ohada_classes %}
+            <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">De compte</label>
+          <input type="text" name="code_from" class="form-control form-control-sm font-monospace"
+                 value="{{ code_from }}" placeholder="ex: 400000" style="width:110px">
+        </div>
+
+        <div class="col-auto">
+          <label class="form-label fw-semibold small mb-1">À compte</label>
+          <input type="text" name="code_to" class="form-control form-control-sm font-monospace"
+                 value="{{ code_to }}" placeholder="ex: 499999" style="width:110px">
+        </div>
+
+        <div class="col-auto d-flex align-items-end pb-1">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
+                   id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="chkMvt">Avec mouvements uniquement</label>
+          </div>
+        </div>
+
+        <div class="col-auto ms-auto d-flex gap-2 align-items-end">
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-calculator me-1"></i>Calculer
+          </button>
+          <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">
+            Réinitialiser
+          </a>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+              <i class="bi bi-download me-1"></i>Exporter
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li>
+                <a class="dropdown-item" id="exportCsvBtn" href="#">
+                  <i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item" id="exportXlsxBtn" href="#">
+                  <i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (.xlsx)
+                </a>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item" href="#" onclick="window.print(); return false;">
+                  <i class="bi bi-printer me-2 text-secondary"></i>Imprimer / PDF
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </form>
   </div>
 </div>
 
@@ -93,6 +133,7 @@
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
     <span class="fw-semibold small">
       {% if balance_type == 'auxiliaire' %}Balance Auxiliaire — Comptes de Détail{% else %}Balance Générale — Comptes Sommaires{% endif %}
+      {% if classe_filter %}&nbsp;·&nbsp; Classe {{ classe_filter }}{% endif %}
       &nbsp;·&nbsp; Du {{ date_from }} au {{ date_to }}
     </span>
     <span class="badge bg-secondary">{{ sections|length }} classe(s)</span>
