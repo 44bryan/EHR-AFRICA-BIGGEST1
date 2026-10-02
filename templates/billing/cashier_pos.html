@@ -73,7 +73,7 @@
 /* ── Main grid ────────────────────────────────────── */
 .pos-grid {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 300px 1fr;
   gap: 0.75rem;
   align-items: start;
 }
@@ -788,9 +788,12 @@
         {% endif %}
         <div class="d-flex align-items-center gap-1">
           <span class="text-muted" style="font-size:.72rem;">Insurance pays (FCFA):</span>
-          <input type="number" id="insAmt" class="form-control form-control-sm" style="width:100px;text-align:right;font-size:.78rem;"
+          <input type="number" id="insAmt" class="form-control form-control-sm" style="width:110px;text-align:right;font-size:.78rem;"
                  value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
           <button class="mod-btn" onclick="saveInsAmt()">Set</button>
+        </div>
+        <div class="mt-1" style="font-size:.68rem;color:#6c757d;">
+          <i class="bi bi-info-circle me-1"></i>Minimum 20% of invoice total. Patient pays the remainder.
         </div>
       </div>
     </div>
@@ -1435,9 +1438,19 @@ function autoFillInsurance() {
 }
 function saveInsAmt() {
   if (!INV_ID) return;
+  const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
+  const ins   = parseFloat(document.getElementById('insAmt').value) || 0;
+  // Policy: if entering a manual insurance amount it must be >= 20% of invoice total
+  if (ins > 0 && total > 0) {
+    const minIns = Math.ceil(total * 0.20);
+    if (ins < minIns) {
+      toast('Insurance must cover at least 20% of the invoice total (minimum: ' + fmt(minIns) + ' FCFA).', 'danger');
+      return;
+    }
+  }
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
-  fd.append('insurance_amount', document.getElementById('insAmt').value || '0');
+  fd.append('insurance_amount', ins);
   fetch(`/billing/invoice/${INV_ID}/insurance/`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
@@ -1445,6 +1458,7 @@ function saveInsAmt() {
       updateInsSplit();
       const pa = document.getElementById('payAmt');
       if (pa) pa.value = data.patient_amount || 0;
+      toast('Insurance split saved.', 'success');
     });
 }
 

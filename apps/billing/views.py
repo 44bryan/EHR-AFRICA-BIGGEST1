@@ -168,8 +168,8 @@ def _can_manage_petty_cash(user):
 
 @login_required
 def billing_dashboard(request):
-    # Cashiers have their own workstation — redirect away from this Finance dashboard
-    if request.user.role == UserRole.CASHIER:
+    # Operational billing roles have their own dedicated dashboards — redirect them
+    if request.user.role in (UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER):
         return redirect('dashboard:home')
     if not (request.user.is_super_admin or request.user.role in (
         UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
@@ -4655,6 +4655,14 @@ def invoice_set_insurance(request, invoice_id):
         return JsonResponse({'success': False, 'error': 'Invalid amount.'}, status=400)
     if ins < 0:
         return JsonResponse({'success': False, 'error': 'Amount cannot be negative.'}, status=400)
+    # Policy: manual insurance entry must cover at least 20% of the invoice total
+    if ins > 0 and invoice.total > 0:
+        min_insurance = (invoice.total * Decimal('0.20')).quantize(Decimal('1'), rounding='ROUND_CEILING')
+        if ins < min_insurance:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insurance must cover at least 20% of the invoice total (minimum: {int(min_insurance):,} FCFA).'
+            }, status=400)
     if ins > invoice.total:
         ins = invoice.total
     invoice.insurance_amount = ins
