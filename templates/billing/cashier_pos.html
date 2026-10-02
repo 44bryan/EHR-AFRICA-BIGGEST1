@@ -73,7 +73,7 @@
 /* ── Main grid ────────────────────────────────────── */
 .pos-grid {
   display: grid;
-  grid-template-columns: 400px 1fr;
+  grid-template-columns: 520px 1fr;
   gap: 0.75rem;
   align-items: start;
 }
@@ -131,6 +131,7 @@
   background: #f8f9fa; border: 1px solid #dee2e6; color: #6c757d;
   border-radius: 6px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600;
   cursor: pointer; transition: all .12s; letter-spacing: .03em;
+  max-width: 85px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cat-tab:hover { background: var(--ehr-primary-light); border-color: var(--ehr-primary); color: var(--ehr-primary-dark); }
 .cat-tab.active { background: var(--ehr-primary); border-color: var(--ehr-primary); color: #fff; }
@@ -574,21 +575,16 @@
     <input type="search" id="catalogSearch" class="form-control form-control-sm mb-2"
            placeholder="Search services…" autocomplete="off" oninput="filterCatalog(this.value)">
 
-    {# Tab strip #}
+    {# Tab strip — one tab per family/sub-category #}
     <div class="cat-tabs" id="catTabs">
       {% if doctor_orders %}
       <button class="cat-tab orders-tab active" onclick="switchCat('ORDERS',this)">
         <i class="bi bi-clipboard2-pulse me-1"></i>Orders ({{ doctor_orders|length }})
       </button>
       {% endif %}
-      <button class="cat-tab {% if not doctor_orders %}active{% endif %}" onclick="switchCat('REG',this)">Reg</button>
-      <button class="cat-tab" onclick="switchCat('CONSULT',this)">Consult</button>
-      <button class="cat-tab" onclick="switchCat('CLINICAL',this)">Clinical</button>
-      <button class="cat-tab" onclick="switchCat('INVEST',this)">Invest</button>
-      <button class="cat-tab" onclick="switchCat('LAB',this)">Lab</button>
-      <button class="cat-tab" onclick="switchCat('PHARM',this)">Pharm</button>
-      <button class="cat-tab" onclick="switchCat('SURGERY',this)">Surgery</button>
-      <button class="cat-tab" onclick="switchCat('OTHER',this)">Other</button>
+      {% for tab in catalog_tabs %}
+      <button class="cat-tab{% if not doctor_orders and forloop.first %} active{% endif %}" onclick="switchCat('{{ tab.key }}',this)" title="{{ tab.label }}">{{ tab.label }}</button>
+      {% endfor %}
       {% if invoice %}
       <button class="cat-tab" onclick="switchCat('CUSTOM',this)"><i class="bi bi-pencil me-1"></i>Custom</button>
       <button class="cat-tab ai-tab" id="aiTabBtn" onclick="aiSuggest()"><i class="bi bi-stars me-1"></i>AI</button>
@@ -614,131 +610,19 @@
       </div>
       {% endif %}
 
-      {# ── Tier chip helper macro (inline) ───────────────────────────── #}
-      {# Rendered by each pane — shows tier badge for tier-specific services #}
-
-      {# ── Shared service button macro ─────────────────────────────── #}
-      {# Used by every pane below via catalog_grouped[PANE_KEY] #}
-
-      {# Registration #}
-      <div class="cat-pane {% if not doctor_orders %}active{% endif %}" data-cat="REG">
-        {% for subcat_name, svcs in catalog_grouped.REG.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
+      {# ── Dynamic panes — one per family/sub-category ─────────────── #}
+      {% for tab in catalog_tabs %}
+      <div class="cat-pane{% if not doctor_orders and forloop.first %} active{% endif %}" data-cat="{{ tab.key }}">
+        {% for svc in tab.services %}
+        <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
+          <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
+          <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
+        </button>
         {% empty %}
-        <div class="text-muted small p-2">No registration services configured.</div>
+        <div class="text-muted small p-2">No services in this family.</div>
         {% endfor %}
       </div>
-
-      {# Consultation #}
-      <div class="cat-pane" data-cat="CONSULT">
-        {% for subcat_name, svcs in catalog_grouped.CONSULT.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No consultation services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Clinical Exams #}
-      <div class="cat-pane" data-cat="CLINICAL">
-        {% for subcat_name, svcs in catalog_grouped.CLINICAL.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No clinical exam services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Investigations #}
-      <div class="cat-pane" data-cat="INVEST">
-        {% for subcat_name, svcs in catalog_grouped.INVEST.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No investigation services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Lab #}
-      <div class="cat-pane" data-cat="LAB">
-        {% for subcat_name, svcs in catalog_grouped.LAB.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No laboratory services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Pharmacy + Optical (combined as PHARM pane) #}
-      <div class="cat-pane" data-cat="PHARM">
-        {% for subcat_name, svcs in catalog_grouped.PHARM.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No pharmacy / optical services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Surgery #}
-      <div class="cat-pane" data-cat="SURGERY">
-        {% for subcat_name, svcs in catalog_grouped.SURGERY.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No surgical services configured.</div>
-        {% endfor %}
-      </div>
-
-      {# Other + Admission (combined as OTHER pane) #}
-      <div class="cat-pane" data-cat="OTHER">
-        {% for subcat_name, svcs in catalog_grouped.OTHER.items %}
-          {% if subcat_name %}<div class="subcat-sep"><i class="bi bi-tag-fill me-1" style="font-size:.6rem;opacity:.6;"></i>{{ subcat_name }}</div>{% endif %}
-          {% for svc in svcs %}
-          <button class="svc-btn{% if svc.tier and svc.tier == patient_tier %} svc-tier-match{% endif %}" onclick="addItem('{{ svc.name|escapejs }}','{{ svc.category }}',{{ svc.price }},{{ svc.requires_price_entry|yesno:'true,false' }},'{{ svc.id }}')">
-            <span>{{ svc.name }}{% if svc.tier %} <small class="cat-tier-chip cat-tc-{{ svc.tier|lower }}">{{ svc.tier }}</small>{% endif %}</span>
-            <span class="svc-price">{% if svc.requires_price_entry or svc.price == 0 %}Enter price{% else %}{{ svc.price|intcomma }}{% endif %}</span>
-          </button>
-          {% endfor %}
-        {% empty %}
-        <div class="text-muted small p-2">No other services configured.</div>
-        {% endfor %}
-      </div>
+      {% endfor %}
 
       {# Custom #}
       {% if invoice %}
@@ -861,13 +745,13 @@
           </div>
         </div>
         {# Amount row #}
-        <div id="discAmtRow" class="d-flex gap-1 align-items-center mb-1">
+        <div id="discAmtRow" class="gap-1 align-items-center mb-1" style="display:flex;">
           <input type="number" id="discAmt" class="form-control form-control-sm" style="width:90px;text-align:right;"
                  value="{{ invoice.discount_amount|floatformat:0 }}" min="0" placeholder="0 FCFA">
           <small class="text-muted">FCFA</small>
         </div>
         {# Percentage row (hidden by default) #}
-        <div id="discPctRow" class="d-flex gap-1 align-items-center mb-1" style="display:none!important;">
+        <div id="discPctRow" class="gap-1 align-items-center mb-1" style="display:none;">
           <input type="number" id="discPct" class="form-control form-control-sm" style="width:70px;text-align:right;"
                  min="0" max="100" step="0.5" placeholder="0">
           <small class="text-muted">% of subtotal</small>
@@ -889,15 +773,25 @@
       {# Insurance — collapsed by default #}
       <div class="tot-row mt-1">
         <a href="#" class="text-muted" style="font-size:.75rem;text-decoration:none;" onclick="toggleInsurance(event)">
-          <i class="bi bi-shield-check me-1"></i><span id="insToggleLbl">{% if invoice.insurance_amount %}Insurance ({{ invoice.insurance_amount|floatformat:0|intcomma }} FCFA) ▴{% else %}Insurance split ▾{% endif %}</span>
+          <i class="bi bi-shield-check me-1"></i><span id="insToggleLbl">{% if invoice.insurance_amount %}Insurance covers {{ invoice.insurance_amount|floatformat:0|intcomma }} FCFA ▴{% else %}Set insurance split ▾{% endif %}</span>
         </a>
-        {% if invoice.insurance_amount %}<span class="patient-pays" id="patAmtDisplay">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% else %}<span class="patient-pays" id="patAmtDisplay" style="display:none;">{{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% endif %}
+        {% if invoice.insurance_amount %}<span class="patient-pays" id="patAmtDisplay">Patient pays: {{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% else %}<span class="patient-pays" id="patAmtDisplay" style="display:none;">Patient pays: {{ invoice.patient_amount|floatformat:0|intcomma }} FCFA</span>{% endif %}
       </div>
-      <div id="insRow" style="display:{% if invoice.insurance_amount %}block{% else %}none{% endif %};" class="mod-row d-flex align-items-center gap-1 mt-1">
-        <input type="number" id="insAmt" class="form-control form-control-sm" style="width:90px;text-align:right;font-size:.78rem;"
-               value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
-        <span class="text-muted" style="font-size:.72rem;">FCFA</span>
-        <button class="mod-btn" onclick="saveInsAmt()">Set</button>
+      <div id="insRow" style="display:{% if invoice.insurance_amount %}block{% else %}none{% endif %};" class="mod-row mt-1">
+        {% if insured_member %}
+        <div class="mb-1" style="font-size:.72rem;color:#6c757d;">
+          <i class="bi bi-info-circle me-1"></i>{{ insured_member.scheme.name }} — patient copay <strong>{{ insured_member.copay_pct|floatformat:0 }}%</strong>
+          <button type="button" class="btn btn-outline-info btn-sm ms-2 py-0 px-1" style="font-size:.7rem;" onclick="autoFillInsurance()">
+            Auto-calculate
+          </button>
+        </div>
+        {% endif %}
+        <div class="d-flex align-items-center gap-1">
+          <span class="text-muted" style="font-size:.72rem;">Insurance pays (FCFA):</span>
+          <input type="number" id="insAmt" class="form-control form-control-sm" style="width:100px;text-align:right;font-size:.78rem;"
+                 value="{{ invoice.insurance_amount|floatformat:0 }}" min="0" placeholder="0" oninput="updateInsSplit()">
+          <button class="mod-btn" onclick="saveInsAmt()">Set</button>
+        </div>
       </div>
     </div>
 
@@ -1226,12 +1120,12 @@ function fmt(n) {
   return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function toast(msg, type) {
+function toast(msg, type, duration) {
   const t = document.createElement('div');
   t.className = `pos-toast pos-toast-${type === 'success' ? 'ok' : type === 'danger' ? 'err' : 'warn'}`;
   t.innerHTML = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3200);
+  setTimeout(() => t.remove(), duration || 3200);
 }
 
 function updateShiftBar(method, amount) {
@@ -1475,9 +1369,7 @@ function toggleDiscInputs() {
   const amtRow = document.getElementById('discAmtRow');
   const pctRow = document.getElementById('discPctRow');
   if (amtRow) amtRow.style.display = isPct ? 'none' : 'flex';
-  if (pctRow) pctRow.style.cssText = isPct
-    ? 'display:flex!important;gap:.25rem;align-items:center;margin-bottom:.25rem;'
-    : 'display:none!important;';
+  if (pctRow) pctRow.style.display = isPct ? 'flex' : 'none';
 }
 
 function updatePctCalc() {
@@ -1511,6 +1403,11 @@ function applyDiscount() {
       updateTotals(data);
       if (data.status === 'pending') {
         toast('<i class="bi bi-hourglass-split me-1"></i>' + data.message, 'warning');
+        // Start WS listener so approval arrives live without a reload
+        if (window._discountWsConnect && !window._discountWsConnected) {
+          window._discountWsConnect();
+          window._discountWsConnected = true;
+        }
         setTimeout(() => location.reload(), 1800);
       } else {
         toast('<i class="bi bi-check-circle me-1"></i>' + (data.message || 'Discount applied.'), 'success');
@@ -1524,7 +1421,17 @@ function updateInsSplit() {
   const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
   const ins   = parseFloat(document.getElementById('insAmt').value) || 0;
   const pat   = document.getElementById('patAmtDisplay');
-  if (pat) { pat.textContent = fmt(Math.max(total - ins, 0)) + ' FCFA'; pat.style.display = 'inline'; }
+  const patAmt = Math.max(total - ins, 0);
+  if (pat) { pat.textContent = 'Patient pays: ' + fmt(patAmt) + ' FCFA'; pat.style.display = 'inline'; }
+}
+function autoFillInsurance() {
+  const copayPct = {{ insured_member.copay_pct|default:100 }};
+  const total = parseFloat(document.getElementById('totalDisplay').textContent.replace(/[^0-9.]/g,'')) || 0;
+  const insurancePct = 100 - copayPct;
+  const insAmt = Math.round(total * insurancePct / 100);
+  const inp = document.getElementById('insAmt');
+  if (inp) { inp.value = insAmt; updateInsSplit(); }
+  toast('Insurance: ' + insurancePct + '% = ' + fmt(insAmt) + ' FCFA · Patient copay: ' + copayPct + '% = ' + fmt(total - insAmt) + ' FCFA', 'info');
 }
 function saveInsAmt() {
   if (!INV_ID) return;
@@ -1997,5 +1904,65 @@ function doDiscard() {
     }, 4000);
   }
 }
+
+// ── Discount WebSocket — live approval/rejection from Finance Director ────────
+{% if invoice %}
+(function() {
+  var wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  var wsUrl   = wsProto + '://' + location.host + '/ws/queue/discount-{{ invoice.id }}/';
+  var ws, reconnectDelay = 3000;
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = function(e) {
+      try { var msg = JSON.parse(e.data); } catch(err) { return; }
+      if (msg.action === 'discount_approved') {
+        var d = msg.data || {};
+        // Remove pending banner
+        var banner = document.querySelector('.alert-warning');
+        if (banner) banner.remove();
+        // Update totals display
+        if (d.new_total !== undefined) {
+          var t = document.getElementById('totalDisplay');
+          if (t) t.textContent = fmt(d.new_total) + ' FCFA';
+        }
+        if (d.new_balance !== undefined) {
+          var b = document.getElementById('balDisplay');
+          if (b) { b.textContent = fmt(d.new_balance) + ' FCFA'; b.className = d.new_balance > 0 ? 'bal-due' : 'bal-clear'; }
+          var pa = document.getElementById('payAmt');
+          if (pa) pa.value = d.new_balance;
+        }
+        // Show big success toast
+        toast('<i class="bi bi-check-circle-fill me-2"></i><strong>Discount approved</strong> — ' +
+              fmt(d.approved_amount) + ' FCFA by ' + (d.decided_by || 'Finance Director') +
+              (d.notes ? ' · ' + d.notes : '') + '<br><small>Payment unblocked.</small>', 'success', 8000);
+      } else if (msg.action === 'discount_rejected') {
+        var d = msg.data || {};
+        // Remove pending banner
+        var banner = document.querySelector('.alert-warning');
+        if (banner) banner.remove();
+        toast('<i class="bi bi-x-circle-fill me-2"></i><strong>Discount rejected</strong> by ' +
+              (d.decided_by || 'Finance Director') +
+              (d.notes ? ' — ' + d.notes : '') + '<br><small>Charge full price.</small>', 'danger', 8000);
+      }
+    };
+
+    ws.onclose = function() {
+      // Auto-reconnect after delay
+      setTimeout(connect, reconnectDelay);
+    };
+
+    ws.onerror = function() { ws.close(); };
+  }
+
+  // Only connect when there is a pending discount
+  {% if pending_discount %}connect();{% endif %}
+
+  // Also expose connect() so it can be called after a discount is requested
+  window._discountWsConnect = connect;
+  window._discountWsConnected = {{ pending_discount|yesno:'true,false' }};
+})();
+{% endif %}
 </script>
 {% endblock %}
