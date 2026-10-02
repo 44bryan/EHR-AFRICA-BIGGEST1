@@ -10267,13 +10267,13 @@ def _post_depreciation_gl(run, entries, user):
     run.journal_entry = journal
     run.save(update_fields=['journal_entry'])
     lines = []
-    for entry in entries:
-        lines.append(JournalLine(journal_entry=journal, account=dep_exp,
-                                  debit_amount=entry.depreciation_amount, credit_amount=0,
-                                  description=f'Amortissement {entry.asset.asset_name}'))
-        lines.append(JournalLine(journal_entry=journal, account=acc_dep,
-                                  debit_amount=0, credit_amount=entry.depreciation_amount,
-                                  description=f'Amortissement cumulé {entry.asset.asset_name}'))
+    for dep_entry in entries:
+        lines.append(JournalLine(entry=journal, account=dep_exp,
+                                  debit_amount=dep_entry.depreciation_amount, credit_amount=0,
+                                  description=f'Amortissement {dep_entry.asset.asset_name}'))
+        lines.append(JournalLine(entry=journal, account=acc_dep,
+                                  debit_amount=0, credit_amount=dep_entry.depreciation_amount,
+                                  description=f'Amortissement cumulé {dep_entry.asset.asset_name}'))
     JournalLine.objects.bulk_create(lines)
 
 
@@ -10382,10 +10382,10 @@ def syscohada_bilan(request):
     # Get all account balances up to as_of_date
     balances = {}
     for row in JournalLine.objects.filter(
-        journal_entry__entry_date__lte=as_of_date,
-        journal_entry__status='POSTED',
+        entry__entry_date__lte=as_of_date,
+        entry__status='POSTED',
     ).values('account__code', 'account__name', 'account__account_type').annotate(
-        total_dr=_S('debit'), total_cr=_S('credit')
+        total_dr=_S('debit_amount'), total_cr=_S('credit_amount')
     ):
         code = row['account__code'] or ''
         net = float(row['total_dr'] or 0) - float(row['total_cr'] or 0)

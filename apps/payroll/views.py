@@ -484,19 +484,19 @@ def _post_payroll_gl(run, user):
         )
         lines = [
             # Dr Salary expense (gross)
-            JournalLine(journal_entry=entry, account=sal_exp,   debit_amount=gross,  credit_amount=0,    description='Salaires bruts'),
+            JournalLine(entry=entry, account=sal_exp,   debit_amount=gross,  credit_amount=0,    description='Salaires bruts'),
         ]
         # Dr Employer CNPS charge
         if cnps_exp and cnps_r:
-            lines.append(JournalLine(journal_entry=entry, account=cnps_exp, debit_amount=cnps_r, credit_amount=0, description='Charges patronales CNPS'))
+            lines.append(JournalLine(entry=entry, account=cnps_exp, debit_amount=cnps_r, credit_amount=0, description='Charges patronales CNPS'))
         # Cr Net salary payable
-        lines.append(JournalLine(journal_entry=entry, account=sal_payab,  debit_amount=0, credit_amount=net,    description='Salaires nets à payer'))
+        lines.append(JournalLine(entry=entry, account=sal_payab,  debit_amount=0, credit_amount=net,    description='Salaires nets à payer'))
         # Cr CNPS to remit (employee + employer)
         if cnps_payab and (cnps_e + cnps_r):
-            lines.append(JournalLine(journal_entry=entry, account=cnps_payab, debit_amount=0, credit_amount=cnps_e+cnps_r, description='CNPS à reverser'))
+            lines.append(JournalLine(entry=entry, account=cnps_payab, debit_amount=0, credit_amount=cnps_e+cnps_r, description='CNPS à reverser'))
         # Cr IRPP to remit
         if tax_payab and irpp:
-            lines.append(JournalLine(journal_entry=entry, account=tax_payab, debit_amount=0, credit_amount=irpp, description='IRPP à reverser DGI'))
+            lines.append(JournalLine(entry=entry, account=tax_payab, debit_amount=0, credit_amount=irpp, description='IRPP à reverser DGI'))
         JournalLine.objects.bulk_create(lines)
     except Exception:
         pass  # Never block payroll marking
