@@ -6577,14 +6577,18 @@ def trial_balance(request):
                'move_dr': Decimal('0'), 'move_cr': Decimal('0'),
                'clos_dr': Decimal('0'), 'clos_cr': Decimal('0')}
         for acct in accounts.filter(account_type=acct_type):
-            o_dr, o_cr = open_map.get(acct.id, (Decimal('0'), Decimal('0')))
+            o_raw_dr, o_raw_cr = open_map.get(acct.id, (Decimal('0'), Decimal('0')))
             m_dr, m_cr = move_map.get(acct.id, (Decimal('0'), Decimal('0')))
-            if not (o_dr or o_cr or m_dr or m_cr):
+            if not (o_raw_dr or o_raw_cr or m_dr or m_cr):
                 continue
-            # Closing = opening net + movement net → express as Dr or Cr balance
-            net = (o_dr + m_dr) - (o_cr + m_cr)
-            c_dr = max(Decimal('0'), net)
-            c_cr = max(Decimal('0'), -net)
+            # Opening balance: NET position (standard OHADA — Dr OR Cr, never both)
+            open_net = o_raw_dr - o_raw_cr
+            o_dr = max(Decimal('0'), open_net)
+            o_cr = max(Decimal('0'), -open_net)
+            # Closing = opening net + period movements net → also NET
+            clos_net = open_net + m_dr - m_cr
+            c_dr = max(Decimal('0'), clos_net)
+            c_cr = max(Decimal('0'), -clos_net)
             rows.append({
                 'code': acct.code, 'name': acct.name, 'pk': acct.pk,
                 'open_dr': o_dr, 'open_cr': o_cr,
