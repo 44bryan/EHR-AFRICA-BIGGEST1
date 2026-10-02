@@ -1,0 +1,93 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Cash Count Sheet{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Cash Count Sheet</h4>
+    <small class="text-muted">{{ today|date:"d/m/Y" }}{% if session %} — Session active{% endif %}</small>
+  </div>
+  <a href="{% url 'billing:cash_count_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold py-2">FCFA Denomination Count</div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <table class="table table-sm align-middle mb-3">
+            <thead class="table-light">
+              <tr><th>Denomination</th><th class="text-center">Qty</th><th class="text-end">Sub-total</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="fw-semibold">10 000 FCFA</td><td><input type="number" name="d10000" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="10000" oninput="upd()"></td><td class="text-end fw-semibold" id="s10000">0</td></tr>
+              <tr><td class="fw-semibold">5 000 FCFA</td><td><input type="number" name="d5000" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="5000" oninput="upd()"></td><td class="text-end fw-semibold" id="s5000">0</td></tr>
+              <tr><td class="fw-semibold">2 000 FCFA</td><td><input type="number" name="d2000" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="2000" oninput="upd()"></td><td class="text-end fw-semibold" id="s2000">0</td></tr>
+              <tr><td class="fw-semibold">1 000 FCFA</td><td><input type="number" name="d1000" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="1000" oninput="upd()"></td><td class="text-end fw-semibold" id="s1000">0</td></tr>
+              <tr><td class="fw-semibold">500 FCFA</td><td><input type="number" name="d500" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="500" oninput="upd()"></td><td class="text-end fw-semibold" id="s500">0</td></tr>
+              <tr><td class="fw-semibold">200 FCFA</td><td><input type="number" name="d200" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="200" oninput="upd()"></td><td class="text-end fw-semibold" id="s200">0</td></tr>
+              <tr><td class="fw-semibold">100 FCFA</td><td><input type="number" name="d100" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="100" oninput="upd()"></td><td class="text-end fw-semibold" id="s100">0</td></tr>
+              <tr><td class="fw-semibold">50 FCFA</td><td><input type="number" name="d50" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="50" oninput="upd()"></td><td class="text-end fw-semibold" id="s50">0</td></tr>
+              <tr><td class="fw-semibold">25 FCFA</td><td><input type="number" name="d25" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="25" oninput="upd()"></td><td class="text-end fw-semibold" id="s25">0</td></tr>
+              <tr><td class="fw-semibold">10 FCFA</td><td><input type="number" name="d10" value="0" min="0" class="form-control form-control-sm text-center dq" data-val="10" oninput="upd()"></td><td class="text-end fw-semibold" id="s10">0</td></tr>
+            </tbody>
+            <tfoot class="table-light fw-bold">
+              <tr><td colspan="2">Total Counted</td><td class="text-end" id="grandTotal">0 FCFA</td></tr>
+            </tfoot>
+          </table>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Expected Amount (FCFA)</label>
+            <input type="number" name="expected" id="expInp" class="form-control" value="{{ expected }}" oninput="upd()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Variance</label>
+            <div id="varDisp" class="form-control bg-light fw-bold text-center text-muted">—</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>Save Count Sheet
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function upd() {
+  var total = 0;
+  document.querySelectorAll('.dq').forEach(function(inp) {
+    var qty = parseInt(inp.value || 0);
+    var denom = parseInt(inp.dataset.val);
+    var sub = qty * denom;
+    total += sub;
+    var el = document.getElementById('s' + denom);
+    if (el) el.textContent = sub.toLocaleString('fr-FR') + ' FCFA';
+  });
+  document.getElementById('grandTotal').textContent = total.toLocaleString('fr-FR') + ' FCFA';
+  var exp = parseInt(document.getElementById('expInp').value || 0);
+  var variance = total - exp;
+  var el = document.getElementById('varDisp');
+  el.textContent = (variance >= 0 ? '+' : '') + variance.toLocaleString('fr-FR') + ' FCFA';
+  el.className = 'form-control bg-light fw-bold text-center ' + (variance > 0 ? 'text-success' : variance < 0 ? 'text-danger' : 'text-muted');
+}
+</script>
+{% endblock %}

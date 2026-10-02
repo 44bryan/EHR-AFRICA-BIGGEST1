@@ -1,0 +1,75 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Month-End Close{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Month-End Close</h4>
+    <small class="text-muted">Period close checklists &amp; status</small>
+  </div>
+  <a href="{% url 'billing:month_end_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Period Close
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Period</th>
+            <th>Status</th>
+            <th class="text-center">Progress</th>
+            <th>Started By</th>
+            <th>Closed By</th>
+            <th>Closed At</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for close in closes %}
+          <tr>
+            <td class="fw-semibold">{{ close.period_label }}</td>
+            <td>
+              {% if close.status == 'CLOSED' %}
+                <span class="badge bg-success">Closed</span>
+              {% elif close.status == 'IN_PROGRESS' %}
+                <span class="badge bg-warning text-dark">In Progress</span>
+              {% else %}
+                <span class="badge bg-secondary">Open</span>
+              {% endif %}
+            </td>
+            <td class="text-center" style="min-width:140px;">
+              <div class="progress" style="height:8px;">
+                <div class="progress-bar {% if close.completion_pct == 100 %}bg-success{% elif close.completion_pct > 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                     style="width:{{ close.completion_pct }}%"></div>
+              </div>
+              <small class="text-muted">{{ close.completion_pct }}%</small>
+            </td>
+            <td>{{ close.started_by.get_full_name|default:close.started_by.username|default:"—" }}</td>
+            <td>{{ close.closed_by.get_full_name|default:"—" }}</td>
+            <td>{{ close.closed_at|date:"d/m/Y H:i"|default:"—" }}</td>
+            <td>
+              <a href="{% url 'billing:month_end_detail' close_id=close.pk %}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-eye me-1"></i>View
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No period close records yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -316,6 +316,39 @@ urlpatterns = [
     path('dashboard/senior-accountant/', views.senior_accountant_dashboard, name='senior_accountant_dashboard'),
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # MONTH-END CLOSE
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('month-end/', views.month_end_list, name='month_end_list'),
+    path('month-end/create/', views.month_end_create, name='month_end_create'),
+    path('month-end/<uuid:close_id>/', views.month_end_detail, name='month_end_detail'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASH COUNT SHEET
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('cash-count/', views.cash_count_list, name='cash_count_list'),
+    path('cash-count/create/', views.cash_count_create, name='cash_count_create'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DEPRECIATION RUNS
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('depreciation/', views.depreciation_run_list, name='depreciation_run_list'),
+    path('depreciation/create/', views.depreciation_run_create, name='depreciation_run_create'),
+    path('depreciation/<uuid:run_id>/', views.depreciation_run_detail, name='depreciation_run_detail'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # WITHHOLDING TAX (IRC / TSR)
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('withholding-tax/', views.withholding_tax_list, name='withholding_tax_list'),
+    path('withholding-tax/create/', views.withholding_tax_create, name='withholding_tax_create'),
+    path('withholding-tax/<uuid:wht_id>/remit/', views.withholding_tax_remit, name='withholding_tax_remit'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SYSCOHADA BILAN + CASH FLOW FORECAST
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('reports/syscohada-bilan/', views.syscohada_bilan, name='syscohada_bilan'),
+    path('reports/cash-flow-forecast/', views.cash_flow_forecast, name='cash_flow_forecast'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # ASSET MAINTENANCE
     # ═══════════════════════════════════════════════════════════════════════════
     path('maintenance/', views.maintenance_list, name='maintenance_list'),

@@ -1,0 +1,131 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize static %}
+{% block title %}Cash Flow Forecast{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Rolling Cash Flow Forecast</h4>
+    <small class="text-muted">Projected inflows &amp; outflows — 30 / 60 / 90 days · As of {{ today|date:"d/m/Y" }}</small>
+  </div>
+  <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print
+  </button>
+</div>
+
+<!-- Current position -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-primary">
+      <div class="text-muted small">Current Cash (Safe + Bank)</div>
+      <div class="fw-bold fs-4 text-primary">{{ current_cash|floatformat:0|intcomma }} FCFA</div>
+      <div class="text-muted" style="font-size:.75rem;">Safe: {{ safe_balance|floatformat:0|intcomma }} · Bank: {{ bank_total|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 border-warning">
+      <div class="text-muted small">Outstanding Staff Advances</div>
+      <div class="fw-bold fs-5 text-warning">{{ advances_out|floatformat:0|intcomma }} FCFA</div>
+      <div class="text-muted" style="font-size:.75rem;">Disbursed — pending settlement</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center py-3 border-start border-4 {% if net_30 >= 0 %}border-success{% else %}border-danger{% endif %}">
+      <div class="text-muted small">Net 30-Day Position</div>
+      <div class="fw-bold fs-4 {% if net_30 >= 0 %}text-success{% else %}text-danger{% endif %}">
+        {% if net_30 >= 0 %}+{% endif %}{{ net_30|floatformat:0|intcomma }} FCFA
+      </div>
+      <div class="text-muted" style="font-size:.75rem;">AR inflows − AP outflows</div>
+    </div>
+  </div>
+</div>
+
+<!-- Forecast table -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold py-2">Inflows vs Outflows Projection</div>
+  <div class="card-body p-0">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Item</th>
+          <th class="text-end">0–30 days<br><small class="fw-normal text-muted">to {{ end_30 }}</small></th>
+          <th class="text-end">31–60 days<br><small class="fw-normal text-muted">to {{ end_60 }}</small></th>
+          <th class="text-end">61–90 days<br><small class="fw-normal text-muted">to {{ end_90 }}</small></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="table-success">
+          <td class="fw-semibold text-success"><i class="bi bi-arrow-down-circle me-1"></i>Expected Inflows (AR)</td>
+          <td class="text-end fw-bold text-success">{{ ar_30|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold text-success">{{ ar_60|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold text-success">{{ ar_90|floatformat:0|intcomma }}</td>
+        </tr>
+        <tr class="table-danger">
+          <td class="fw-semibold text-danger"><i class="bi bi-arrow-up-circle me-1"></i>Expected Outflows (AP due)</td>
+          <td class="text-end fw-bold text-danger">{{ ap_30|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold text-danger">{{ ap_60|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold text-danger">{{ ap_90|floatformat:0|intcomma }}</td>
+        </tr>
+        <tr class="fw-bold border-top-2">
+          <td>Net Cash Position</td>
+          <td class="text-end {% if net_30 >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {% if net_30 >= 0 %}+{% endif %}{{ net_30|floatformat:0|intcomma }}
+          </td>
+          <td class="text-end {% if net_60 >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {% if net_60 >= 0 %}+{% endif %}{{ net_60|floatformat:0|intcomma }}
+          </td>
+          <td class="text-end {% if net_90 >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {% if net_90 >= 0 %}+{% endif %}{{ net_90|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        <tr class="table-light">
+          <td class="text-muted small">Projected Closing Balance</td>
+          <td class="text-end fw-bold">{{ current_cash|add:net_30|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold">{{ current_cash|add:net_60|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold">{{ current_cash|add:net_90|floatformat:0|intcomma }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Chart -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold py-2">Projected Balance Chart</div>
+  <div class="card-body">
+    <canvas id="forecastChart" height="80"></canvas>
+  </div>
+</div>
+
+<script src="{% static 'vendor/chart.min.js' %}"></script>
+<script>
+var ctx = document.getElementById('forecastChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: ['Current', '30 days ({{ end_30 }})', '60 days ({{ end_60 }})', '90 days ({{ end_90 }})'],
+    datasets: [{
+      label: 'Projected Cash Balance (FCFA)',
+      data: [
+        {{ current_cash|floatformat:0 }},
+        {{ current_cash|add:net_30|floatformat:0 }},
+        {{ current_cash|add:net_60|floatformat:0 }},
+        {{ current_cash|add:net_90|floatformat:0 }}
+      ],
+      backgroundColor: [
+        'rgba(13,110,253,0.6)',
+        '{% if net_30 >= 0 %}rgba(25,135,84,0.6){% else %}rgba(220,53,69,0.6){% endif %}',
+        '{% if net_60 >= 0 %}rgba(25,135,84,0.6){% else %}rgba(220,53,69,0.6){% endif %}',
+        '{% if net_90 >= 0 %}rgba(25,135,84,0.6){% else %}rgba(220,53,69,0.6){% endif %}'
+      ],
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { ticks: { callback: function(v) { return v.toLocaleString('fr-FR') + ' F'; } } }
+    }
+  }
+});
+</script>
+{% endblock %}

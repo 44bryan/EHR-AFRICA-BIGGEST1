@@ -1,0 +1,103 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Record Withholding Tax{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Record Withholding Tax</h4>
+    <small class="text-muted">IRC / IRCM / TSR — Cameroon DGI</small>
+  </div>
+  <a href="{% url 'billing:withholding_tax_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Transaction Date</label>
+            <input type="date" name="transaction_date" class="form-control" value="{{ today }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Supplier Name</label>
+            <input type="text" name="supplier_name" class="form-control" placeholder="Supplier / service provider" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">WHT Type</label>
+            <select name="tax_type" class="form-select" required>
+              {% for val, label in wht_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">IRC = Retenue sur loyers · IRCM = Retenue sur marchés · TSR = Taxe spéciale sur revenu</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Gross Amount (FCFA)</label>
+            <input type="number" name="gross_amount" id="grossAmt" class="form-control" min="0" step="1" required oninput="calcWHT()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">WHT Rate (%)</label>
+            <input type="number" name="wht_rate" id="whtRate" class="form-control" value="5.50" step="0.01" min="0" max="100" required oninput="calcWHT()">
+            <div class="form-text">Standard: IRC 15% · IRCM 5.5% · TSR 15% for non-residents</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col">
+              <label class="form-label small text-muted">WHT Amount</label>
+              <div id="whtDisplay" class="form-control bg-light text-danger fw-bold text-center">—</div>
+            </div>
+            <div class="col">
+              <label class="form-label small text-muted">Net to Pay</label>
+              <div id="netDisplay" class="form-control bg-light text-success fw-bold text-center">—</div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Linked AP Bill (optional)</label>
+            <select name="ap_bill_id" class="form-select">
+              <option value="">— None —</option>
+              {% for bill in bills %}
+              <option value="{{ bill.pk }}">{{ bill.vendor.name|default:"Vendor" }} — {{ bill.bill_date|date:"d/m/Y" }} — {{ bill.amount_due|floatformat:0|intcomma }} FCFA</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Reference</label>
+            <input type="text" name="reference" class="form-control" placeholder="Invoice / contract number">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>Save WHT Record
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function calcWHT() {
+  var gross = parseFloat(document.getElementById('grossAmt').value || 0);
+  var rate = parseFloat(document.getElementById('whtRate').value || 0);
+  var wht = Math.round(gross * rate / 100);
+  var net = gross - wht;
+  document.getElementById('whtDisplay').textContent = wht.toLocaleString('fr-FR') + ' FCFA';
+  document.getElementById('netDisplay').textContent = net.toLocaleString('fr-FR') + ' FCFA';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Month-End Close — {{ close.period_label }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Month-End Close — {{ close.period_label }}</h4>
+    <small class="text-muted">
+      Status:
+      {% if close.status == 'CLOSED' %}<span class="badge bg-success">Closed</span>
+      {% elif close.status == 'IN_PROGRESS' %}<span class="badge bg-warning text-dark">In Progress</span>
+      {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+      &nbsp;·&nbsp; {{ close.completion_pct }}% complete
+    </small>
+  </div>
+  <a href="{% url 'billing:month_end_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold">Closing Tasks</span>
+        <div class="progress flex-grow-1 mx-3" style="height:10px;">
+          <div class="progress-bar {% if close.completion_pct == 100 %}bg-success{% elif close.completion_pct > 50 %}bg-warning{% else %}bg-danger{% endif %}"
+               style="width:{{ close.completion_pct }}%"></div>
+        </div>
+        <span class="text-muted small">{{ close.completion_pct }}%</span>
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for task in tasks %}
+          <li class="list-group-item d-flex align-items-center gap-3 py-2 {% if task.is_completed %}bg-light{% endif %}">
+            {% if close.status != 'CLOSED' %}
+            <form method="post" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="toggle_task">
+              <input type="hidden" name="task_id" value="{{ task.pk }}">
+              <button type="submit" class="btn btn-sm {% if task.is_completed %}btn-success{% else %}btn-outline-secondary{% endif %} rounded-circle p-0"
+                      style="width:26px;height:26px;">
+                {% if task.is_completed %}<i class="bi bi-check-lg"></i>{% else %}<i class="bi bi-circle"></i>{% endif %}
+              </button>
+            </form>
+            {% else %}
+              <span class="text-success"><i class="bi bi-check-circle-fill"></i></span>
+            {% endif %}
+            <div class="flex-grow-1">
+              <div class="{% if task.is_completed %}text-decoration-line-through text-muted{% endif %}">
+                {{ task.task_order|add:1 }}. {{ task.task_name }}
+              </div>
+              {% if task.is_completed and task.completed_by %}
+              <small class="text-muted">Completed by {{ task.completed_by.get_full_name|default:task.completed_by.username }} · {{ task.completed_at|date:"d/m/Y H:i" }}</small>
+              {% endif %}
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body small">
+        <div class="fw-semibold mb-2">Summary</div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Period</td><td class="fw-semibold">{{ close.period_label }}</td></tr>
+          <tr><td class="text-muted">Started by</td><td>{{ close.started_by.get_full_name|default:"—" }}</td></tr>
+          <tr><td class="text-muted">Tasks done</td><td>{{ tasks|length }} total</td></tr>
+          {% if close.closed_by %}
+          <tr><td class="text-muted">Closed by</td><td>{{ close.closed_by.get_full_name }}</td></tr>
+          <tr><td class="text-muted">Closed at</td><td>{{ close.closed_at|date:"d/m/Y H:i" }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    {% if close.status != 'CLOSED' and can_close %}
+    <div class="card border-danger border-0 shadow-sm">
+      <div class="card-body">
+        <div class="fw-semibold mb-1 text-danger">Close Period</div>
+        <p class="small text-muted">All 16 tasks must be completed. This action locks the period.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="close_period">
+          <button type="submit" class="btn btn-danger btn-sm w-100"
+                  {% if close.completion_pct < 100 %}disabled title="Complete all tasks first"{% endif %}>
+            <i class="bi bi-lock-fill me-1"></i>Lock Period
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

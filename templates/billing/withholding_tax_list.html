@@ -1,0 +1,142 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Withholding Tax Register{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Withholding Tax Register</h4>
+    <small class="text-muted">IRC, IRCM, TSR — Cameroon DGI</small>
+  </div>
+  <a href="{% url 'billing:withholding_tax_create' %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Record WHT
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Total Gross</div>
+      <div class="fw-bold fs-5">{{ totals.gross|default:0|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Total WHT Withheld</div>
+      <div class="fw-bold fs-5 text-danger">{{ totals.wht|default:0|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Pending Remittance</div>
+      <div class="fw-bold fs-5 text-warning">{{ pending_total|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small">Total Net Paid</div>
+      <div class="fw-bold fs-5 text-success">{{ totals.net|default:0|floatformat:0|intcomma }} FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <label class="form-label mb-0 me-2 text-muted small">Filter:</label>
+      <select name="remitted" class="form-select form-select-sm" style="width:180px;" onchange="this.form.submit()">
+        <option value="" {% if not remitted_filter %}selected{% endif %}>All</option>
+        <option value="0" {% if remitted_filter == '0' %}selected{% endif %}>Pending</option>
+        <option value="1" {% if remitted_filter == '1' %}selected{% endif %}>Remitted</option>
+      </select>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Supplier</th>
+            <th>Type</th>
+            <th class="text-end">Gross</th>
+            <th class="text-center">Rate %</th>
+            <th class="text-end">WHT</th>
+            <th class="text-end">Net Paid</th>
+            <th>Reference</th>
+            <th>Remitted</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for wht in taxes %}
+          <tr>
+            <td>{{ wht.transaction_date|date:"d/m/Y" }}</td>
+            <td class="fw-semibold">{{ wht.supplier_name }}</td>
+            <td><span class="badge bg-secondary">{{ wht.get_tax_type_display }}</span></td>
+            <td class="text-end">{{ wht.gross_amount|floatformat:0|intcomma }}</td>
+            <td class="text-center">{{ wht.wht_rate }}%</td>
+            <td class="text-end text-danger fw-semibold">{{ wht.wht_amount|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success fw-semibold">{{ wht.net_paid|floatformat:0|intcomma }}</td>
+            <td class="text-muted font-monospace">{{ wht.reference|default:"—" }}</td>
+            <td>
+              {% if wht.is_remitted %}
+                <span class="badge bg-success">Remitted {{ wht.remittance_date|date:"d/m" }}</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not wht.is_remitted %}
+              <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#remitModal{{ wht.pk|slugify }}">
+                Remit
+              </button>
+              <!-- Remit Modal -->
+              <div class="modal fade" id="remitModal{{ wht.pk|slugify }}" tabindex="-1">
+                <div class="modal-dialog modal-sm">
+                  <form method="post" action="{% url 'billing:withholding_tax_remit' wht_id=wht.pk %}">
+                    {% csrf_token %}
+                    <div class="modal-content">
+                      <div class="modal-header py-2"><h6 class="modal-title">Mark as Remitted to DGI</h6></div>
+                      <div class="modal-body">
+                        <div class="mb-2">
+                          <label class="form-label small">Remittance Date</label>
+                          <input type="date" name="remittance_date" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="mb-2">
+                          <label class="form-label small">Reference / Receipt #</label>
+                          <input type="text" name="remittance_ref" class="form-control form-control-sm" placeholder="DGI receipt #">
+                        </div>
+                      </div>
+                      <div class="modal-footer py-1">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success btn-sm">Confirm</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="10" class="text-center text-muted py-4">No withholding tax records.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

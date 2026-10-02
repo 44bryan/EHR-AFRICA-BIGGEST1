@@ -1,0 +1,106 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Depreciation Run — {{ run.period_label }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Depreciation Run — {{ run.period_label }}</h4>
+    <small class="text-muted">
+      {% if run.status == 'POSTED' %}<span class="badge bg-success">Posted</span>
+      {% else %}<span class="badge bg-warning text-dark">Draft</span>{% endif %}
+      &nbsp;·&nbsp; Total: {{ run.total_depreciation|floatformat:0|intcomma }} FCFA
+    </small>
+  </div>
+  <a href="{% url 'billing:depreciation_run_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-md-9">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold py-2">Asset Depreciation Entries</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Asset</th>
+                <th class="text-end">Monthly Dep.</th>
+                <th class="text-end">Accum. Before</th>
+                <th class="text-end">Accum. After</th>
+                <th class="text-end">Net Book Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in entries %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ entry.asset.asset_name }}</div>
+                  <div class="text-muted small">{{ entry.asset.asset_code }}</div>
+                </td>
+                <td class="text-end fw-bold text-primary">{{ entry.depreciation_amount|floatformat:0|intcomma }}</td>
+                <td class="text-end text-muted">{{ entry.accumulated_before|floatformat:0|intcomma }}</td>
+                <td class="text-end">{{ entry.accumulated_after|floatformat:0|intcomma }}</td>
+                <td class="text-end fw-semibold {% if entry.net_book_value == 0 %}text-danger{% endif %}">
+                  {{ entry.net_book_value|floatformat:0|intcomma }}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No entries.</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td>TOTAL ({{ entries|length }} assets)</td>
+                <td class="text-end text-primary">{{ run.total_depreciation|floatformat:0|intcomma }} FCFA</td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body small">
+        <div class="fw-semibold mb-2">Run Details</div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Period</td><td class="fw-semibold">{{ run.period_label }}</td></tr>
+          <tr><td class="text-muted">Run By</td><td>{{ run.run_by.get_full_name|default:"—" }}</td></tr>
+          <tr><td class="text-muted">Created</td><td>{{ run.created_at|date:"d/m/Y H:i" }}</td></tr>
+          {% if run.journal_entry %}
+          <tr><td class="text-muted">GL Ref</td><td class="font-monospace">{{ run.journal_entry.reference }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    {% if run.status == 'DRAFT' and can_post %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="fw-semibold mb-1">Post to GL</div>
+        <p class="small text-muted">Posts Dr 681xxx (Dotations) / Cr 28xxx (Amortissements) for each asset.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="post">
+          <button type="submit" class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check2-circle me-1"></i>Post GL Entries
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
