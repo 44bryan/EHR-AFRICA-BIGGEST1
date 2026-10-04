@@ -1,60 +1,94 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Cash Variance Register{% endblock %}
 
-
-
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-exclamation-diamond me-2"></i>Cash Variance Register</h4>
-    <small class="text-muted">Track and resolve cash discrepancies</small>
+    <h4 class="fw-bold mb-0">Cash Variance Register</h4>
+    <p class="text-muted small mb-0">Track and resolve cash discrepancies from cashier shifts</p>
+  </div>
+  <div class="dropdown">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+    </ul>
   </div>
 </div>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="resolved" class="form-select form-select-sm" style="width:160px">
+    <option value=""  {% if resolved_filter == '' %}selected{% endif %}>All Variances</option>
+    <option value="0" {% if resolved_filter == '0' %}selected{% endif %}>Unresolved Only</option>
+    <option value="1" {% if resolved_filter == '1' %}selected{% endif %}>Resolved Only</option>
+  </select>
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To"   style="width:140px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:variance_register' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
 
 {% if unresolved > 0 %}
-<div class="alert alert-warning d-flex align-items-center">
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
   <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
-  <strong>{{ unresolved }} unresolved variance{{ unresolved|pluralize }}.</strong>
+  <strong>{{ unresolved }} unresolved variance{{ unresolved|pluralize }} &mdash; action required.</strong>
+</div>
+{% else %}
+<div class="alert alert-success d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-check-circle-fill me-2"></i>
+  <strong>All variances resolved.</strong>
 </div>
 {% endif %}
 
-<div class="card border-0 shadow-sm">
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Cash Variance Register
+      {% if date_from %}&nbsp;&middot;&nbsp; {{ date_from }} to {{ date_to }}{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if unresolved > 0 %}<span class="badge bg-danger">{{ unresolved }} unresolved</span>{% endif %}
+      <span class="badge bg-secondary">{{ variances|length }} total</span>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
           <th>Date</th>
           <th>Cashier</th>
-          <th class="text-end">Expected</th>
-          <th class="text-end">Declared</th>
-          <th class="text-end">Variance</th>
+          <th class="text-end">Expected (XAF)</th>
+          <th class="text-end">Declared (XAF)</th>
+          <th class="text-end">Variance (XAF)</th>
           <th>Explanation</th>
-          <th>Status</th>
+          <th class="text-center">Status</th>
           <th>Resolution</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for v in variances %}
-        <tr>
+        <tr {% if not v.resolved %}{% if v.variance < 0 %}class="table-danger"{% else %}class="table-warning"{% endif %}{% endif %}>
           <td class="fw-semibold">{{ v.date|date:"d M Y" }}</td>
           <td>{{ v.cashier.get_full_name }}</td>
-          <td class="text-end">{{ v.expected|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end">{{ v.declared|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">{{ v.expected|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ v.declared|floatformat:0|intcomma }}</td>
           <td class="text-end fw-bold {% if v.variance < 0 %}text-danger{% elif v.variance > 0 %}text-warning{% else %}text-success{% endif %}">
-            {% if v.variance > 0 %}+{% endif %}{{ v.variance|floatformat:0|intcomma }} XAF
+            {% if v.variance > 0 %}+{% endif %}{{ v.variance|floatformat:0|intcomma }}
           </td>
-          <td>{{ v.explanation|default:"&mdash;"|truncatewords:10 }}</td>
-          <td>
+          <td class="text-muted small">{{ v.explanation|default:"&mdash;"|truncatewords:10 }}</td>
+          <td class="text-center">
             {% if v.resolved %}
             <span class="badge bg-success">Resolved</span>
             {% else %}
             <span class="badge bg-warning text-dark">Unresolved</span>
             {% endif %}
           </td>
-          <td>{{ v.resolution|default:"&mdash;"|truncatewords:10 }}</td>
+          <td class="text-muted small">{{ v.resolution|default:"&mdash;"|truncatewords:8 }}</td>
           <td class="text-end">
             {% if not v.resolved %}
             <button type="button" class="btn btn-sm btn-outline-success py-0 px-2"
@@ -67,18 +101,13 @@
           </td>
         </tr>
         {% empty %}
-        <tr>
-          <td colspan="9" class="text-center py-4 text-muted">
-            No cash variances recorded.
-          </td>
-        </tr>
+        <tr><td colspan="9" class="text-center py-4 text-muted">No cash variances recorded.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-{# Resolve modals #}
 {% for v in variances %}
 {% if not v.resolved %}
 <div class="modal fade" id="resolveModal{{ v.pk }}" tabindex="-1" aria-hidden="true">
@@ -88,28 +117,27 @@
         <h6 class="modal-title fw-bold">
           <i class="bi bi-check-circle me-1"></i>Resolve Variance &mdash; {{ v.date|date:"d M Y" }} ({{ v.cashier.get_full_name }})
         </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" action="{% url 'billing:variance_resolve' v.pk %}">
         {% csrf_token %}
         <div class="modal-body">
           <div class="mb-2 small">
             <strong>Variance:</strong>
-            <span class="{% if v.variance < 0 %}text-danger{% else %}text-warning{% endif %}">
+            <span class="fw-bold {% if v.variance < 0 %}text-danger{% else %}text-warning{% endif %}">
               {% if v.variance > 0 %}+{% endif %}{{ v.variance|floatformat:0|intcomma }} XAF
             </span>
+            &nbsp;&middot;&nbsp; declared {{ v.declared|floatformat:0|intcomma }} XAF vs {{ v.expected|floatformat:0|intcomma }} XAF expected
           </div>
           <div class="mb-3">
-            <label for="id_resolution_{{ v.pk }}" class="form-label fw-semibold">Resolution</label>
+            <label for="id_resolution_{{ v.pk }}" class="form-label fw-semibold">Resolution <span class="text-danger">*</span></label>
             <textarea name="resolution" id="id_resolution_{{ v.pk }}" class="form-control" rows="3"
                       required placeholder="Describe how this variance was resolved..."></textarea>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success btn-sm">
-            <i class="bi bi-check-lg me-1"></i>Mark Resolved
-          </button>
+          <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Mark Resolved</button>
         </div>
       </form>
     </div>
@@ -117,4 +145,16 @@
 </div>
 {% endif %}
 {% endfor %}
+
+<style>
+@media print {
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, .modal, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

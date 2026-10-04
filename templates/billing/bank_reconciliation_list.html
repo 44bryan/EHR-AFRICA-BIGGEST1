@@ -1,74 +1,109 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Bank Reconciliations{% endblock %}
 
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-clipboard-check me-2"></i>Bank Reconciliations</h4>
-    <small class="text-muted">Match bank statements to book entries</small>
+    <h4 class="fw-bold mb-0">Bank Reconciliations</h4>
+    <p class="text-muted small mb-0">Match bank statements to GL book entries &mdash; OHADA compliance</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="{% url 'billing:bank_statement_import' %}" class="btn btn-outline-secondary btn-sm">
+    <a href="{% url 'billing:bank_statement_import' %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-upload me-1"></i>Import Statement
     </a>
-    <a href="{% url 'billing:bank_reconciliation_create' %}" class="btn btn-primary btn-sm">
+    <a href="{% url 'billing:bank_reconciliation_create' %}" class="btn btn-sm btn-primary">
       <i class="bi bi-plus-lg me-1"></i>New Reconciliation
     </a>
   </div>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Period End</th>
-            <th>Bank</th>
-            <th class="text-end">Bank Balance</th>
-            <th class="text-end">Book Balance</th>
-            <th class="text-center">Status</th>
-            <th>Prepared By</th>
-            <th>Reviewed By</th>
-            <th class="text-end">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in recons %}
-          <tr>
-            <td>{{ r.period_end|date:"d M Y" }}</td>
-            <td>{{ r.bank_account.bank_name }}</td>
-            <td class="text-end">{{ r.bank_statement_balance|floatformat:0|intcomma }} XAF</td>
-            <td class="text-end">{{ r.book_balance|floatformat:0|intcomma }} XAF</td>
-            <td class="text-center">
-              {% if r.status == 'DRAFT' %}
-                <span class="badge bg-warning text-dark">Draft</span>
-              {% elif r.status == 'COMPLETED' %}
-                <span class="badge bg-info">Completed</span>
-              {% elif r.status == 'REVIEWED' %}
-                <span class="badge bg-success">Reviewed</span>
-              {% else %}
-                <span class="badge bg-secondary">{{ r.status }}</span>
-              {% endif %}
-            </td>
-            <td>{{ r.prepared_by|default:"-" }}</td>
-            <td>{{ r.reviewed_by|default:"-" }}</td>
-            <td class="text-end">
-              <a href="{% url 'billing:bank_reconciliation_detail' r.pk %}" class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-eye me-1"></i>View
-              </a>
-            </td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="8" class="text-center text-muted py-4">No reconciliations found.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="bank" class="form-select form-select-sm" style="width:220px">
+    <option value="">All Banks</option>
+    {% for acc in bank_accounts %}
+    <option value="{{ acc.pk }}" {% if bank_filter == acc.pk|slugify %}selected{% endif %}>{{ acc.bank_name }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" class="form-select form-select-sm" style="width:140px">
+    <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+    <option value="DRAFT"     {% if status_filter == 'DRAFT'     %}selected{% endif %}>Draft</option>
+    <option value="COMPLETED" {% if status_filter == 'COMPLETED' %}selected{% endif %}>Completed</option>
+    <option value="REVIEWED"  {% if status_filter == 'REVIEWED'  %}selected{% endif %}>Reviewed</option>
+  </select>
+  <input type="number" name="year" class="form-control form-control-sm" value="{{ year_filter }}" placeholder="Year" style="width:90px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:bank_reconciliation_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+{% if draft_count %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-clock-fill me-2"></i>
+  <strong>{{ draft_count }} reconciliation{{ draft_count|pluralize }} still in draft &mdash; complete and review to finalise.</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Bank Reconciliations
+      {% if status_filter %}&nbsp;&middot;&nbsp; {{ status_filter|title }}{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if draft_count %}<span class="badge bg-warning text-dark">{{ draft_count }} draft</span>{% endif %}
+      <span class="badge bg-secondary">{{ recons|length }} record{{ recons|length|pluralize }}</span>
     </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Period End</th>
+          <th>Bank Account</th>
+          <th class="text-end">Bank Balance (XAF)</th>
+          <th class="text-end">Book Balance (XAF)</th>
+          <th class="text-center">Status</th>
+          <th>Prepared By</th>
+          <th>Reviewed By</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recons %}
+        <tr {% if r.status == 'DRAFT' %}class="table-warning"{% endif %}>
+          <td class="fw-semibold">{{ r.period_end|date:"d M Y" }}</td>
+          <td>
+            <span class="fw-semibold">{{ r.bank_account.bank_name }}</span>
+            <small class="text-muted d-block font-monospace">{{ r.bank_account.account_number }}</small>
+          </td>
+          <td class="text-end">{{ r.bank_statement_balance|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ r.book_balance|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if r.status == 'DRAFT'     %}<span class="badge bg-warning text-dark">Draft</span>
+            {% elif r.status == 'COMPLETED'%}<span class="badge bg-info">Completed</span>
+            {% elif r.status == 'REVIEWED' %}<span class="badge bg-success">Reviewed</span>
+            {% else %}<span class="badge bg-secondary">{{ r.status }}</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ r.prepared_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-muted small">{{ r.reviewed_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-end">
+            <a href="{% url 'billing:bank_reconciliation_detail' r.pk %}" class="btn btn-outline-primary btn-sm py-0 px-2">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            No reconciliations found.
+            <a href="{% url 'billing:bank_reconciliation_create' %}">Create the first one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}

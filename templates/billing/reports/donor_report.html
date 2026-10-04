@@ -1,24 +1,30 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize ehr_tags %}
+{% load humanize static ehr_tags %}
 {% block title %}Donor Financial Report{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <h4 class="fw-bold mb-0">Donor Financial Report</h4>
-  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
-</div>
 
-<form method="get" class="row g-2 mb-4 align-items-end">
-  <div class="col-auto">
-    <label class="form-label small fw-semibold">From</label>
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Donor Financial Report</h4>
+    <p class="text-muted small mb-0">Grant funding utilisation, expense breakdown and budget position</p>
   </div>
-  <div class="col-auto">
-    <label class="form-label small fw-semibold">To</label>
-    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+  <div class="dropdown">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+    </ul>
   </div>
-  <div class="col-auto">
-    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
-  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To"   style="width:140px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:report_donor' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
 </form>
 
 <div class="row g-3 mb-4">
@@ -42,72 +48,124 @@
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body">
         <div class="text-muted small">Net Position</div>
-        <div class="fs-4 fw-bold {% if net_position >= 0 %}text-success{% else %}text-danger{% endif %}">{{ net_position|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <div class="fs-4 fw-bold {% if net_position >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ net_position|floatformat:0|intcomma }} <small class="text-muted">XAF</small>
+        </div>
       </div>
     </div>
   </div>
   <div class="col-md-3">
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body">
-        <div class="text-muted small">Budget Utilization</div>
-        <div class="fs-4 fw-bold {% if budget_utilization > 100 %}text-danger{% elif budget_utilization > 90 %}text-warning{% else %}text-info{% endif %}">{{ budget_utilization }}%</div>
+        <div class="text-muted small">Budget Utilisation</div>
+        <div class="fs-4 fw-bold {% if budget_utilization > 100 %}text-danger{% elif budget_utilization > 90 %}text-warning{% else %}text-info{% endif %}">
+          {{ budget_utilization }}%
+        </div>
         <div class="progress mt-2" style="height:6px;">
-          <div class="progress-bar {% if budget_utilization > 100 %}bg-danger{% elif budget_utilization > 90 %}bg-warning{% else %}bg-info{% endif %}" style="width:{% if budget_utilization > 100 %}100{% else %}{{ budget_utilization }}{% endif %}%"></div>
+          <div class="progress-bar {% if budget_utilization > 100 %}bg-danger{% elif budget_utilization > 90 %}bg-warning{% else %}bg-info{% endif %}"
+               style="width:{% if budget_utilization > 100 %}100{% else %}{{ budget_utilization }}{% endif %}%"></div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold"><i class="bi bi-receipt me-1"></i>Expense Breakdown by Category</div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr><th>Category</th><th class="text-end">Amount (XAF)</th><th class="text-end">% of Total</th><th style="width:150px;"></th></tr>
-      </thead>
-      <tbody>
-        {% for e in expenses %}
-        <tr>
-          <td class="fw-semibold">{{ e.category }}</td>
-          <td class="text-end">{{ e.total|floatformat:0|intcomma }}</td>
-          <td class="text-end">{% if total_expense %}{% widthratio e.total total_expense 100 %}%{% else %}0%{% endif %}</td>
-          <td>
-            <div class="progress" style="height:6px;">
-              <div class="progress-bar bg-danger" style="width:{% if total_expense %}{% widthratio e.total total_expense 100 %}{% else %}0{% endif %}%"></div>
-            </div>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="text-center text-muted py-3">No approved expenses in this period</td></tr>
-        {% endfor %}
-      </tbody>
-      <tfoot class="table-light">
-        <tr><td class="fw-bold">Total Expenses</td><td class="text-end fw-bold">{{ total_expense|floatformat:0|intcomma }} XAF</td><td></td><td></td></tr>
-      </tfoot>
-    </table>
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-receipt me-1"></i>Expense Breakdown by Category</span>
+        <span class="badge bg-secondary">{{ expenses|length }} categor{{ expenses|length|pluralize:"y,ies" }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
+          <thead class="table-light">
+            <tr>
+              <th>Category</th>
+              <th class="text-end">Amount (XAF)</th>
+              <th class="text-end">% of Total</th>
+              <th style="width:150px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in expenses %}
+            <tr>
+              <td class="fw-semibold">{{ e.category }}</td>
+              <td class="text-end">{{ e.total|floatformat:0|intcomma }}</td>
+              <td class="text-end text-muted">{% if total_expense %}{% widthratio e.total total_expense 100 %}%{% else %}0%{% endif %}</td>
+              <td>
+                <div class="progress" style="height:6px;">
+                  <div class="progress-bar bg-danger" style="width:{% if total_expense %}{% widthratio e.total total_expense 100 %}{% else %}0{% endif %}%"></div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No approved expenses in this period</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+            <tr>
+              <td>Total Expenses</td>
+              <td class="text-end">{{ total_expense|floatformat:0|intcomma }} XAF</td>
+              <td></td><td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
   </div>
-</div>
-
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white fw-semibold"><i class="bi bi-pie-chart me-1"></i>Budget Summary</div>
-  <div class="card-body">
-    <div class="row">
-      <div class="col-md-4">
-        <div class="text-muted small">Annual Budget</div>
-        <div class="fw-bold">{{ total_budget|floatformat:0|intcomma }} XAF</div>
-      </div>
-      <div class="col-md-4">
-        <div class="text-muted small">Spent to Date</div>
-        <div class="fw-bold text-danger">{{ total_expense|floatformat:0|intcomma }} XAF</div>
-      </div>
-      <div class="col-md-4">
-        <div class="text-muted small">Remaining</div>
-        {% with remaining=total_budget|add:total_expense|default:0 %}
-        <div class="fw-bold text-success">{{ total_budget|floatformat:0|intcomma }} XAF</div>
-        {% endwith %}
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 fw-semibold small"><i class="bi bi-pie-chart me-1"></i>Budget Position</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="text-muted small">Annual Budget</div>
+            <div class="fw-bold">{{ total_budget|floatformat:0|intcomma }} XAF</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Spent to Date</div>
+            <div class="fw-bold text-danger">{{ total_expense|floatformat:0|intcomma }} XAF</div>
+          </div>
+          <div class="col-12">
+            <div class="text-muted small mb-1">Budget Consumed</div>
+            <div class="progress" style="height:14px;">
+              <div class="progress-bar {% if budget_utilization > 100 %}bg-danger{% elif budget_utilization > 90 %}bg-warning{% else %}bg-success{% endif %} fw-semibold"
+                   style="width:{% if budget_utilization > 100 %}100{% else %}{{ budget_utilization }}{% endif %}%;font-size:.7rem;line-height:14px;">
+                {{ budget_utilization }}%
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:55px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Donor Financial Report &mdash; {{ date_from }} to {{ date_to }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}<br>Prepared by: {{ request.user.get_full_name }}</div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  form, .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  #printHeader { display:block !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  .col-lg-7, .col-lg-5 { width:100% !important; float:none !important; margin-bottom:8pt; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

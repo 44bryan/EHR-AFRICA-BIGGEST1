@@ -1,75 +1,140 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Cash-to-Bank Deposits{% endblock %}
 
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-coin me-2"></i>Cash-to-Bank Deposits</h4>
-    <small class="text-muted">Track cash deposits made to bank accounts</small>
+    <h4 class="fw-bold mb-0">Cash-to-Bank Deposits</h4>
+    <p class="text-muted small mb-0">Record and confirm cash deposits to bank accounts</p>
   </div>
-  <a href="{% url 'billing:cash_to_bank_create' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg me-1"></i>New Deposit
-  </a>
+  <div class="d-flex gap-2">
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+      </ul>
+    </div>
+    <a href="{% url 'billing:cash_to_bank_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Deposit
+    </a>
+  </div>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Date</th>
-            <th>Bank Account</th>
-            <th class="text-end">Amount (XAF)</th>
-            <th>Reference</th>
-            <th class="text-center">Status</th>
-            <th>Prepared By</th>
-            <th class="text-end">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for d in deposits %}
-          <tr>
-            <td>{{ d.deposit_date|date:"d M Y" }}</td>
-            <td>{{ d.bank_account.bank_name }} &mdash; {{ d.bank_account.account_number }}</td>
-            <td class="text-end fw-semibold">{{ d.amount|floatformat:0|intcomma }} XAF</td>
-            <td><code>{{ d.reference|default:"-" }}</code></td>
-            <td class="text-center">
-              {% if d.status == 'PENDING' %}
-                <span class="badge bg-warning text-dark">Pending</span>
-              {% elif d.status == 'DEPOSITED' %}
-                <span class="badge bg-info">Deposited</span>
-              {% elif d.status == 'CONFIRMED' %}
-                <span class="badge bg-success">Confirmed</span>
-              {% else %}
-                <span class="badge bg-secondary">{{ d.status }}</span>
-              {% endif %}
-            </td>
-            <td>{{ d.prepared_by|default:"-" }}</td>
-            <td class="text-end">
-              {% if d.status != 'CONFIRMED' %}
-                <form method="post" action="{% url 'billing:cash_to_bank_confirm' d.pk %}" class="d-inline">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-outline-success btn-sm"
-                          onclick="return confirm('Confirm this deposit?')">
-                    <i class="bi bi-check-lg me-1"></i>Confirm
-                  </button>
-                </form>
-              {% else %}
-                <span class="text-muted small">--</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="7" class="text-center text-muted py-4">No deposits recorded yet.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:150px">
+    <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+    <option value="PENDING"   {% if status_filter == 'PENDING'   %}selected{% endif %}>Pending</option>
+    <option value="DEPOSITED" {% if status_filter == 'DEPOSITED' %}selected{% endif %}>Deposited</option>
+    <option value="CONFIRMED" {% if status_filter == 'CONFIRMED' %}selected{% endif %}>Confirmed</option>
+  </select>
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To"   style="width:140px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:cash_to_bank_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+{% if pending_count %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-clock-fill me-2"></i>
+  <strong>{{ pending_count }} deposit{{ pending_count|pluralize }} pending confirmation.</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Cash-to-Bank Deposits
+      {% if status_filter %}&nbsp;&middot;&nbsp; {{ status_filter|title }}{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if pending_count %}<span class="badge bg-warning text-dark">{{ pending_count }} pending</span>{% endif %}
+      <span class="badge bg-secondary">{{ deposits|length }} record{{ deposits|length|pluralize }}</span>
     </div>
   </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Bank Account</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th>Deposit Slip Ref.</th>
+          <th class="text-center">Status</th>
+          <th>Prepared By</th>
+          <th>Confirmed By</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in deposits %}
+        <tr {% if d.status == 'PENDING' %}class="table-warning"{% endif %}>
+          <td class="fw-semibold">{{ d.deposit_date|date:"d M Y" }}</td>
+          <td>
+            <span class="fw-semibold">{{ d.bank_account.bank_name }}</span>
+            <small class="text-muted d-block font-monospace">{{ d.bank_account.account_number }}</small>
+          </td>
+          <td class="text-end fw-semibold">{{ d.amount|floatformat:0|intcomma }}</td>
+          <td><code class="text-dark">{{ d.reference|default:"&mdash;" }}</code></td>
+          <td class="text-center">
+            {% if d.status == 'PENDING'   %}<span class="badge bg-warning text-dark">Pending</span>
+            {% elif d.status == 'DEPOSITED'%}<span class="badge bg-info">Deposited</span>
+            {% elif d.status == 'CONFIRMED'%}<span class="badge bg-success">Confirmed</span>
+            {% else %}<span class="badge bg-secondary">{{ d.status }}</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ d.prepared_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-muted small">{{ d.confirmed_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-end">
+            {% if d.status != 'CONFIRMED' %}
+            <form method="post" action="{% url 'billing:cash_to_bank_confirm' d.pk %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-outline-success btn-sm py-0 px-2"
+                      onclick="return confirm('Confirm this bank deposit?')">
+                <i class="bi bi-check-lg me-1"></i>Confirm
+              </button>
+            </form>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            No deposits recorded yet.
+            <a href="{% url 'billing:cash_to_bank_create' %}">Record one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if deposits %}
+      <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+        <tr>
+          <td colspan="2" class="text-end text-muted small text-uppercase pe-3">Total Deposited</td>
+          <td class="text-end">{{ deposits_total|floatformat:0|intcomma|default:"0" }} XAF</td>
+          <td colspan="5"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
 </div>
+
+<style>
+@media print {
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

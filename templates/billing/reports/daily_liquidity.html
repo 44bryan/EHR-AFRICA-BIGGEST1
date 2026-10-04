@@ -1,22 +1,38 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize ehr_tags %}
+{% load humanize static ehr_tags %}
 {% block title %}Daily Liquidity Position{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
     <h4 class="fw-bold mb-0">Daily Liquidity Position</h4>
-    <small class="text-muted">{{ today|date:"d M Y" }}</small>
+    <p class="text-muted small mb-0">
+      Safe balance &middot; Bank balances &middot; Outstanding cheques &middot; Pending deposits &mdash; {{ today|date:"d M Y" }}
+    </p>
   </div>
-  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+  <div class="dropdown">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+    </ul>
+  </div>
 </div>
+{% endblock %}
 
+{% block content %}
 {% if safe_balance > safe_limit %}
 <div class="alert alert-danger d-flex align-items-center py-2 mb-3">
-  <i class="bi bi-exclamation-triangle-fill me-2"></i>
-  <strong>Safe balance ({{ safe_balance|floatformat:0|intcomma }} XAF) exceeds the {{ safe_limit|floatformat:0|intcomma }} XAF policy limit!</strong>
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <div>
+    <strong>Safe over limit!</strong> Safe balance ({{ safe_balance|floatformat:0|intcomma }} XAF) exceeds
+    the {{ safe_limit|floatformat:0|intcomma }} XAF policy limit. Arrange an immediate bank deposit.
+  </div>
 </div>
 {% endif %}
 
+<!-- KPI row -->
 <div class="row g-3 mb-4">
   <div class="col-md-3">
     <div class="card border-0 shadow-sm text-center">
@@ -30,7 +46,14 @@
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body">
         <div class="text-muted small">Safe Balance</div>
-        <div class="fs-4 fw-bold {% if safe_balance > safe_limit %}text-danger{% else %}text-success{% endif %}">{{ safe_balance|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <div class="fs-4 fw-bold {% if safe_balance > safe_limit %}text-danger{% else %}text-success{% endif %}">
+          {{ safe_balance|floatformat:0|intcomma }} <small class="text-muted">XAF</small>
+        </div>
+        {% if safe_balance > safe_limit %}
+        <small class="text-danger fw-semibold">Over limit!</small>
+        {% else %}
+        <small class="text-muted">Limit: {{ safe_limit|floatformat:0|intcomma }}</small>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -39,66 +62,161 @@
       <div class="card-body">
         <div class="text-muted small">Bank Balances</div>
         <div class="fs-4 fw-bold text-info">{{ total_bank|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <small class="text-muted">{{ bank_accounts|length }} account{{ bank_accounts|length|pluralize }}</small>
       </div>
     </div>
   </div>
   <div class="col-md-3">
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body">
-        <div class="text-muted small">Today's Collections</div>
-        <div class="fs-4 fw-bold text-success">{{ today_collections|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <div class="text-muted small">Outstanding Cheques</div>
+        <div class="fs-4 fw-bold text-warning">{{ outstanding_cheques|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <small class="text-muted">{{ outstanding_cheque_count }} issued</small>
       </div>
     </div>
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-bank me-1"></i>Bank Accounts</div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-bank me-1"></i>Bank Accounts</span>
+        <span class="badge bg-secondary">{{ bank_accounts|length }}</span>
+      </div>
       <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0 small">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
           <thead class="table-light">
-            <tr><th>Bank</th><th>Account</th><th class="text-end">Balance</th><th>As of</th></tr>
+            <tr>
+              <th>Bank</th>
+              <th>Account No.</th>
+              <th class="text-end">Balance (XAF)</th>
+            </tr>
           </thead>
           <tbody>
-            {% for b in bank_data %}
+            {% for acc in bank_accounts %}
             <tr>
-              <td class="fw-semibold">{{ b.account.bank_name }}</td>
-              <td class="text-muted">{{ b.account.account_number }}</td>
-              <td class="text-end">{{ b.last_balance|floatformat:0|intcomma }} XAF</td>
-              <td class="text-muted">{{ b.last_date|date:"d/m/Y"|default:"Opening" }}</td>
+              <td class="fw-semibold">{{ acc.bank_name }}</td>
+              <td class="font-monospace text-muted small">{{ acc.account_number }}</td>
+              <td class="text-end fw-semibold">{{ acc.opening_balance|floatformat:0|intcomma }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="4" class="text-center text-muted py-3">No bank accounts configured</td></tr>
+            <tr><td colspan="3" class="text-center text-muted py-3">No bank accounts configured.</td></tr>
             {% endfor %}
           </tbody>
-          <tfoot class="table-light">
-            <tr><td colspan="2" class="fw-bold">Total</td><td class="text-end fw-bold">{{ total_bank|floatformat:0|intcomma }} XAF</td><td></td></tr>
+          {% if bank_accounts %}
+          <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+            <tr>
+              <td colspan="2">Total Bank</td>
+              <td class="text-end">{{ total_bank|floatformat:0|intcomma }} XAF</td>
+            </tr>
           </tfoot>
+          {% endif %}
         </table>
       </div>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-safe me-1"></i>Deductions & Pending</div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between mb-2">
-          <span>Outstanding Cheques</span>
-          <span class="fw-bold text-danger">{{ outstanding_cheques|floatformat:0|intcomma }} XAF</span>
-        </div>
-        <div class="d-flex justify-content-between mb-2">
-          <span>Pending Bank Deposits</span>
-          <span class="fw-bold text-warning">{{ pending_deposits|floatformat:0|intcomma }} XAF</span>
-        </div>
-        <hr>
-        <div class="d-flex justify-content-between">
-          <span class="fw-bold">Net Available Liquidity</span>
-          <span class="fw-bold text-primary fs-5">{{ total_liquidity|floatformat:0|intcomma }} XAF</span>
-        </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-card-checklist me-1"></i>Outstanding Cheques</span>
+        {% if outstanding_cheque_count %}
+        <span class="badge bg-warning text-dark">{{ outstanding_cheque_count }} uncleared</span>
+        {% else %}
+        <span class="badge bg-success">All cleared</span>
+        {% endif %}
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
+          <thead class="table-light">
+            <tr>
+              <th>Cheque #</th>
+              <th>Payee</th>
+              <th>Issue Date</th>
+              <th class="text-end">Amount (XAF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for chq in pending_cheques %}
+            <tr>
+              <td><code class="text-dark">{{ chq.cheque_number }}</code></td>
+              <td>{{ chq.payee }}</td>
+              <td class="text-muted small">{{ chq.issue_date|date:"d M Y" }}</td>
+              <td class="text-end fw-semibold text-warning">{{ chq.amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No outstanding cheques.</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if pending_cheques %}
+          <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+            <tr>
+              <td colspan="3">Total Outstanding</td>
+              <td class="text-end text-warning">{{ outstanding_cheques|floatformat:0|intcomma }} XAF</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
       </div>
     </div>
   </div>
 </div>
+
+{% if pending_deposits %}
+<div class="card shadow-sm mt-3">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-arrow-down-circle me-1"></i>Pending Bank Deposits</span>
+    <span class="badge bg-warning text-dark">{{ pending_deposits|length }} pending</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th><th>Bank</th><th>Reference</th><th class="text-end">Amount (XAF)</th><th class="text-center">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in pending_deposits %}
+        <tr class="table-warning">
+          <td>{{ d.deposit_date|date:"d M Y" }}</td>
+          <td>{{ d.bank_account.bank_name }}</td>
+          <td><code>{{ d.reference|default:"&mdash;" }}</code></td>
+          <td class="text-end fw-semibold">{{ d.amount|floatformat:0|intcomma }}</td>
+          <td class="text-center"><span class="badge bg-warning text-dark">{{ d.get_status_display }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:55px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Daily Liquidity Position &mdash; {{ today|date:"d M Y" }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  #printHeader { display:block !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  .col-lg-6 { width:100% !important; float:none !important; margin-bottom:8pt; }
+  .row.g-3.mb-4 { display:none !important; }
+  .text-warning { color:#e6a817 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

@@ -1,32 +1,72 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Cash Transfers{% endblock %}
 
-
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Cash Transfers</h4>
+    <p class="text-muted small mb-0">Inter-desk movements, safe deposits and float issuances</p>
+  </div>
+  <div class="d-flex gap-2">
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+      </ul>
+    </div>
+    <a href="{% url 'billing:cash_transfer_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-circle me-1"></i>New Transfer
+    </a>
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2"></i>Cash Transfers</h4>
-    <small class="text-muted">Inter-desk and safe cash movements</small>
-  </div>
-  <a href="{% url 'billing:cash_transfer_create' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-circle me-1"></i>New Transfer
-  </a>
-</div>
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:150px">
+    <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+    <option value="PENDING"   {% if status_filter == 'PENDING'   %}selected{% endif %}>Pending</option>
+    <option value="CONFIRMED" {% if status_filter == 'CONFIRMED' %}selected{% endif %}>Confirmed</option>
+    <option value="REJECTED"  {% if status_filter == 'REJECTED'  %}selected{% endif %}>Rejected</option>
+  </select>
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To"   style="width:140px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:cash_transfer_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
 
-<div class="card border-0 shadow-sm">
+{% if pending_count %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-clock-fill me-2"></i>
+  <strong>{{ pending_count }} pending transfer{{ pending_count|pluralize }} awaiting confirmation.</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Cash Transfers
+      {% if status_filter %}&nbsp;&middot;&nbsp; {{ status_filter|title }}{% endif %}
+      {% if date_from %}&nbsp;&middot;&nbsp; {{ date_from }} to {{ date_to }}{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if pending_count %}<span class="badge bg-warning text-dark">{{ pending_count }} pending</span>{% endif %}
+      <span class="badge bg-secondary">{{ transfers|length }} record{{ transfers|length|pluralize }}</span>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
-          <th>Date</th>
+          <th>Date &amp; Time</th>
           <th>Type</th>
-          <th>From Desk</th>
-          <th>To Desk</th>
-          <th class="text-end">Amount</th>
-          <th>Status</th>
+          <th>From</th>
+          <th>To</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th class="text-center">Status</th>
           <th>Initiated By</th>
           <th>Confirmed By</th>
           <th class="text-end">Actions</th>
@@ -34,27 +74,20 @@
       </thead>
       <tbody>
         {% for transfer in transfers %}
-        <tr>
-          <td>{{ transfer.created_at|date:"d M Y H:i" }}</td>
-          <td>
-            <span class="badge bg-secondary">{{ transfer.get_transfer_type_display }}</span>
-          </td>
+        <tr {% if transfer.status == 'PENDING' %}class="table-warning"{% elif transfer.status == 'REJECTED' %}class="table-danger"{% endif %}>
+          <td class="text-muted small">{{ transfer.created_at|date:"d M Y H:i" }}</td>
+          <td><span class="badge bg-light text-dark border small">{{ transfer.get_transfer_type_display }}</span></td>
           <td>{{ transfer.from_desk|default:"&mdash;" }}</td>
           <td>{{ transfer.to_desk|default:"&mdash;" }}</td>
-          <td class="text-end fw-semibold">{{ transfer.amount|floatformat:0|intcomma }} XAF</td>
-          <td>
-            {% if transfer.status == 'PENDING' %}
-            <span class="badge bg-warning text-dark">Pending</span>
-            {% elif transfer.status == 'CONFIRMED' %}
-            <span class="badge bg-success">Confirmed</span>
-            {% elif transfer.status == 'REJECTED' %}
-            <span class="badge bg-danger">Rejected</span>
-            {% else %}
-            <span class="badge bg-secondary">{{ transfer.get_status_display }}</span>
-            {% endif %}
+          <td class="text-end fw-semibold">{{ transfer.amount|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if transfer.status == 'PENDING'   %}<span class="badge bg-warning text-dark">Pending</span>
+            {% elif transfer.status == 'CONFIRMED'%}<span class="badge bg-success">Confirmed</span>
+            {% elif transfer.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
+            {% else %}<span class="badge bg-secondary">{{ transfer.get_status_display }}</span>{% endif %}
           </td>
           <td>{{ transfer.initiated_by.get_full_name }}</td>
-          <td>{{ transfer.confirmed_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-muted">{{ transfer.confirmed_by.get_full_name|default:"&mdash;" }}</td>
           <td class="text-end">
             {% if transfer.status == 'PENDING' %}
             <form method="post" action="{% url 'billing:cash_transfer_confirm' transfer.pk %}" class="d-inline">
@@ -64,20 +97,42 @@
                 <i class="bi bi-check-lg me-1"></i>Confirm
               </button>
             </form>
-            {% else %}
-            <span class="text-muted">&mdash;</span>
-            {% endif %}
+            {% else %}<span class="text-muted">&mdash;</span>{% endif %}
           </td>
         </tr>
         {% empty %}
         <tr>
           <td colspan="9" class="text-center py-4 text-muted">
-            No cash transfers recorded. <a href="{% url 'billing:cash_transfer_create' %}">Create one</a>.
+            No cash transfers recorded.
+            <a href="{% url 'billing:cash_transfer_create' %}">Create one</a>.
           </td>
         </tr>
         {% endfor %}
       </tbody>
+      {% if transfers %}
+      <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+        <tr>
+          <td colspan="4" class="text-end text-muted small text-uppercase pe-3">Total Transferred</td>
+          <td class="text-end">{{ transfers_total|floatformat:0|intcomma|default:"0" }} XAF</td>
+          <td colspan="4"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>
+
+<style>
+@media print {
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

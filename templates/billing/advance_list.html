@@ -1,78 +1,96 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Staff Advances{% endblock %}
 
-
-
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-cash-coin me-2"></i>Staff Advances</h4>
-    <small class="text-muted">Track salary and business advance requests</small>
+    <h4 class="fw-bold mb-0">Staff Advances</h4>
+    <p class="text-muted small mb-0">Salary and business advance requests &mdash; approval &amp; settlement workflow</p>
   </div>
-  <a href="{% url 'billing:advance_request' %}" class="btn btn-primary btn-sm">
+  <a href="{% url 'billing:advance_request' %}" class="btn btn-sm btn-primary">
     <i class="bi bi-plus-circle me-1"></i>Request Advance
   </a>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
+{% block content %}
+<!-- Flat filter bar -->
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:160px" title="Status">
+    <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+    <option value="REQUESTED"  {% if status_filter == 'REQUESTED'  %}selected{% endif %}>Requested</option>
+    <option value="APPROVED"   {% if status_filter == 'APPROVED'   %}selected{% endif %}>Approved</option>
+    <option value="DISBURSED"  {% if status_filter == 'DISBURSED'  %}selected{% endif %}>Disbursed</option>
+    <option value="SETTLED"    {% if status_filter == 'SETTLED'    %}selected{% endif %}>Settled</option>
+    <option value="REJECTED"   {% if status_filter == 'REJECTED'   %}selected{% endif %}>Rejected</option>
+  </select>
+  <select name="advance_type" class="form-select form-select-sm" style="width:150px" title="Type">
+    <option value="" {% if not type_filter %}selected{% endif %}>All Types</option>
+    <option value="SALARY"   {% if type_filter == 'SALARY'   %}selected{% endif %}>Salary Advance</option>
+    <option value="BUSINESS" {% if type_filter == 'BUSINESS' %}selected{% endif %}>Business Advance</option>
+  </select>
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:advance_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+{% if overdue_count %}
+<div class="alert alert-danger d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <strong>{{ overdue_count }} overdue advance{{ overdue_count|pluralize }} — settlement is past due!</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Staff Advances
+      {% if status_filter %}&nbsp;&middot;&nbsp; {{ status_filter|title }}{% endif %}
+      {% if type_filter %}&nbsp;&middot;&nbsp; {{ type_filter|title }}{% endif %}
+    </span>
+    <span class="badge bg-secondary">{{ advances|length }} record{{ advances|length|pluralize }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
-          <th>Staff Name</th>
+          <th>Staff Member</th>
           <th>Type</th>
-          <th class="text-end">Amount Requested</th>
-          <th class="text-end">Amount Approved</th>
-          <th>Status</th>
-          <th>Requested Date</th>
+          <th class="text-end">Requested (XAF)</th>
+          <th class="text-end">Approved (XAF)</th>
+          <th class="text-center">Status</th>
+          <th>Requested</th>
           <th>Settlement Due</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for advance in advances %}
-        <tr>
+        <tr {% if advance.is_overdue %}class="table-danger"{% endif %}>
           <td class="fw-semibold">{{ advance.staff.get_full_name }}</td>
           <td>
             {% if advance.advance_type == 'SALARY' %}
             <span class="badge bg-info text-dark">Salary</span>
-            {% elif advance.advance_type == 'BUSINESS' %}
+            {% else %}
             <span class="badge bg-secondary">Business</span>
-            {% else %}
-            <span class="badge bg-light text-dark border">{{ advance.get_advance_type_display }}</span>
             {% endif %}
           </td>
-          <td class="text-end">{{ advance.amount_requested|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">{{ advance.amount_requested|floatformat:0|intcomma }}</td>
           <td class="text-end">
-            {% if advance.amount_approved %}
-            {{ advance.amount_approved|floatformat:0|intcomma }} XAF
-            {% else %}
-            <span class="text-muted">&mdash;</span>
-            {% endif %}
+            {% if advance.amount_approved %}{{ advance.amount_approved|floatformat:0|intcomma }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}
           </td>
-          <td>
-            {% if advance.status == 'REQUESTED' %}
-            <span class="badge bg-warning text-dark">Requested</span>
-            {% elif advance.status == 'APPROVED' %}
-            <span class="badge bg-info text-dark">Approved</span>
-            {% elif advance.status == 'DISBURSED' %}
-            <span class="badge bg-primary">Disbursed</span>
-            {% elif advance.status == 'SETTLED' %}
-            <span class="badge bg-success">Settled</span>
-            {% elif advance.status == 'REJECTED' %}
-            <span class="badge bg-danger">Rejected</span>
-            {% else %}
-            <span class="badge bg-secondary">{{ advance.get_status_display }}</span>
-            {% endif %}
+          <td class="text-center">
+            {% if advance.status == 'REQUESTED' %}<span class="badge bg-warning text-dark">Requested</span>
+            {% elif advance.status == 'APPROVED'  %}<span class="badge bg-info text-dark">Approved</span>
+            {% elif advance.status == 'DISBURSED' %}<span class="badge bg-primary">Disbursed</span>
+            {% elif advance.status == 'SETTLED'   %}<span class="badge bg-success">Settled</span>
+            {% elif advance.status == 'REJECTED'  %}<span class="badge bg-danger">Rejected</span>
+            {% else %}<span class="badge bg-secondary">{{ advance.get_status_display }}</span>{% endif %}
           </td>
           <td>{{ advance.requested_date|date:"d M Y" }}</td>
           <td>
             {{ advance.settlement_due|date:"d M Y"|default:"&mdash;" }}
-            {% if advance.is_overdue %}
-            <span class="badge bg-danger ms-1">Overdue</span>
-            {% endif %}
+            {% if advance.is_overdue %}<span class="badge bg-danger ms-1">Overdue</span>{% endif %}
           </td>
           <td class="text-end">
             <a href="{% url 'billing:advance_detail' advance.pk %}" class="btn btn-sm btn-outline-primary py-0 px-2">
@@ -83,11 +101,24 @@
         {% empty %}
         <tr>
           <td colspan="8" class="text-center py-4 text-muted">
-            No advance requests found. <a href="{% url 'billing:advance_request' %}">Create the first request</a>.
+            No advance requests found.
+            <a href="{% url 'billing:advance_request' %}">Create the first request</a>.
           </td>
         </tr>
         {% endfor %}
       </tbody>
+      {% if advances %}
+      <tfoot class="table-secondary fw-semibold" style="border-top:2px solid #aaa">
+        <tr>
+          <td colspan="2" class="text-end text-muted small text-uppercase pe-3">Totals</td>
+          <td class="text-end">
+            {{ advances|sum_field:"amount_requested"|floatformat:0|intcomma|default:"0" }}
+          </td>
+          <td class="text-end">—</td>
+          <td colspan="4"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

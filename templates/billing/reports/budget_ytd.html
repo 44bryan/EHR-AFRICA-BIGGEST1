@@ -1,24 +1,59 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize ehr_tags %}
+{% load humanize static ehr_tags %}
 {% block title %}Budget vs Actual — YTD {{ year }}{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="fw-bold mb-0">Budget vs Actual — Year to Date</h4>
-    <small class="text-muted">{{ year }} (through month {{ current_month }})</small>
+    <h4 class="fw-bold mb-0">Budget vs Actual &mdash; Year to Date</h4>
+    <p class="text-muted small mb-0">{{ year }} &mdash; cumulative through month {{ current_month }}</p>
   </div>
   <div class="d-flex gap-2 align-items-center">
-    <form method="get" class="d-flex gap-2">
-      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:100px;">
-      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Go</button>
+    <form method="get" class="d-flex gap-2 align-items-center mb-0">
+      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:90px;">
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Go</button>
     </form>
-    <a href="{% url 'billing:budget_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Budgets</a>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+      </ul>
+    </div>
+    <a href="{% url 'billing:budget_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Budgets
+    </a>
   </div>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
+{% block content %}
+{% with overbudget=rows|length %}
+{% if rows %}
+{% for row in rows %}{% if row.pct > 100 %}
+<div class="alert alert-danger d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <strong>Budget overrun detected</strong> &mdash; one or more categories have exceeded their YTD budget.
+</div>
+{% endif %}{% endfor %}
+{% endif %}
+{% endwith %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Budget vs Actual &nbsp;&middot;&nbsp; {{ year }} &nbsp;&middot;&nbsp; Months 1 &ndash; {{ current_month }}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      <a href="{% url 'billing:budget_annual_create' %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+        <i class="bi bi-plus-lg me-1"></i>Create Annual Budget
+      </a>
+      <span class="badge bg-secondary">{{ rows|length }} line{{ rows|length|pluralize }}</span>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
           <th>Category</th>
@@ -26,24 +61,33 @@
           <th class="text-end">YTD Actual (XAF)</th>
           <th class="text-end">Variance (XAF)</th>
           <th class="text-end">% Used</th>
-          <th style="width:120px;">Status</th>
+          <th style="width:120px">Progress</th>
+          <th class="text-center">Status</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr class="{% if row.pct > 100 %}table-danger{% elif row.pct > 90 %}table-warning{% endif %}">
+        <tr>
           <td class="fw-semibold">{{ row.category }}</td>
           <td class="text-end">{{ row.budget|floatformat:0|intcomma }}</td>
           <td class="text-end">{{ row.actual|floatformat:0|intcomma }}</td>
-          <td class="text-end {% if row.variance < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
-            {{ row.variance|floatformat:0|intcomma }}
+          <td class="text-end fw-semibold {% if row.variance < 0 %}text-danger{% else %}text-success{% endif %}">
+            {% if row.variance >= 0 %}+{% endif %}{{ row.variance|floatformat:0|intcomma }}
           </td>
-          <td class="text-end">{{ row.pct }}%</td>
+          <td class="text-end fw-bold {% if row.pct > 100 %}text-danger{% elif row.pct > 90 %}text-warning{% else %}text-success{% endif %}">
+            {{ row.pct }}%
+          </td>
           <td>
+            <div class="progress" style="height:8px;">
+              <div class="progress-bar {% if row.pct > 100 %}bg-danger{% elif row.pct > 90 %}bg-warning{% else %}bg-success{% endif %}"
+                   style="width:{% if row.pct > 100 %}100{% else %}{{ row.pct }}{% endif %}%"></div>
+            </div>
+          </td>
+          <td class="text-center">
             {% if row.pct > 100 %}
             <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Over Budget</span>
             {% elif row.pct > 90 %}
-            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation me-1"></i>Near Limit</span>
+            <span class="badge bg-warning text-dark">Near Limit</span>
             {% elif row.budget > 0 %}
             <span class="badge bg-success">On Track</span>
             {% else %}
@@ -52,10 +96,58 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted py-4">No budget data for {{ year }}. <a href="{% url 'billing:budget_annual_create' %}">Create annual budget</a></td></tr>
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No budget data for {{ year }}.
+            <a href="{% url 'billing:budget_annual_create' %}">Create annual budget</a>.
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
+      {% if rows %}
+      <tfoot class="table-secondary fw-bold" style="border-top:3px solid #aaa">
+        <tr>
+          <td>Grand Total</td>
+          <td class="text-end">{{ total_budget|floatformat:0|intcomma|default:"0" }} XAF</td>
+          <td class="text-end">{{ total_actual|floatformat:0|intcomma|default:"0" }} XAF</td>
+          <td class="text-end {% if total_variance < 0 %}text-danger{% else %}text-success{% endif %}">
+            {% if total_variance >= 0 %}+{% endif %}{{ total_variance|floatformat:0|intcomma|default:"0" }} XAF
+          </td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:55px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Budget vs Actual &mdash; {{ year }} Year to Date (Month {{ current_month }})</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
+  #printHeader { display:block !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .card-header .btn, .card-header a { display:none !important; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  .text-danger { color:#dc3545 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .text-success { color:#198754 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .text-warning { color:#ffc107 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

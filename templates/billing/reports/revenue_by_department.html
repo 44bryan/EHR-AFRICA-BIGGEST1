@@ -1,25 +1,44 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize ehr_tags %}
+{% load humanize static ehr_tags %}
 {% block title %}Revenue by Department{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <h4 class="fw-bold mb-0">Revenue by Department</h4>
-  <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
-</div>
 
-<form method="get" class="row g-2 mb-4 align-items-end">
-  <div class="col-auto">
-    <label class="form-label small fw-semibold">From</label>
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Revenue by Department</h4>
+    <p class="text-muted small mb-0">Service revenue breakdown by department/specialty for the selected period</p>
   </div>
-  <div class="col-auto">
-    <label class="form-label small fw-semibold">To</label>
-    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+  <div class="dropdown">
+    <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#" id="exportCsvBtn"><i class="bi bi-filetype-csv me-2 text-success"></i>CSV (.csv)</a></li>
+      <li><hr class="dropdown-divider"></li>
+      <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+    </ul>
   </div>
-  <div class="col-auto">
-    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
-  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To"   style="width:140px">
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:report_revenue_by_department' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var btn = document.getElementById('exportCsvBtn');
+  if(btn) btn.addEventListener('click', function(e){
+    e.preventDefault();
+    var p = new URLSearchParams(window.location.search); p.set('export','csv');
+    window.location.href = window.location.pathname + '?' + p.toString();
+  });
+});
+</script>
 
 <div class="row g-3 mb-4">
   <div class="col-md-4">
@@ -30,19 +49,38 @@
       </div>
     </div>
   </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Departments</div>
+        <div class="fs-4 fw-bold">{{ by_dept|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body">
+        <div class="text-muted small">Period</div>
+        <div class="fw-semibold small pt-1">{{ date_from }} &ndash; {{ date_to }}</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white fw-semibold"><i class="bi bi-building me-1"></i>Department Breakdown</div>
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-building me-1"></i>Department Breakdown &nbsp;&middot;&nbsp; {{ date_from }} to {{ date_to }}</span>
+    <span class="badge bg-secondary">{{ by_dept|length }} dept{{ by_dept|length|pluralize }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
-          <th>Department</th>
+          <th>Department / Category</th>
           <th class="text-end">Items</th>
           <th class="text-end">Revenue (XAF)</th>
           <th class="text-end">% of Total</th>
-          <th style="width:150px;"></th>
+          <th style="width:160px"></th>
         </tr>
       </thead>
       <tbody>
@@ -50,8 +88,8 @@
         <tr>
           <td class="fw-semibold">{{ row.category }}</td>
           <td class="text-end">{{ row.count }}</td>
-          <td class="text-end">{{ row.total|floatformat:0|intcomma }}</td>
-          <td class="text-end">{% if grand_total %}{% widthratio row.total grand_total 100 %}%{% else %}0%{% endif %}</td>
+          <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
+          <td class="text-end text-muted">{% if grand_total %}{% widthratio row.total grand_total 100 %}%{% else %}0%{% endif %}</td>
           <td>
             <div class="progress" style="height:8px;">
               <div class="progress-bar bg-success" style="width:{% if grand_total %}{% widthratio row.total grand_total 100 %}{% else %}0{% endif %}%"></div>
@@ -62,16 +100,42 @@
         <tr><td colspan="5" class="text-center text-muted py-3">No revenue in this period</td></tr>
         {% endfor %}
       </tbody>
-      <tfoot class="table-light">
+      <tfoot class="table-secondary fw-bold" style="border-top:3px solid #aaa">
         <tr>
-          <td class="fw-bold">Total</td>
-          <td></td>
-          <td class="text-end fw-bold">{{ grand_total|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end fw-bold">100%</td>
+          <td>Grand Total</td>
+          <td class="text-end">—</td>
+          <td class="text-end">{{ grand_total|floatformat:0|intcomma }} XAF</td>
+          <td class="text-end">100%</td>
           <td></td>
         </tr>
       </tfoot>
     </table>
   </div>
 </div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:55px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Revenue by Department &mdash; {{ date_from }} to {{ date_to }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  form, .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  #printHeader { display:block !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

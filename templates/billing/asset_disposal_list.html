@@ -1,128 +1,139 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Asset Disposals{% endblock %}
 
-
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Asset Disposals</h4>
+    <p class="text-muted small mb-0">Request, approve and record asset disposals &mdash; GL auto-posts on completion</p>
+  </div>
+  <a href="{% url 'billing:asset_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-archive me-1"></i>Asset Register
+  </a>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-trash3 me-2"></i>Asset Disposals</h4>
-    <small class="text-muted">Asset disposal requests and approvals</small>
-  </div>
-</div>
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:150px">
+    <option value="" {% if not status_filter %}selected{% endif %}>All Statuses</option>
+    <option value="REQUESTED" {% if status_filter == 'REQUESTED' %}selected{% endif %}>Requested</option>
+    <option value="APPROVED"  {% if status_filter == 'APPROVED'  %}selected{% endif %}>Approved</option>
+    <option value="COMPLETED" {% if status_filter == 'COMPLETED' %}selected{% endif %}>Completed</option>
+    <option value="REJECTED"  {% if status_filter == 'REJECTED'  %}selected{% endif %}>Rejected</option>
+  </select>
+  <select name="method" class="form-select form-select-sm" style="width:150px">
+    <option value="">All Methods</option>
+    <option value="SOLD"    {% if method_filter == 'SOLD'    %}selected{% endif %}>Sold</option>
+    <option value="DONATED" {% if method_filter == 'DONATED' %}selected{% endif %}>Donated</option>
+    <option value="SCRAPPED"{% if method_filter == 'SCRAPPED'%}selected{% endif %}>Scrapped</option>
+    <option value="LOST"    {% if method_filter == 'LOST'    %}selected{% endif %}>Lost/Stolen</option>
+  </select>
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'billing:asset_disposal_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
 
-<div class="card border-0 shadow-sm">
+{% if pending_count %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-clock-fill me-2"></i>
+  <strong>{{ pending_count }} disposal request{{ pending_count|pluralize }} awaiting approval.</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Asset Disposals
+      {% if status_filter %}&nbsp;&middot;&nbsp; {{ status_filter|title }}{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if pending_count %}<span class="badge bg-warning text-dark">{{ pending_count }} pending</span>{% endif %}
+      <span class="badge bg-secondary">{{ disposals|length }} record{{ disposals|length|pluralize }}</span>
+    </div>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
           <th>Asset Name</th>
-          <th>Asset #</th>
+          <th>Serial / Tag</th>
           <th>Method</th>
-          <th>Status</th>
-          <th class="text-end">Estimated Value</th>
-          <th class="text-end">Actual Proceeds</th>
+          <th class="text-center">Status</th>
+          <th class="text-end">Est. Value (XAF)</th>
+          <th class="text-end">Actual Proceeds (XAF)</th>
           <th>Requested By</th>
+          <th>Approved By</th>
           <th>Disposal Date</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for disposal in disposals %}
-        <tr>
+        <tr {% if disposal.status == 'REQUESTED' %}class="table-warning"{% elif disposal.status == 'REJECTED' %}class="text-muted"{% endif %}>
           <td class="fw-semibold">{{ disposal.asset.name }}</td>
-          <td class="text-muted">{{ disposal.asset.serial_number|default:"&mdash;" }}</td>
-          <td>
-            <span class="badge bg-secondary">{{ disposal.get_disposal_method_display }}</span>
+          <td><code class="text-muted small">{{ disposal.asset.serial_number|default:"&mdash;" }}</code></td>
+          <td><span class="badge bg-light text-dark border">{{ disposal.get_disposal_method_display }}</span></td>
+          <td class="text-center">
+            {% if disposal.status == 'REQUESTED' %}<span class="badge bg-warning text-dark">Requested</span>
+            {% elif disposal.status == 'APPROVED'  %}<span class="badge bg-info text-dark">Approved</span>
+            {% elif disposal.status == 'COMPLETED' %}<span class="badge bg-success">Completed</span>
+            {% elif disposal.status == 'REJECTED'  %}<span class="badge bg-danger">Rejected</span>
+            {% else %}<span class="badge bg-secondary">{{ disposal.get_status_display }}</span>{% endif %}
           </td>
-          <td>
-            {% if disposal.status == 'REQUESTED' %}
-            <span class="badge bg-warning text-dark">Requested</span>
-            {% elif disposal.status == 'APPROVED' %}
-            <span class="badge bg-info text-dark">Approved</span>
-            {% elif disposal.status == 'COMPLETED' %}
-            <span class="badge bg-success">Completed</span>
-            {% elif disposal.status == 'REJECTED' %}
-            <span class="badge bg-danger">Rejected</span>
-            {% else %}
-            <span class="badge bg-secondary">{{ disposal.get_status_display }}</span>
-            {% endif %}
+          <td class="text-end">{{ disposal.estimated_value|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold">
+            {% if disposal.actual_proceeds is not None %}{{ disposal.actual_proceeds|floatformat:0|intcomma }}
+            {% else %}<span class="text-muted">&mdash;</span>{% endif %}
           </td>
-          <td class="text-end">{{ disposal.estimated_value|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end">
-            {% if disposal.actual_proceeds is not None %}
-            {{ disposal.actual_proceeds|floatformat:0|intcomma }} XAF
-            {% else %}
-            <span class="text-muted">&mdash;</span>
-            {% endif %}
-          </td>
-          <td>{{ disposal.requested_by.get_full_name }}</td>
-          <td>{{ disposal.disposal_date|date:"d M Y"|default:"&mdash;" }}</td>
+          <td class="text-muted small">{{ disposal.requested_by.get_full_name }}</td>
+          <td class="text-muted small">{{ disposal.approved_by.get_full_name|default:"&mdash;" }}</td>
+          <td class="text-muted small">{{ disposal.disposal_date|date:"d M Y"|default:"&mdash;" }}</td>
           <td class="text-end">
             {% if disposal.status == 'REQUESTED' %}
             <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}" class="d-inline">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="approve">
+              {% csrf_token %}<input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
-                      onclick="return confirm('Approve this disposal?')">
-                <i class="bi bi-check-lg"></i> Approve
-              </button>
+                      onclick="return confirm('Approve this disposal?')"><i class="bi bi-check-lg"></i></button>
             </form>
             <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}" class="d-inline ms-1">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="reject">
+              {% csrf_token %}<input type="hidden" name="action" value="reject">
               <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"
-                      onclick="return confirm('Reject this disposal?')">
-                <i class="bi bi-x-lg"></i> Reject
-              </button>
+                      onclick="return confirm('Reject this disposal?')"><i class="bi bi-x-lg"></i></button>
             </form>
             {% elif disposal.status == 'APPROVED' %}
             <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
                     data-bs-toggle="modal" data-bs-target="#completeModal{{ disposal.pk }}">
               <i class="bi bi-check2-all me-1"></i>Complete
             </button>
-            {% else %}
-            <span class="text-muted">&mdash;</span>
-            {% endif %}
+            {% else %}<span class="text-muted">&mdash;</span>{% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr>
-          <td colspan="9" class="text-center py-4 text-muted">
-            No asset disposals recorded.
-          </td>
-        </tr>
+        <tr><td colspan="10" class="text-center py-4 text-muted">No asset disposals recorded.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-{# Complete disposal modals #}
 {% for disposal in disposals %}
 {% if disposal.status == 'APPROVED' %}
 <div class="modal fade" id="completeModal{{ disposal.pk }}" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title fw-bold">
-          <i class="bi bi-check2-all me-1"></i>Complete Disposal &mdash; {{ disposal.asset.name }}
-        </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h6 class="modal-title fw-bold"><i class="bi bi-check2-all me-1"></i>Complete Disposal &mdash; {{ disposal.asset.name }}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" action="{% url 'billing:asset_disposal_approve' disposal.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="complete">
+        {% csrf_token %}<input type="hidden" name="action" value="complete">
         <div class="modal-body">
-          <div class="mb-2 small">
-            <strong>Estimated Value:</strong> {{ disposal.estimated_value|floatformat:0|intcomma }} XAF
-          </div>
+          <div class="mb-2 small text-muted">Estimated Value: <strong class="text-dark">{{ disposal.estimated_value|floatformat:0|intcomma }} XAF</strong></div>
           <div class="mb-3">
-            <label for="id_actual_proceeds_{{ disposal.pk }}" class="form-label fw-semibold">Actual Proceeds (XAF)</label>
+            <label for="id_actual_{{ disposal.pk }}" class="form-label fw-semibold">Actual Proceeds (XAF) <span class="text-danger">*</span></label>
             <div class="input-group">
-              <input type="number" name="actual_proceeds" id="id_actual_proceeds_{{ disposal.pk }}"
+              <input type="number" name="actual_proceeds" id="id_actual_{{ disposal.pk }}"
                      class="form-control" min="0" step="1" required placeholder="0">
               <span class="input-group-text">XAF</span>
             </div>
@@ -130,9 +141,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-check2-all me-1"></i>Complete Disposal
-          </button>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2-all me-1"></i>Complete Disposal</button>
         </div>
       </form>
     </div>

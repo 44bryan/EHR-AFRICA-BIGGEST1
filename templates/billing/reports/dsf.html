@@ -1,19 +1,36 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize ehr_tags %}
+{% load humanize static ehr_tags %}
 {% block title %}DSF — Annual Tax Return {{ year }}{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
     <h4 class="fw-bold mb-0">Annual Statistical &amp; Tax Return (DSF)</h4>
-    <small class="text-muted">Fiscal Year {{ year }}</small>
+    <p class="text-muted small mb-0">
+      D&eacute;claration Statistique et Fiscale &mdash; Fiscal Year {{ year }} &mdash; OHADA SYCEBNL
+    </p>
   </div>
   <div class="d-flex gap-2 align-items-center">
-    <form method="get" class="d-flex gap-2">
-      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:100px;">
-      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Go</button>
+    <form method="get" class="d-flex gap-2 align-items-center mb-0">
+      <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}" style="width:90px;">
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Go</button>
     </form>
-    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+      </ul>
+    </div>
   </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-info d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-info-circle-fill me-2"></i>
+  <span>This report is auto-generated from the EHR accounting system. It must be reviewed by the Finance Director and Chartered Accountant before submission to the Tax Authority.</span>
 </div>
 
 <div class="row g-3 mb-4">
@@ -37,7 +54,10 @@
     <div class="card border-0 shadow-sm text-center">
       <div class="card-body">
         <div class="text-muted small">Net Result</div>
-        <div class="fs-4 fw-bold {% if net_result >= 0 %}text-success{% else %}text-danger{% endif %}">{{ net_result|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
+        <div class="fs-4 fw-bold {% if net_result >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ net_result|floatformat:0|intcomma }} <small class="text-muted">XAF</small>
+        </div>
+        <small class="text-muted">{% if net_result >= 0 %}Surplus{% else %}Deficit{% endif %}</small>
       </div>
     </div>
   </div>
@@ -46,7 +66,7 @@
       <div class="card-body">
         <div class="text-muted small">Depreciation Expense</div>
         <div class="fs-4 fw-bold text-info">{{ total_depreciation|floatformat:0|intcomma }} <small class="text-muted">XAF</small></div>
-        <div class="text-muted" style="font-size:.7rem;">{{ asset_count }} asset{{ asset_count|pluralize }}</div>
+        <small class="text-muted">{{ asset_count }} asset{{ asset_count|pluralize }}</small>
       </div>
     </div>
   </div>
@@ -54,47 +74,70 @@
 
 <div class="row g-3 mb-4">
   <div class="col-lg-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-receipt me-1"></i>Expenses by Category</div>
+    <div class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-receipt me-1"></i>Expenses by Category</span>
+        <span class="badge bg-secondary">{{ expenses|length }} categor{{ expenses|length|pluralize:"y,ies" }}</span>
+      </div>
       <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0 small">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
           <thead class="table-light">
-            <tr><th>Category</th><th class="text-end">Amount (XAF)</th></tr>
+            <tr>
+              <th>Category</th>
+              <th class="text-end">Amount (XAF)</th>
+            </tr>
           </thead>
           <tbody>
             {% for e in expenses %}
             <tr>
-              <td>{{ e.category }}</td>
-              <td class="text-end fw-semibold">{{ e.total|floatformat:0|intcomma }}</td>
+              <td class="fw-semibold">{{ e.category }}</td>
+              <td class="text-end">{{ e.total|floatformat:0|intcomma }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="2" class="text-center text-muted py-3">No expenses recorded</td></tr>
+            <tr><td colspan="2" class="text-center text-muted py-3">No expenses recorded for {{ year }}</td></tr>
             {% endfor %}
           </tbody>
-          <tfoot class="table-light">
-            <tr><td class="fw-bold">Total Expenses</td><td class="text-end fw-bold">{{ total_expense|floatformat:0|intcomma }} XAF</td></tr>
+          <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+            <tr>
+              <td>Total Expenses</td>
+              <td class="text-end">{{ total_expense|floatformat:0|intcomma }} XAF</td>
+            </tr>
           </tfoot>
         </table>
       </div>
     </div>
   </div>
   <div class="col-lg-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-journal-text me-1"></i>GL Summary by Account Class</div>
+    <div class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-journal-text me-1"></i>GL Summary by OHADA Class</span>
+        <span class="badge bg-secondary">{{ gl_summary|length }} class{{ gl_summary|length|pluralize:"es" }}</span>
+      </div>
       <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0 small">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
           <thead class="table-light">
-            <tr><th>Class</th><th class="text-end">Total Debit (XAF)</th><th class="text-end">Total Credit (XAF)</th></tr>
+            <tr>
+              <th>Account Class</th>
+              <th class="text-end text-danger">Total Debit (XAF)</th>
+              <th class="text-end text-success">Total Credit (XAF)</th>
+            </tr>
           </thead>
           <tbody>
             {% for row in gl_summary %}
             <tr>
               <td class="fw-semibold">
                 Class {{ row.acct_class }}
-                {% if row.acct_class == "1" %} — Equity &amp; Capital{% elif row.acct_class == "2" %} — Fixed Assets{% elif row.acct_class == "3" %} — Inventory / Stock{% elif row.acct_class == "4" %} — Third-Party Accounts{% elif row.acct_class == "5" %} — Cash &amp; Bank{% elif row.acct_class == "6" %} — Expenses{% elif row.acct_class == "7" %} — Revenue{% endif %}
+                {% if row.acct_class == "1" %} &mdash; Equity &amp; Capital
+                {% elif row.acct_class == "2" %} &mdash; Fixed Assets
+                {% elif row.acct_class == "3" %} &mdash; Inventory / Stock
+                {% elif row.acct_class == "4" %} &mdash; Third-Party Accounts
+                {% elif row.acct_class == "5" %} &mdash; Cash &amp; Bank
+                {% elif row.acct_class == "6" %} &mdash; Expenses
+                {% elif row.acct_class == "7" %} &mdash; Revenue
+                {% endif %}
               </td>
-              <td class="text-end">{{ row.total_dr|floatformat:0|intcomma|default:"0" }}</td>
-              <td class="text-end">{{ row.total_cr|floatformat:0|intcomma|default:"0" }}</td>
+              <td class="text-end text-danger">{{ row.total_dr|floatformat:0|intcomma|default:"0" }}</td>
+              <td class="text-end text-success">{{ row.total_cr|floatformat:0|intcomma|default:"0" }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="3" class="text-center text-muted py-3">No GL data for {{ year }}</td></tr>
@@ -106,29 +149,63 @@
   </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-white fw-semibold"><i class="bi bi-info-circle me-1"></i>Additional Information</div>
+<div class="card shadow-sm">
+  <div class="card-header py-2 fw-semibold small"><i class="bi bi-building me-1"></i>Entity Information</div>
   <div class="card-body small">
-    <div class="row">
-      <div class="col-md-4">
+    <div class="row g-3">
+      <div class="col-md-3">
         <div class="text-muted">Company Name</div>
         <div class="fw-semibold">AFRICA EYE FOUNDATION / MICEI</div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="text-muted">Fiscal Year</div>
-        <div class="fw-semibold">01/01/{{ year }} — 31/12/{{ year }}</div>
+        <div class="fw-semibold">01/01/{{ year }} &mdash; 31/12/{{ year }}</div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <div class="text-muted">Accounting Standard</div>
+        <div class="fw-semibold">OHADA SYCEBNL</div>
+      </div>
+      <div class="col-md-3">
         <div class="text-muted">Currency</div>
         <div class="fw-semibold">XAF (FCFA)</div>
       </div>
     </div>
-    <hr>
-    <p class="text-muted mb-0">
-      This report is automatically generated from the EHR accounting system data.
-      It must be reviewed by the Finance Director and Chartered Accountant before
-      submission to the Tax Authority.
-    </p>
   </div>
 </div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:55px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:9pt;font-weight:700;color:#1e3a5f;margin-top:2px">
+        D&Eacute;CLARATION STATISTIQUE ET FISCALE (DSF) &mdash; EXERCICE {{ year }}
+      </div>
+      <div style="font-size:8pt;color:#555">OHADA SYCEBNL &mdash; 01/01/{{ year }} to 31/12/{{ year }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">
+      Printed: {% now "d/m/Y H:i" %}<br>
+      Prepared by: {{ request.user.get_full_name }}
+    </div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  form, .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  #printHeader { display:block !important; }
+  .alert { display:none !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  tfoot td { color:#fff !important; }
+  .col-lg-6 { width:100% !important; float:none !important; margin-bottom:8pt; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+  .text-danger { color:#dc3545 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .text-success { color:#198754 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+}
+</style>
 {% endblock %}

@@ -1,63 +1,83 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Safe Balance Log{% endblock %}
 
-
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Safe Balance Log</h4>
+    <p class="text-muted small mb-0">Daily safe cash tracking &mdash; policy limit: 5,000,000 XAF</p>
+  </div>
+  <div class="d-flex gap-2">
+    <div class="dropdown">
+      <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print(); return false;"><i class="bi bi-printer me-2 text-secondary"></i>Print / PDF</a></li>
+      </ul>
+    </div>
+    <a href="{% url 'billing:safe_balance_record' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-circle me-1"></i>Record Balance
+    </a>
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-safe me-2"></i>Safe Balance Log</h4>
-    <small class="text-muted">Daily safe balance tracking and reconciliation</small>
-  </div>
-  <a href="{% url 'billing:safe_balance_record' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-circle me-1"></i>Record Balance
-  </a>
-</div>
-
 {% if balances and balances.0.closing_balance > 5000000 %}
-<div class="alert alert-danger d-flex align-items-center">
+<div class="alert alert-danger d-flex align-items-center py-2 mb-3">
   <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
-  <strong>WARNING:</strong>&nbsp;Safe balance exceeds 5,000,000 XAF policy limit!
+  <div>
+    <strong>Policy Breach!</strong> Latest safe balance
+    ({{ balances.0.closing_balance|floatformat:0|intcomma }} XAF)
+    exceeds the 5,000,000 XAF limit. Arrange an immediate bank deposit.
+  </div>
 </div>
 {% endif %}
 
-<div class="card border-0 shadow-sm">
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">Safe Balance &mdash; Last 90 Days</span>
+    <span class="badge bg-secondary">{{ balances|length }} entr{{ balances|length|pluralize:"y,ies" }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0 small">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
       <thead class="table-light">
         <tr>
           <th>Date</th>
-          <th class="text-end">Opening Balance</th>
-          <th class="text-end">Deposits</th>
-          <th class="text-end">Withdrawals</th>
-          <th class="text-end">Closing Balance</th>
+          <th class="text-end">Opening (XAF)</th>
+          <th class="text-end">Deposits (XAF)</th>
+          <th class="text-end">Withdrawals (XAF)</th>
+          <th class="text-end">Closing Balance (XAF)</th>
+          <th class="text-center">Status</th>
           <th>Counted By</th>
-          <th>Alert</th>
         </tr>
       </thead>
       <tbody>
         {% for bal in balances %}
-        <tr>
+        <tr {% if bal.exceeds_limit %}class="table-danger"{% endif %}>
           <td class="fw-semibold">{{ bal.date|date:"d M Y" }}</td>
-          <td class="text-end">{{ bal.opening_balance|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end text-success">{{ bal.total_deposits|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end text-danger">{{ bal.total_withdrawals|floatformat:0|intcomma }} XAF</td>
-          <td class="text-end fw-bold">{{ bal.closing_balance|floatformat:0|intcomma }} XAF</td>
-          <td>{{ bal.counted_by.get_full_name|default:"&mdash;" }}</td>
-          <td>
+          <td class="text-end">{{ bal.opening_balance|floatformat:0|intcomma }}</td>
+          <td class="text-end text-success fw-semibold">+{{ bal.total_deposits|floatformat:0|intcomma }}</td>
+          <td class="text-end text-danger fw-semibold">-{{ bal.total_withdrawals|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold {% if bal.exceeds_limit %}text-danger{% else %}text-dark{% endif %}">
+            {{ bal.closing_balance|floatformat:0|intcomma }}
+          </td>
+          <td class="text-center">
             {% if bal.exceeds_limit %}
             <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Over Limit</span>
             {% else %}
-            <span class="text-muted">&mdash;</span>
+            <span class="badge bg-success">Within Limit</span>
             {% endif %}
           </td>
+          <td class="text-muted">{{ bal.counted_by.get_full_name|default:"&mdash;" }}</td>
         </tr>
         {% empty %}
         <tr>
           <td colspan="7" class="text-center py-4 text-muted">
-            No safe balance records. <a href="{% url 'billing:safe_balance_record' %}">Record the first entry</a>.
+            No safe balance records.
+            <a href="{% url 'billing:safe_balance_record' %}">Record the first entry</a>.
           </td>
         </tr>
         {% endfor %}
@@ -65,4 +85,19 @@
     </table>
   </div>
 </div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .table-danger { background:#fce8e8 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .text-danger { color:#dc3545 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .text-success { color:#198754 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

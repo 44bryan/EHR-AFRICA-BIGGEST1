@@ -1,63 +1,91 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize ehr_tags %}
-
 {% block title %}Cheque Books{% endblock %}
 
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-journal-text me-2"></i>Cheque Books</h4>
-    <small class="text-muted">Track cheque book inventory and usage</small>
+    <h4 class="fw-bold mb-0">Cheque Books</h4>
+    <p class="text-muted small mb-0">Cheque book inventory per bank account</p>
   </div>
-  <a href="{% url 'billing:chequebook_create' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg me-1"></i>New Cheque Book
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:cheque_register' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-card-checklist me-1"></i>Cheque Register
+    </a>
+    <a href="{% url 'billing:chequebook_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Cheque Book
+    </a>
+  </div>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Bank</th>
-            <th>Series</th>
-            <th>Range</th>
-            <th>Current #</th>
-            <th>Used / Total</th>
-            <th class="text-center">Status</th>
-            <th>Received Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for book in books %}
-          <tr>
-            <td>{{ book.bank_account.bank_name }}</td>
-            <td><code>{{ book.series_prefix|default:"-" }}</code></td>
-            <td>{{ book.start_number }} &ndash; {{ book.end_number }}</td>
-            <td>{{ book.current_number|default:book.start_number }}</td>
-            <td>
-              {% with total=book.end_number|add:"-"|add:book.start_number|default:0 %}
-                {{ book.used_count|default:0 }} / {{ book.total_leaves|default:"-" }}
-              {% endwith %}
-            </td>
-            <td class="text-center">
-              {% if book.is_exhausted %}
-                <span class="badge bg-danger">Exhausted</span>
-              {% else %}
-                <span class="badge bg-success">Active</span>
-              {% endif %}
-            </td>
-            <td>{{ book.received_date|date:"d M Y" }}</td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="7" class="text-center text-muted py-4">No cheque books registered yet.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+{% block content %}
+{% if exhausted_count %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <strong>{{ exhausted_count }} cheque book{{ exhausted_count|pluralize }} exhausted</strong> &mdash; request replacements from the bank.
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">Cheque Book Inventory</span>
+    <div class="d-flex gap-2 align-items-center">
+      {% if exhausted_count %}<span class="badge bg-danger">{{ exhausted_count }} exhausted</span>{% endif %}
+      <span class="badge bg-secondary">{{ books|length }} book{{ books|length|pluralize }}</span>
     </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Bank Account</th>
+          <th>Series / Prefix</th>
+          <th>Number Range</th>
+          <th>Current #</th>
+          <th>Leaves Used</th>
+          <th class="text-center">Status</th>
+          <th>Received Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for book in books %}
+        <tr {% if book.is_exhausted %}class="text-muted"{% endif %}>
+          <td>
+            <span class="fw-semibold">{{ book.bank_account.bank_name }}</span>
+            <small class="text-muted d-block font-monospace">{{ book.bank_account.account_number }}</small>
+          </td>
+          <td><code class="text-dark">{{ book.series_prefix|default:"&mdash;" }}</code></td>
+          <td class="font-monospace small">{{ book.start_number }} &ndash; {{ book.end_number }}</td>
+          <td class="font-monospace fw-semibold">{{ book.current_number|default:book.start_number }}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="progress flex-grow-1" style="height:6px; min-width:60px;">
+                <div class="progress-bar {% if book.is_exhausted %}bg-danger{% else %}bg-success{% endif %}"
+                     style="width:{{ book.usage_pct|default:0 }}%"></div>
+              </div>
+              <small class="text-muted">{{ book.used_count|default:0 }} / {{ book.total_leaves|default:"?" }}</small>
+            </div>
+          </td>
+          <td class="text-center">
+            {% if book.is_exhausted %}
+            <span class="badge bg-danger">Exhausted</span>
+            {% else %}
+            <span class="badge bg-success">Active</span>
+            {% endif %}
+          </td>
+          <td>{{ book.received_date|date:"d M Y" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No cheque books registered.
+            <a href="{% url 'billing:chequebook_create' %}">Register one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}
