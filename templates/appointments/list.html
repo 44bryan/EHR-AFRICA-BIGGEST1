@@ -1,152 +1,148 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Appointments{% endblock %}
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1 flex-wrap gap-2">
   <div>
     <h4 class="fw-bold mb-0">Appointments</h4>
-    <div class="text-muted small">Today: {{ today|date:"l, d F Y" }}</div>
+    <p class="text-muted small mb-0">Today: {{ today|date:"l, d F Y" }}</p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    <a href="{% url 'appointments:clinic_board' %}" class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-display me-1"></i><span class="d-none d-sm-inline">Today's Board</span><span class="d-sm-none">Board</span>
+    <a href="{% url 'appointments:clinic_board' %}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-display me-1"></i>Today's Board
     </a>
-    <a href="{% url 'appointments:book' %}" class="btn btn-primary btn-sm">
-      <i class="bi bi-calendar-plus me-1"></i><span class="d-none d-sm-inline">Book Appointment</span><span class="d-sm-none">Book</span>
+    <a href="{% url 'appointments:schedules' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-calendar3 me-1"></i>Schedules
+    </a>
+    <a href="{% url 'appointments:book' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-calendar-plus me-1"></i>Book Appointment
     </a>
   </div>
 </div>
+{% endblock %}
 
-<!-- Today's Stats -->
+{% block content %}
+<!-- KPI cards -->
 <div class="row g-2 mb-3">
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
+    <div class="card border-0 shadow-sm text-center py-2">
       <div class="fw-bold fs-5 mb-0">{{ today_stats.total }}</div>
       <div class="text-muted" style="font-size:.68rem;">Total Today</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
+    <div class="card border-0 shadow-sm text-center py-2">
       <div class="fw-bold fs-5 mb-0">{{ today_stats.scheduled }}</div>
       <div class="text-muted" style="font-size:.68rem;">Scheduled</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
-      <div class="fw-bold fs-5 mb-0">{{ today_stats.confirmed }}</div>
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 mb-0 text-primary">{{ today_stats.confirmed }}</div>
       <div class="text-muted" style="font-size:.68rem;">Confirmed</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
-      <div class="fw-bold fs-5 mb-0">{{ today_stats.checked_in }}</div>
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 mb-0 text-warning">{{ today_stats.checked_in }}</div>
       <div class="text-muted" style="font-size:.68rem;">Checked In</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
-      <div class="fw-bold fs-5 mb-0">{{ today_stats.completed }}</div>
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 mb-0 text-success">{{ today_stats.completed }}</div>
       <div class="text-muted" style="font-size:.68rem;">Completed</div>
     </div>
   </div>
   <div class="col-6 col-md-2">
-    <div class="card border-0 shadow-sm text-center py-2 px-1 h-100">
-      <div class="fw-bold fs-5 mb-0">{{ today_stats.no_show }}</div>
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 mb-0 text-danger">{{ today_stats.no_show }}</div>
       <div class="text-muted" style="font-size:.68rem;">No Show</div>
     </div>
   </div>
 </div>
 
-<!-- Filters -->
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
-    <form method="get" class="row g-2">
-      <div class="col-md-3">
-        <input type="date" name="date" value="{{ date_filter }}" class="form-control form-control-sm">
-      </div>
-      <div class="col-md-3">
-        <select name="department" class="form-select form-select-sm">
-          <option value="">All Departments</option>
-          {% for dept in departments %}
-          <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <select name="status" class="form-select form-select-sm">
-          <option value="">All Statuses</option>
-          {% for code, label in status_choices %}
-          <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
-      </div>
-    </form>
+<!-- Flat filter bar -->
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <input type="date" name="date" value="{{ date_filter }}" class="form-control form-control-sm" style="width:145px;">
+  <select name="department" class="form-select form-select-sm" style="width:auto;">
+    <option value="">All Departments</option>
+    {% for dept in departments %}
+    <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" class="form-select form-select-sm" style="width:auto;">
+    <option value="">All Statuses</option>
+    {% for code, label in status_choices %}
+    <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'appointments:list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-calendar-check me-1"></i>Appointment List</span>
+    <span class="badge bg-secondary">{{ appointments|length }} result{{ appointments|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th class="d-none d-md-table-cell">#</th>
+          <th>Patient</th>
+          <th>Date &amp; Time</th>
+          <th class="d-none d-md-table-cell">Department</th>
+          <th class="d-none d-lg-table-cell">Doctor</th>
+          <th class="d-none d-lg-table-cell">Type</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appt in appointments %}
+        <tr>
+          <td class="text-muted small font-monospace d-none d-md-table-cell">{{ appt.appointment_number }}</td>
+          <td>
+            {% if appt.service_tier == 'VIP' %}<span class="badge me-1" style="background:#7c3aed;font-size:.6rem;"><i class="bi bi-gem"></i> VIP</span>{% endif %}
+            <div class="fw-semibold">{{ appt.patient.full_name }}</div>
+            <div class="text-muted small">{{ appt.patient.patient_id }}</div>
+          </td>
+          <td>
+            <div>{{ appt.appointment_date|date:"d M Y" }}</div>
+            <div class="text-muted small">{{ appt.appointment_time|time:"H:i" }}</div>
+          </td>
+          <td class="d-none d-md-table-cell text-muted small">{{ appt.department }}</td>
+          <td class="d-none d-lg-table-cell">{{ appt.doctor.full_name|default:"—" }}</td>
+          <td class="d-none d-lg-table-cell"><span class="badge bg-light text-dark border">{{ appt.get_appointment_type_display }}</span></td>
+          <td>
+            <span class="badge
+              {% if appt.status == 'SCHEDULED' %}bg-secondary
+              {% elif appt.status == 'CONFIRMED' %}bg-primary
+              {% elif appt.status == 'CHECKED_IN' %}bg-warning text-dark
+              {% elif appt.status == 'COMPLETED' %}bg-success
+              {% elif appt.status == 'CANCELLED' %}bg-dark
+              {% elif appt.status == 'NO_SHOW' %}bg-danger
+              {% endif %}">
+              {{ appt.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'appointments:detail' appt.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-x d-block mb-2" style="font-size:2rem;"></i>
+            No appointments found.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
-
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover mb-0 align-middle">
-        <thead class="table-light">
-          <tr>
-            <th class="d-none d-md-table-cell">#</th>
-            <th>Patient</th>
-            <th>Date &amp; Time</th>
-            <th class="d-none d-md-table-cell">Department</th>
-            <th class="d-none d-lg-table-cell">Doctor</th>
-            <th class="d-none d-lg-table-cell">Type</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for appt in appointments %}
-          <tr>
-            <td class="text-muted small d-none d-md-table-cell">{{ appt.appointment_number }}</td>
-            <td>
-              {% if appt.service_tier == 'VIP' %}<span class="badge me-1" style="background:#7c3aed; font-size:.65rem;"><i class="bi bi-gem"></i> VIP</span>{% endif %}
-              <div class="fw-semibold">{{ appt.patient.full_name }}</div>
-              <div class="text-muted small">{{ appt.patient.patient_id }}</div>
-            </td>
-            <td>
-              <div>{{ appt.appointment_date|date:"d M Y" }}</div>
-              <div class="text-muted small">{{ appt.appointment_time|time:"H:i" }}</div>
-            </td>
-            <td class="d-none d-md-table-cell">{{ appt.department }}</td>
-            <td class="d-none d-lg-table-cell">{{ appt.doctor.full_name|default:"—" }}</td>
-            <td class="d-none d-lg-table-cell"><span class="badge bg-light text-dark">{{ appt.get_appointment_type_display }}</span></td>
-            <td>
-              <span class="badge
-                {% if appt.status == 'SCHEDULED' %}bg-secondary
-                {% elif appt.status == 'CONFIRMED' %}bg-primary
-                {% elif appt.status == 'CHECKED_IN' %}bg-warning text-dark
-                {% elif appt.status == 'COMPLETED' %}bg-success
-                {% elif appt.status == 'CANCELLED' %}bg-dark
-                {% elif appt.status == 'NO_SHOW' %}bg-danger
-                {% endif %}">
-                {{ appt.get_status_display }}
-              </span>
-            </td>
-            <td>
-              <a href="{% url 'appointments:detail' appt.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
-            </td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="8" class="text-center text-muted py-5">
-              <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
-              <p class="mt-2 mb-0">No appointments found for this date.</p>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 {% endblock %}

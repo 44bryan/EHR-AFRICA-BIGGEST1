@@ -1,48 +1,77 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
 {% block title %}Purchase Orders{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="fw-bold mb-0">Purchase Orders</h4>
-  <a href="{% url 'procurement:po_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New PO</a>
-</div>
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2">
-    <form method="get" class="d-flex gap-2 align-items-center">
-      <select name="status" class="form-select form-select-sm" style="width:auto;">
-        <option value="">All Statuses</option>
-        {% for val, lbl in po_statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
-      </select>
-      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
-      <a href="{% url 'procurement:po_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
-    </form>
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Purchase Orders</h4>
+    <p class="text-muted small mb-0">Track orders sent to vendors and goods received</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'procurement:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-speedometer2 me-1"></i>Dashboard
+    </a>
+    <a href="{% url 'procurement:po_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New PO
+    </a>
   </div>
 </div>
-<div class="card border-0 shadow-sm">
+{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:auto;">
+    <option value="">All Statuses</option>
+    {% for val, lbl in po_statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'procurement:po_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-bag-check me-1"></i>Purchase Orders</span>
+    <span class="badge bg-secondary">{{ pos|length }} result{{ pos|length|pluralize }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-hover small mb-0">
-      <thead class="table-light"><tr>
-        <th>PO #</th><th>Vendor</th><th>PR #</th>
-        <th class="text-end">Total</th><th>Delivery</th><th>Status</th><th></th>
-      </tr></thead>
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>PO #</th>
+          <th>Vendor</th>
+          <th>PR #</th>
+          <th class="text-end">Total (XAF)</th>
+          <th>Expected Delivery</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
-      {% for po in pos %}
-      <tr>
-        <td><code class="small">{{ po.po_number }}</code></td>
-        <td class="fw-semibold">{{ po.vendor.name }}</td>
-        <td class="text-muted small">{{ po.purchase_request.pr_number|default:"—" }}</td>
-        <td class="text-end">{{ po.total_amount|floatformat:0|intcomma }} FCFA</td>
-        <td class="text-muted small">{{ po.expected_delivery_date|date:"d M Y"|default:"—" }}</td>
-        <td>
-          <span class="badge {% if po.status == 'RECEIVED' %}bg-success{% elif po.status == 'PARTIAL' %}bg-warning text-dark{% elif po.status == 'SENT' %}bg-primary{% elif po.status == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
-            {{ po.get_status_display }}
-          </span>
-        </td>
-        <td><a href="{% url 'procurement:po_detail' po_id=po.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="7" class="text-center text-muted py-4">No purchase orders yet</td></tr>
-      {% endfor %}
+        {% for po in pos %}
+        <tr {% if po.status == 'PARTIAL' %}class="table-warning"{% elif po.status == 'CANCELLED' %}class="text-muted"{% endif %}>
+          <td><code class="text-dark small">{{ po.po_number }}</code></td>
+          <td class="fw-semibold">{{ po.vendor.name }}</td>
+          <td class="text-muted small font-monospace">{{ po.purchase_request.pr_number|default:"—" }}</td>
+          <td class="text-end fw-semibold">{{ po.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-muted small">{{ po.expected_delivery_date|date:"d M Y"|default:"—" }}</td>
+          <td>
+            <span class="badge {% if po.status == 'RECEIVED' %}bg-success{% elif po.status == 'PARTIAL' %}bg-warning text-dark{% elif po.status == 'SENT' %}bg-primary{% elif po.status == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
+              {{ po.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'procurement:po_detail' po_id=po.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            <i class="bi bi-bag d-block mb-2 fs-3 opacity-50"></i>
+            No purchase orders yet.
+          </td>
+        </tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>

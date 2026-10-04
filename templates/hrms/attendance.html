@@ -1,6 +1,101 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load static humanize %}
 {% block title %}Attendance Register{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Attendance Register</h4>
+    <p class="text-muted small mb-0">{{ today|date:"l, d F Y" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'hrms:clock_in_out' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-clock me-1"></i>Clock In/Out
+    </a>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4"><h1 class="h3 mb-0">Attendance Register — {{ today|date:"d F Y" }}</h1></div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Staff</th><th>Clock In</th><th>Clock Out</th><th>Status</th><th>Notes</th></tr></thead><tbody>{% for rec in records %}<tr><td>{{ rec.staff.get_full_name }}</td><td>{{ rec.clock_in|default:"-" }}</td><td>{{ rec.clock_out|default:"-" }}</td><td><span class="badge {% if rec.status == 'PRESENT' %}bg-success{% elif rec.status == 'ABSENT' %}bg-danger{% elif rec.status == 'LATE' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ rec.get_status_display }}</span></td><td>{{ rec.notes|default:"-" }}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No attendance records for today</td></tr>{% endfor %}</tbody></table></div></div></div>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 text-success mb-0">{{ records|length }}</div>
+      <div class="text-muted" style="font-size:.7rem;">Records Today</div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-person-check me-1"></i>Daily Attendance &mdash; {{ today|date:"d M Y" }}</span>
+    <span class="badge bg-secondary">{{ records|length }} record{{ records|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Staff Member</th>
+          <th>Clock In</th>
+          <th>Clock Out</th>
+          <th>Status</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rec in records %}
+        <tr {% if rec.status == 'ABSENT' %}class="table-danger"{% elif rec.status == 'LATE' %}class="table-warning"{% endif %}>
+          <td class="fw-semibold">{{ rec.staff.get_full_name }}</td>
+          <td>{{ rec.clock_in|default:"—" }}</td>
+          <td>{{ rec.clock_out|default:"—" }}</td>
+          <td>
+            <span class="badge
+              {% if rec.status == 'PRESENT' %}bg-success
+              {% elif rec.status == 'ABSENT' %}bg-danger
+              {% elif rec.status == 'LATE' %}bg-warning text-dark
+              {% else %}bg-secondary{% endif %}">
+              {{ rec.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted small">{{ rec.notes|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-5">
+            <i class="bi bi-clock d-block mb-2 fs-2 opacity-50"></i>
+            No attendance records for today.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:50px;width:auto;">
+    <div style="flex:1">
+      <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Attendance Register &mdash; {{ today|date:"d M Y" }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  #printHeader { display:block !important; }
+  .card { box-shadow:none !important; border:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+  th, td { padding:2px 4px !important; }
+}
+</style>
 {% endblock %}

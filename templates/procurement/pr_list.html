@@ -1,52 +1,80 @@
 {% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
 {% block title %}Purchase Requests{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="fw-bold mb-0">Purchase Requests</h4>
-  <a href="{% url 'procurement:pr_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Request</a>
-</div>
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body py-2">
-    <form method="get" class="d-flex gap-2 align-items-center">
-      <select name="status" class="form-select form-select-sm" style="width:auto;">
-        <option value="">All Statuses</option>
-        {% for val, lbl in pr_statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
-      </select>
-      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
-      <a href="{% url 'procurement:pr_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
-    </form>
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Purchase Requests</h4>
+    <p class="text-muted small mb-0">Track and approve purchase requisitions</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'procurement:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-speedometer2 me-1"></i>Dashboard
+    </a>
+    <a href="{% url 'procurement:pr_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Request
+    </a>
   </div>
 </div>
-<div class="card border-0 shadow-sm">
+{% endblock %}
+
+{% block content %}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <select name="status" class="form-select form-select-sm" style="width:auto;">
+    <option value="">All Statuses</option>
+    {% for val, lbl in pr_statuses %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+  <a href="{% url 'procurement:pr_list' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-file-earmark-text me-1"></i>Purchase Requests</span>
+    <span class="badge bg-secondary">{{ prs|length }} result{{ prs|length|pluralize }}</span>
+  </div>
   <div class="table-responsive">
-    <table class="table table-hover small mb-0">
-      <thead class="table-light"><tr>
-        <th>PR #</th><th>Title</th><th>Category</th><th>Urgency</th>
-        <th class="text-end">Est. Total</th><th>Requested By</th><th>Status</th><th></th>
-      </tr></thead>
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>PR #</th>
+          <th>Title</th>
+          <th>Category</th>
+          <th>Urgency</th>
+          <th class="text-end">Est. Total (XAF)</th>
+          <th>Requested By</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
-      {% for pr in prs %}
-      <tr>
-        <td><code class="small">{{ pr.pr_number }}</code></td>
-        <td class="fw-semibold">{{ pr.title|truncatechars:45 }}</td>
-        <td class="text-muted small">{{ pr.get_category_display }}</td>
-        <td>
-          <span class="badge {% if pr.urgency == 'URGENT' %}bg-danger{% elif pr.urgency == 'NORMAL' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
-            {{ pr.urgency }}
-          </span>
-        </td>
-        <td class="text-end">{{ pr.estimated_total|floatformat:0 }} FCFA</td>
-        <td class="text-muted small">{{ pr.requested_by.get_full_name|default:"—" }}</td>
-        <td>
-          <span class="badge {% if pr.status == 'APPROVED' %}bg-success{% elif pr.status == 'PENDING' %}bg-warning text-dark{% elif pr.status == 'REJECTED' %}bg-danger{% elif pr.status == 'ORDERED' %}bg-primary{% elif pr.status == 'DRAFT' %}bg-light text-dark border{% else %}bg-secondary{% endif %}">
-            {{ pr.get_status_display }}
-          </span>
-        </td>
-        <td><a href="{% url 'procurement:pr_detail' pr_id=pr.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a></td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="8" class="text-center text-muted py-4">No purchase requests found</td></tr>
-      {% endfor %}
+        {% for pr in prs %}
+        <tr {% if pr.status == 'PENDING' %}class="table-warning"{% elif pr.status == 'REJECTED' %}class="table-danger"{% endif %}>
+          <td><code class="text-dark small">{{ pr.pr_number }}</code></td>
+          <td class="fw-semibold">{{ pr.title|truncatechars:45 }}</td>
+          <td class="text-muted small">{{ pr.get_category_display }}</td>
+          <td>
+            <span class="badge {% if pr.urgency == 'URGENT' %}bg-danger{% elif pr.urgency == 'NORMAL' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
+              {{ pr.urgency }}
+            </span>
+          </td>
+          <td class="text-end fw-semibold">{{ pr.estimated_total|floatformat:0|intcomma }}</td>
+          <td class="text-muted small">{{ pr.requested_by.get_full_name|default:"—" }}</td>
+          <td>
+            <span class="badge {% if pr.status == 'APPROVED' %}bg-success{% elif pr.status == 'PENDING' %}bg-warning text-dark{% elif pr.status == 'REJECTED' %}bg-danger{% elif pr.status == 'ORDERED' %}bg-primary{% elif pr.status == 'DRAFT' %}bg-light text-dark border{% else %}bg-secondary{% endif %}">
+              {{ pr.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'procurement:pr_detail' pr_id=pr.pk %}" class="btn btn-sm btn-outline-secondary py-0">View</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">No purchase requests found</td>
+        </tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>

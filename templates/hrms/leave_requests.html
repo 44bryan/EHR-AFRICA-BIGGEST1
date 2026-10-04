@@ -1,6 +1,73 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Leave Requests{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Leave Requests</h4>
+    <p class="text-muted small mb-0">All staff leave applications</p>
+  </div>
+  <a href="{% url 'hrms:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>HRMS
+  </a>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4"><h1 class="h3 mb-0">Leave Requests</h1></div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Staff</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Applied On</th><th></th></tr></thead><tbody>{% for leave in leaves %}<tr><td>{{ leave.staff.get_full_name }}</td><td>{{ leave.leave_type.name }}</td><td>{{ leave.start_date|date:"d M Y" }}</td><td>{{ leave.end_date|date:"d M Y" }}</td><td>{{ leave.days_requested }}</td><td><span class="badge {% if leave.status == 'PENDING' %}bg-warning text-dark{% elif leave.status == 'APPROVED' %}bg-success{% elif leave.status == 'REJECTED' %}bg-danger{% else %}bg-secondary{% endif %}">{{ leave.get_status_display }}</span></td><td>{{ leave.applied_on|date:"d M Y" }}</td><td>{% if leave.status == 'PENDING' %}<a href="{% url 'hrms:approve_leave' leave.id %}" class="btn btn-sm btn-outline-primary">Review</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="8" class="text-center text-muted py-4">No leave requests</td></tr>{% endfor %}</tbody></table></div></div></div>
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-calendar-x me-1"></i>Leave Applications</span>
+    <span class="badge bg-secondary">{{ leaves|length }} total</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Staff Member</th>
+          <th>Leave Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th class="text-center">Days</th>
+          <th>Status</th>
+          <th>Applied On</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave in leaves %}
+        <tr {% if leave.status == 'PENDING' %}class="table-warning"{% endif %}>
+          <td class="fw-semibold">{{ leave.staff.get_full_name }}</td>
+          <td>{{ leave.leave_type.name }}</td>
+          <td>{{ leave.start_date|date:"d M Y" }}</td>
+          <td>{{ leave.end_date|date:"d M Y" }}</td>
+          <td class="text-center fw-semibold">{{ leave.days_requested }}</td>
+          <td>
+            <span class="badge
+              {% if leave.status == 'PENDING' %}bg-warning text-dark
+              {% elif leave.status == 'APPROVED' %}bg-success
+              {% elif leave.status == 'REJECTED' %}bg-danger
+              {% else %}bg-secondary{% endif %}">
+              {{ leave.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted small">{{ leave.applied_on|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'hrms:approve_leave' leave.id %}"
+               class="btn btn-sm py-0 {% if leave.status == 'PENDING' %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">
+              {% if leave.status == 'PENDING' %}Review{% else %}View{% endif %}
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-check d-block mb-2 fs-2 text-success opacity-75"></i>
+            No leave requests — all clear!
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
