@@ -304,10 +304,13 @@ HOSPITAL_EMAIL = env('HOSPITAL_EMAIL', default='')
 HOSPITAL_WEBSITE = env('HOSPITAL_WEBSITE', default='')
 HOSPITAL_REG_NUMBER = env('HOSPITAL_REG_NUMBER', default='')
 
-# Session — use Redis-backed cached_db for near-zero latency on every request
-# (Redis = ~0.1ms lookup vs DB = ~5-10ms; DB is the write-through fallback)
-SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
-SESSION_CACHE_ALIAS = 'default'     # uses the Redis cache defined in CACHES
+# Session — use Redis-backed cached_db when Redis is available; fall back to db-only
+_redis_url_for_session = env('REDIS_URL', default='')
+if _redis_url_for_session:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+    SESSION_CACHE_ALIAS = 'default'
+else:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 43200          # 12 hours — covers full shift including overtime
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # tablet-safe: session persists up to SESSION_COOKIE_AGE
 SESSION_SAVE_EVERY_REQUEST = True   # reset the 12h clock on every page visit (inactivity-based expiry)
