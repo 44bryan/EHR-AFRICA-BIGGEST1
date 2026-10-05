@@ -1,71 +1,74 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
+{% load humanize static %}
 {% block title %}Depreciation Runs{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
   <div>
     <h4 class="fw-bold mb-0">Depreciation Runs</h4>
-    <small class="text-muted">Monthly asset depreciation (SYSCOHADA — straight-line)</small>
+    <p class="text-muted small mb-0">Monthly asset depreciation &mdash; OHADA SYCEBNL straight-line method</p>
   </div>
-  <a href="{% url 'billing:depreciation_run_create' %}" class="btn btn-primary btn-sm">
+  <a href="{% url 'billing:depreciation_run_create' %}" class="btn btn-sm btn-primary">
     <i class="bi bi-plus-lg me-1"></i>New Run
   </a>
 </div>
+{% endblock %}
 
-{% if messages %}
-  {% for msg in messages %}
-    <div class="alert alert-{{ msg.tags }} alert-dismissible fade show py-2" role="alert">
-      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-  {% endfor %}
-{% endif %}
-
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Period</th>
-            <th>Status</th>
-            <th class="text-end">Total Depreciation (FCFA)</th>
-            <th>GL Entry</th>
-            <th>Run By</th>
-            <th>Created</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for run in runs %}
-          <tr>
-            <td class="fw-semibold">{{ run.period_label }}</td>
-            <td>
-              {% if run.status == 'POSTED' %}
-                <span class="badge bg-success">Posted</span>
-              {% else %}
-                <span class="badge bg-warning text-dark">Draft</span>
-              {% endif %}
-            </td>
-            <td class="text-end fw-bold">{{ run.total_depreciation|floatformat:0|intcomma }}</td>
-            <td>
-              {% if run.journal_entry %}
-                <span class="badge bg-light text-dark border">{{ run.journal_entry.reference }}</span>
-              {% else %}—{% endif %}
-            </td>
-            <td>{{ run.run_by.get_full_name|default:run.run_by.username|default:"—" }}</td>
-            <td class="text-muted">{{ run.created_at|date:"d/m/Y" }}</td>
-            <td>
-              <a href="{% url 'billing:depreciation_run_detail' run_id=run.pk %}" class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-eye me-1"></i>Detail
-              </a>
-            </td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="7" class="text-center text-muted py-4">No depreciation runs yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small"><i class="bi bi-calendar-range me-1"></i>Depreciation History</span>
+    <span class="badge bg-secondary">{{ runs|length }} run{{ runs|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Period</th>
+          <th>Status</th>
+          <th class="text-end">Total Depreciation (XAF)</th>
+          <th>GL Entry</th>
+          <th>Run By</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr {% if run.status != 'POSTED' %}class="table-warning"{% endif %}>
+          <td class="fw-semibold">{{ run.period_label }}</td>
+          <td>
+            {% if run.status == 'POSTED' %}
+              <span class="badge bg-success">Posted</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Draft</span>
+            {% endif %}
+          </td>
+          <td class="text-end fw-semibold">{{ run.total_depreciation|floatformat:0|intcomma }}</td>
+          <td>
+            {% if run.journal_entry %}
+              <code class="text-dark small">{{ run.journal_entry.reference }}</code>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ run.run_by.get_full_name|default:run.run_by.username|default:"—" }}</td>
+          <td class="text-muted small">{{ run.created_at|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'billing:depreciation_run_detail' run_id=run.pk %}" class="btn btn-sm btn-outline-primary py-0">
+              <i class="bi bi-eye me-1"></i>Detail
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-x d-block mb-2 fs-2 opacity-50"></i>
+            No depreciation runs yet.
+            <a href="{% url 'billing:depreciation_run_create' %}">Run first depreciation.</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}

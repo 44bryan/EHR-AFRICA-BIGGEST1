@@ -2,29 +2,46 @@
 {% load humanize %}
 {% block title %}Sales Journal{% endblock %}
 
-{% block extra_css %}
-<style>
-  @media print {
-    .no-print { display: none !important; }
-    .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
-  }
-  .journal-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; }
-  .journal-table td { font-size: 0.82rem; vertical-align: middle; }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 no-print flex-wrap gap-2">
-  <h1 class="h3 mb-0">Sales Journal</h1>
+{% load static %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Sales Journal</h4>
+    <p class="text-muted small mb-0">All invoiced revenue for the selected period</p>
+  </div>
   <div class="d-flex gap-2">
-    <a href="{% url 'billing:export_sales_journal' %}?date_from={{ date_from_str }}&date_to={{ date_to_str }}&cashier={{ selected_cashier }}" class="btn btn-success btn-sm">
-      <i class="bi bi-download me-1"></i>Download CSV
+    <a href="{% url 'billing:export_sales_journal' %}?date_from={{ date_from_str }}&date_to={{ date_to_str }}&cashier={{ selected_cashier }}"
+       class="btn btn-sm btn-success">
+      <i class="bi bi-filetype-csv me-1"></i>CSV
     </a>
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-printer me-1"></i>Print
     </button>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .journal-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; }
+  .journal-table td { font-size: 0.82rem; vertical-align: middle; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm 8mm; }
+    body { font-size: 7pt !important; }
+    .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
+    #printHeader { display:block !important; }
+    .card { box-shadow:none !important; border:none !important; }
+    .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    tfoot td { color:#fff !important; }
+    table { font-size:7pt !important; }
+    th, td { padding:2px 3px !important; }
+    .row.g-3.mb-4 { display:none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
 
 {# ── Filters ── #}
 <div class="card border-0 shadow-sm mb-4 no-print">
@@ -189,6 +206,17 @@
       </tfoot>
       {% endif %}
     </table>
+  </div>
+</div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:50px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">Sales Journal &mdash; {{ date_from|date:"d M Y" }} to {{ date_to|date:"d M Y" }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
   </div>
 </div>
 {% endblock %}
