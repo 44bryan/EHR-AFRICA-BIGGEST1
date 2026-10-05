@@ -282,6 +282,11 @@ class Invoice(AuditModel):
         max_digits=10, decimal_places=2, default=0,
         help_text='Amount the insurer is expected to cover (set at billing time)'
     )
+    insurance_scheme = models.ForeignKey(
+        'hmo.InsuranceScheme', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoices',
+        help_text='Insurance company / payer scheme for this invoice'
+    )
     void_reason = models.ForeignKey(
         'billing.InvoiceVoidReason', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='voided_invoices',

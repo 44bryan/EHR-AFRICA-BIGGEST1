@@ -199,6 +199,9 @@ urlpatterns = [
     # Invoice Tier Rerouting
     path('invoice/<uuid:invoice_id>/reroute-tier/', views.invoice_reroute_tier, name='invoice_reroute_tier'),
 
+    # Change Service Type (Changement Type Prestation)
+    path('invoice/<uuid:invoice_id>/change-service-type/', views.invoice_change_service_type, name='invoice_change_service_type'),
+
     # Revenue by Desk Report
     path('reports/revenue-by-desk/', views.revenue_by_desk, name='revenue_by_desk'),
 

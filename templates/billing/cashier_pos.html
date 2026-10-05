@@ -427,6 +427,13 @@
       <i class="bi bi-arrow-left-right me-1"></i>Change Tier
     </button>
     {% endif %}
+    {% if invoice and invoice.status in 'DRAFT,ISSUED' %}
+    <button type="button" class="pat-badge border-0" style="cursor:pointer;background:#e0f2fe;color:#0369a1;"
+            data-bs-toggle="modal" data-bs-target="#changeServiceTypeModal"
+            title="Change billing / payment type (Changement Type Prestation)">
+      <i class="bi bi-tag me-1"></i>Change Billing Type
+    </button>
+    {% endif %}
     {% if not token %}
     <a href="{% url 'billing:invoice_create' %}" class="pat-badge" style="text-decoration:none;cursor:pointer;color:#94a3b8;"
        onclick="return confirm('Switch patient? Changes on this invoice are saved.');">
@@ -509,6 +516,91 @@
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-sm btn-warning fw-bold">
             <i class="bi bi-arrow-left-right me-1"></i>Confirm Tier Change
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Change Billing Type Modal (Changement Type Prestation) ──────────────── #}
+{% if invoice %}
+<div class="modal fade" id="changeServiceTypeModal" tabindex="-1" aria-labelledby="cstModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border:1px solid #dee2e6;">
+      <div class="modal-header" style="background:#e0f2fe;border-bottom:1px solid #bae6fd;">
+        <h6 class="modal-title fw-bold" id="cstModalLabel">
+          <i class="bi bi-tag me-2 text-primary"></i>Change Billing Type
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="cstForm">
+        {% csrf_token %}
+        <div class="modal-body" style="font-size:.84rem;">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">New Billing Type</label>
+            <select name="new_type" id="cstNewType" class="form-select form-select-sm" onchange="cstTypeChanged()" required>
+              {% for val, label in routing_choices %}
+              <option value="{{ val }}" {% if invoice.routing_type == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {# Insurance section — shown only when INSURANCE selected #}
+          <div id="cstInsSection" style="display:{% if invoice.routing_type == 'INSURANCE' %}block{% else %}none{% endif %};">
+            <div class="mb-2">
+              <label class="form-label fw-semibold">Insurance Company</label>
+              <select name="scheme_id" id="cstSchemeId" class="form-select form-select-sm">
+                <option value="">— Select insurer —</option>
+                {% for s in insurance_schemes %}
+                <option value="{{ s.pk }}"
+                  data-coverage="{{ s.coverage_pct }}"
+                  {% if invoice.insurance_scheme_id == s.pk %}selected{% endif %}>
+                  {{ s.name }}{% if s.coverage_pct %} ({{ s.coverage_pct|floatformat:0 }}% covered){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label fw-semibold">Coverage %</label>
+              <input type="number" name="coverage_pct" id="cstCoveragePct" class="form-control form-control-sm"
+                     min="0" max="100" step="5"
+                     value="{{ invoice.insurance_scheme.coverage_pct|default:'80'|floatformat:0 }}"
+                     placeholder="80">
+              <div class="form-text">Insurance pays this % of invoice total. Patient pays the rest.</div>
+            </div>
+          </div>
+
+          {# Corporate section — shown only when routing_type context warrants it #}
+          {% if corporate_accounts %}
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Corporate Account <span class="text-muted fw-normal">(optional)</span></label>
+            <select name="corporate_id" class="form-select form-select-sm">
+              <option value="">— None —</option>
+              {% for ca in corporate_accounts %}
+              <option value="{{ ca.pk }}" {% if invoice.corporate_account_id == ca.pk %}selected{% endif %}>
+                {{ ca.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+            <input type="text" name="reason" class="form-control form-control-sm" placeholder="e.g. Patient presented insurance card" required>
+          </div>
+
+          <div class="alert alert-info py-1 small mb-0">
+            <i class="bi bi-info-circle me-1"></i>Current type: <strong>{{ invoice.get_routing_type_display|default:"Standard Tier" }}</strong>
+            {% if invoice.insurance_scheme %} · {{ invoice.insurance_scheme.name }}{% endif %}
+          </div>
+        </div>
+        <div class="modal-footer" style="border-top:1px solid #dee2e6;gap:.5rem;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="submitChangeServiceType()">
+            <i class="bi bi-check-lg me-1"></i>Confirm Change
           </button>
         </div>
       </form>
@@ -1978,5 +2070,66 @@ function doDiscard() {
   window._discountWsConnected = {{ pending_discount|yesno:'true,false' }};
 })();
 {% endif %}
+
+// ── Change Billing Type (Changement Type Prestation) ─────────────────────────
+function cstTypeChanged() {
+  const sel = document.getElementById('cstNewType');
+  const insSection = document.getElementById('cstInsSection');
+  if (insSection) {
+    insSection.style.display = (sel && sel.value === 'INSURANCE') ? 'block' : 'none';
+  }
+  // Auto-fill coverage % from selected scheme
+  if (sel && sel.value === 'INSURANCE') {
+    const schemeEl = document.getElementById('cstSchemeId');
+    if (schemeEl) schemeEl.dispatchEvent(new Event('change'));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const schemeEl = document.getElementById('cstSchemeId');
+  if (schemeEl) {
+    schemeEl.addEventListener('change', function() {
+      const opt = this.options[this.selectedIndex];
+      const pct = opt ? opt.getAttribute('data-coverage') : '';
+      const pctEl = document.getElementById('cstCoveragePct');
+      if (pctEl && pct) pctEl.value = pct;
+    });
+  }
+});
+
+function submitChangeServiceType() {
+  if (!INV_ID) return;
+  const form = document.getElementById('cstForm');
+  const fd = new FormData(form);
+  // Validate reason
+  if (!fd.get('reason') || !fd.get('reason').trim()) {
+    toast('Reason is required.', 'danger'); return;
+  }
+  // Validate scheme when INSURANCE
+  if (fd.get('new_type') === 'INSURANCE' && !fd.get('scheme_id')) {
+    toast('Please select an insurance company.', 'danger'); return;
+  }
+  fetch(`/billing/invoice/${INV_ID}/change-service-type/`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { toast(data.error, 'danger'); return; }
+      toast('Billing type changed to: ' + data.new_type_display, 'success');
+      // Update displayed insurance info if applicable
+      if (data.insurance_amount > 0) {
+        const insAmtEl = document.getElementById('insAmt');
+        const patAmtEl = document.getElementById('patAmtDisplay');
+        if (insAmtEl) insAmtEl.value = data.insurance_amount;
+        if (patAmtEl) {
+          patAmtEl.textContent = 'Patient pays: ' + data.patient_amount.toLocaleString() + ' FCFA';
+          patAmtEl.style.display = 'inline';
+        }
+      }
+      // Close modal and reload after short delay
+      const modal = bootstrap.Modal.getInstance(document.getElementById('changeServiceTypeModal'));
+      if (modal) modal.hide();
+      setTimeout(() => location.reload(), 1200);
+    })
+    .catch(() => toast('Network error. Please try again.', 'danger'));
+}
 </script>
 {% endblock %}

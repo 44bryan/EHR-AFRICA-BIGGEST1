@@ -1303,6 +1303,14 @@ def cashier_pos(request, token_id):
             invoice=invoice, status=DiscountApprovalStatus.PENDING, is_deleted=False
         ).order_by('-created_at').first()
 
+    # Insurance schemes for "Change Billing Type" modal
+    from apps.hmo.models import InsuranceScheme
+    from .models import CorporateAccount as _CA, InvoiceRoutingType
+    _insurance_schemes = InsuranceScheme.objects.filter(is_active=True).order_by('name')
+
+    # Corporate accounts for "Change Billing Type" modal
+    _corporate_accounts = _CA.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -1334,7 +1342,10 @@ def cashier_pos(request, token_id):
         'tier_choices': _ST.choices,
         'wallet_balance': _wallet_balance,
         'pending_discount': _pending_discount,
-    })
+        'insurance_schemes': _insurance_schemes,
+        'corporate_accounts': _corporate_accounts,
+        'routing_choices': InvoiceRoutingType.choices,
+    })  # end cashier_pos
 
 
 @json_error_handler
@@ -4647,7 +4658,8 @@ def ar_aging_report(request):
 @login_required
 @require_POST
 def invoice_set_insurance(request, invoice_id):
-    """AJAX: Set the insurance coverage amount on an invoice."""
+    """AJAX: Set the insurance coverage amount (and optionally the scheme) on an invoice."""
+    from apps.hmo.models import InsuranceScheme
     invoice = get_object_or_404(Invoice, id=invoice_id, is_deleted=False)
     try:
         ins = Decimal(request.POST.get('insurance_amount', '0') or '0')
@@ -4666,11 +4678,22 @@ def invoice_set_insurance(request, invoice_id):
     if ins > invoice.total:
         ins = invoice.total
     invoice.insurance_amount = ins
-    invoice.save(update_fields=['insurance_amount', 'updated_at'])
+    # Optional: link to a specific insurance scheme
+    scheme_id = request.POST.get('scheme_id', '').strip()
+    save_fields = ['insurance_amount', 'updated_at']
+    if scheme_id:
+        try:
+            scheme = InsuranceScheme.objects.get(pk=scheme_id, is_active=True)
+            invoice.insurance_scheme = scheme
+            save_fields.append('insurance_scheme')
+        except InsuranceScheme.DoesNotExist:
+            pass
+    invoice.save(update_fields=save_fields)
     return JsonResponse({
         'success': True,
         'insurance_amount': int(ins),
         'patient_amount': int(invoice.patient_amount),
+        'scheme_name': invoice.insurance_scheme.name if invoice.insurance_scheme else '',
     })
 
 
@@ -7895,6 +7918,109 @@ def invoice_reroute_tier(request, invoice_id):
     invoice.save(update_fields=['service_tier', 'cash_desk', 'updated_at'])
 
     return JsonResponse({'success': True, 'new_tier': new_tier})
+
+
+# ── Change Service Type (Changement Type Prestation) ─────────────────────────
+
+@login_required
+@require_POST
+def invoice_change_service_type(request, invoice_id):
+    """
+    Cashier changes the billing/payment type on an invoice.
+    Covers: Cash → Insurance (with scheme + auto-amount), Cash → Corporate,
+            Insurance → Cash, etc.
+    Allowed roles: cashier, chief_cashier, accountant, senior_accountant, finance_director.
+    Only on DRAFT or ISSUED invoices.
+    """
+    from apps.hmo.models import InsuranceScheme
+    from .models import CorporateAccount, InvoiceRoutingType
+
+    u = request.user
+    allowed = (
+        u.is_cashier or u.is_chief_cashier or u.is_accountant
+        or u.is_senior_accountant or u.is_finance_director or u.is_super_admin
+    )
+    if not allowed:
+        return JsonResponse({'error': 'Access denied.'}, status=403)
+
+    invoice = get_object_or_404(Invoice, pk=invoice_id, is_deleted=False)
+    if invoice.status not in (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED):
+        return JsonResponse({'error': 'Can only change service type on DRAFT or ISSUED invoices.'}, status=400)
+
+    new_type      = request.POST.get('new_type', '').strip()
+    scheme_id     = request.POST.get('scheme_id', '').strip()
+    corporate_id  = request.POST.get('corporate_id', '').strip()
+    coverage_pct  = request.POST.get('coverage_pct', '').strip()
+    reason        = request.POST.get('reason', '').strip()
+
+    valid_types = [c[0] for c in InvoiceRoutingType.choices]
+    if new_type not in valid_types:
+        return JsonResponse({'error': f'Invalid type. Choose from: {", ".join(valid_types)}'}, status=400)
+    if not reason:
+        return JsonResponse({'error': 'Reason is required.'}, status=400)
+
+    update_fields = ['routing_type', 'updated_at']
+    old_type = invoice.routing_type
+
+    # Reset any previous insurance / corporate linkage
+    invoice.insurance_scheme = None
+    invoice.insurance_amount = Decimal('0')
+    invoice.corporate_account = None
+    update_fields += ['insurance_scheme', 'insurance_amount', 'corporate_account']
+
+    if new_type == InvoiceRoutingType.INSURANCE:
+        scheme = None
+        if scheme_id:
+            try:
+                scheme = InsuranceScheme.objects.get(pk=scheme_id, is_active=True)
+            except InsuranceScheme.DoesNotExist:
+                return JsonResponse({'error': 'Insurance scheme not found.'}, status=400)
+        invoice.insurance_scheme = scheme
+        # Auto-calculate insurance amount from coverage %
+        try:
+            pct = Decimal(coverage_pct) if coverage_pct else (scheme.coverage_pct if scheme else Decimal('80'))
+        except Exception:
+            pct = Decimal('80')
+        pct = max(Decimal('0'), min(Decimal('100'), pct))
+        if invoice.total > 0:
+            invoice.insurance_amount = (invoice.total * pct / Decimal('100')).quantize(Decimal('1'))
+
+    elif new_type == InvoiceRoutingType.TIER:
+        # Switching back to cash/tier — insurance already cleared above
+        pass
+
+    elif new_type == InvoiceRoutingType.PHARMACY or new_type == InvoiceRoutingType.OPTICAL:
+        pass  # Just a routing label change, no financial impact
+
+    # Corporate account linkage (works alongside any routing_type)
+    if corporate_id:
+        try:
+            corp = CorporateAccount.objects.get(pk=corporate_id, is_deleted=False, is_active=True)
+            invoice.corporate_account = corp
+        except CorporateAccount.DoesNotExist:
+            return JsonResponse({'error': 'Corporate account not found.'}, status=400)
+
+    invoice.routing_type = new_type
+    invoice.save(update_fields=update_fields)
+
+    # Append change note to invoice notes
+    from django.utils.timezone import localtime
+    note_line = (
+        f"[{localtime().strftime('%d/%m/%Y %H:%M')}] {u.get_full_name() or u.username} "
+        f"changed service type: {old_type or 'TIER'} → {new_type}. Reason: {reason}"
+    )
+    Invoice.objects.filter(pk=invoice.pk).update(
+        notes=invoice.notes + ('\n' if invoice.notes else '') + note_line
+    )
+
+    return JsonResponse({
+        'success': True,
+        'new_type': new_type,
+        'new_type_display': dict(InvoiceRoutingType.choices).get(new_type, new_type),
+        'insurance_amount': int(invoice.insurance_amount),
+        'patient_amount': int(invoice.patient_amount),
+        'scheme_name': invoice.insurance_scheme.name if invoice.insurance_scheme else '',
+    })
 
 
 # ── Discount Approval workflow ────────────────────────────────────────────────
