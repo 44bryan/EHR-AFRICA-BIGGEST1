@@ -1,13 +1,14 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% block title %}{% if vendor %}Edit Vendor{% else %}New Vendor{% endif %}{% endblock %}
 {% block page_header %}
-<div class="mb-3">
-  <a href="{% url 'billing:ap_vendor_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
-    Vendors
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">{% if vendor %}Edit Vendor — {{ vendor.name }}{% else %}Add New Vendor{% endif %}</h4>
+    <p class="text-muted small mb-0">{% if vendor %}{{ vendor.vendor_code }}{% else %}Accounts Payable — supplier directory{% endif %}</p>
+  </div>
+  <a href="{% url 'billing:ap_vendor_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Vendors
   </a>
-  <h4 class="fw-bold mb-0">
-    {% if vendor %}Edit Vendor — {{ vendor.name }}{% else %}Add New Vendor{% endif %}
-  </h4>
 </div>
 {% endblock %}
 {% block content %}
@@ -26,8 +27,8 @@
                      placeholder="e.g. PharmaCo Cameroun SARL">
             </div>
             <div class="col-md-4">
-              <label class="form-label fw-semibold">Tax / NINEA Number</label>
-              <input type="text" name="tax_number" class="form-control" value="{{ vendor.tax_number|default:'' }}"
+              <label class="form-label fw-semibold">Tax / NIU Number</label>
+              <input type="text" name="tax_id" class="form-control" value="{{ vendor.tax_id|default:'' }}"
                      placeholder="Optional">
             </div>
             <div class="col-md-6">
@@ -37,7 +38,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">Phone</label>
-              <input type="text" name="contact_phone" class="form-control" value="{{ vendor.contact_phone|default:'' }}"
+              <input type="text" name="phone" class="form-control" value="{{ vendor.phone|default:'' }}"
                      placeholder="+237 6XX XXX XXX">
             </div>
             <div class="col-md-6">
@@ -46,13 +47,12 @@
                      placeholder="vendor@example.cm">
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Payment Terms</label>
-              <select name="payment_terms" class="form-select">
-                <option value="NET30" {% if vendor.payment_terms == 'NET30' %}selected{% endif %}>Net 30 days</option>
-                <option value="NET60" {% if vendor.payment_terms == 'NET60' %}selected{% endif %}>Net 60 days</option>
-                <option value="NET90" {% if vendor.payment_terms == 'NET90' %}selected{% endif %}>Net 90 days</option>
-                <option value="IMMEDIATE" {% if vendor.payment_terms == 'IMMEDIATE' %}selected{% endif %}>Immediate</option>
-                <option value="COD" {% if vendor.payment_terms == 'COD' %}selected{% endif %}>Cash on Delivery</option>
+              <label class="form-label fw-semibold">Payment Terms (days)</label>
+              <select name="payment_terms_days" class="form-select">
+                <option value="0" {% if vendor.payment_terms_days == 0 %}selected{% endif %}>Immediate (COD)</option>
+                <option value="30" {% if not vendor or vendor.payment_terms_days == 30 %}selected{% endif %}>Net 30 days</option>
+                <option value="60" {% if vendor.payment_terms_days == 60 %}selected{% endif %}>Net 60 days</option>
+                <option value="90" {% if vendor.payment_terms_days == 90 %}selected{% endif %}>Net 90 days</option>
               </select>
             </div>
             <div class="col-12">
@@ -75,18 +75,8 @@
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">Account Number</label>
-              <input type="text" name="bank_account_number" class="form-control"
-                     value="{{ vendor.bank_account_number|default:'' }}" placeholder="Bank account number">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Account Name</label>
-              <input type="text" name="bank_account_name" class="form-control"
-                     value="{{ vendor.bank_account_name|default:'' }}" placeholder="Account holder name">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">IBAN / SWIFT</label>
-              <input type="text" name="iban" class="form-control" value="{{ vendor.iban|default:'' }}"
-                     placeholder="Optional for international payments">
+              <input type="text" name="bank_account" class="form-control"
+                     value="{{ vendor.bank_account|default:'' }}" placeholder="Bank account number">
             </div>
           </div>
         </div>
@@ -127,7 +117,9 @@
           <dt class="col-6 text-muted">Outstanding</dt>
           <dd class="col-6 fw-bold text-danger">{{ vendor.outstanding_balance|floatformat:0 }} XAF</dd>
           <dt class="col-6 text-muted">Open Bills</dt>
-          <dd class="col-6">{{ vendor.apbill_set.count }}</dd>
+          <dd class="col-6">{{ vendor.bills.count }}</dd>
+          <dt class="col-6 text-muted">Terms</dt>
+          <dd class="col-6">{{ vendor.payment_terms_days }} days</dd>
         </dl>
         <a href="{% url 'billing:ap_bill_list' %}?vendor={{ vendor.pk }}"
            class="btn btn-sm btn-outline-primary w-100 mt-3">

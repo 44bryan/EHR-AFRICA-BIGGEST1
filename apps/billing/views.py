@@ -7162,9 +7162,22 @@ def ap_vendor_list(request):
     vendors = APVendor.objects.filter(is_deleted=False).order_by('name')
     if request.GET.get('q'):
         vendors = vendors.filter(Q(name__icontains=request.GET.get('q', '')) | Q(vendor_code__icontains=request.GET.get('q', '')))
+    from django.db.models import Sum as _S
+    today = timezone.localdate()
+    total_outstanding = APBill.objects.filter(is_deleted=False).exclude(
+        status=APBillStatus.PAID
+    ).aggregate(t=_S('amount_due'))['t'] or 0
+    overdue_count = APBill.objects.filter(
+        is_deleted=False, due_date__lt=today,
+        status__in=[APBillStatus.DRAFT, APBillStatus.PARTIALLY_PAID],
+    ).count()
+    active_vendors = APVendor.objects.filter(is_deleted=False, is_active=True).count()
     return render(request, 'billing/ap_vendor_list.html', {
         'vendors': vendors,
         'total_vendors': vendors.count(),
+        'total_outstanding': total_outstanding,
+        'overdue_count': overdue_count,
+        'active_vendors': active_vendors,
     })
 
 

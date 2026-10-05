@@ -1,0 +1,157 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize static %}
+{% block title %}CNPS Declaration — {{ run }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">CNPS Monthly Declaration</h4>
+    <p class="text-muted small mb-0">{{ run.period_label }} &mdash; {{ slips|length }} employee{{ slips|length|pluralize }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'payroll:run_detail' run_id=run.pk %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  @media print {
+    @page { size: A4 landscape; margin: 10mm 8mm; }
+    body { font-size: 7pt !important; }
+    .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+    #printHeader { display:block !important; }
+    .card { box-shadow:none !important; border:none !important; }
+    tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    tfoot td { color:#fff !important; }
+    table { font-size:7pt !important; }
+    th, td { padding:2px 4px !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2">
+    <div class="row g-3 small">
+      <div class="col-md-3"><span class="text-muted">Employer:</span> <strong>{{ hconfig.hospital_name }}</strong></div>
+      <div class="col-md-2"><span class="text-muted">Period:</span> <strong>{{ run.period_label }}</strong></div>
+      <div class="col-md-2"><span class="text-muted">Emp Rate:</span> <strong>{{ cnps_emp_rate }}%</strong></div>
+      <div class="col-md-2"><span class="text-muted">Empl Rate:</span> <strong>{{ cnps_empl_rate }}%</strong></div>
+      <div class="col-md-3"><span class="text-muted">Monthly ceiling:</span> <strong>{{ cnps_cap|floatformat:0|intcomma }} FCFA</strong></div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold small"><i class="bi bi-people me-1"></i>Employee Contributions</span>
+    <span class="badge bg-secondary">{{ slips|length }} employee{{ slips|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Employee</th>
+          <th>CNPS No.</th>
+          <th class="text-end">Gross Salary</th>
+          <th class="text-end">CNPS Base (capped)</th>
+          <th class="text-end">Employee ({{ cnps_emp_rate }}%)</th>
+          <th class="text-end">Employer ({{ cnps_empl_rate }}%)</th>
+          <th class="text-end">Total to CNPS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for slip in slips %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td>
+            <div class="fw-semibold">{{ slip.staff.get_full_name|default:slip.staff.username }}</div>
+            <div class="text-muted" style="font-size:.7rem;">{{ slip.staff.get_role_display }}</div>
+          </td>
+          <td class="text-muted font-monospace small">{{ slip.staff.cnps_number|default:"—" }}</td>
+          <td class="text-end">{{ slip.gross_pay|floatformat:0|intcomma }}</td>
+          <td class="text-end text-muted">
+            {% if slip.gross_pay > cnps_cap %}{{ cnps_cap|floatformat:0|intcomma }}{% else %}{{ slip.gross_pay|floatformat:0|intcomma }}{% endif %}
+          </td>
+          <td class="text-end fw-semibold text-primary">{{ slip.cnps_employee|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold text-warning">{{ slip.cnps_employer|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-bold">
+            {% with total=slip.cnps_employee|add:slip.cnps_employer %}
+            {{ total|floatformat:0|intcomma }}
+            {% endwith %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No payslips in this run.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-secondary fw-bold">
+        <tr>
+          <td colspan="3">TOTAL ({{ slips|length }} employees)</td>
+          <td class="text-end">{{ totals.gross|floatformat:0|intcomma }}</td>
+          <td></td>
+          <td class="text-end text-primary">{{ totals.emp|floatformat:0|intcomma }}</td>
+          <td class="text-end text-warning">{{ totals.empl|floatformat:0|intcomma }}</td>
+          <td class="text-end">
+            {% with grand=totals.emp|add:totals.empl %}
+            {{ grand|floatformat:0|intcomma }} FCFA
+            {% endwith %}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body small">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="fw-semibold mb-2">Payment Summary</div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr>
+            <td class="text-muted">Employee contributions</td>
+            <td class="text-end fw-bold text-primary">{{ totals.emp|floatformat:0|intcomma }} FCFA</td>
+          </tr>
+          <tr>
+            <td class="text-muted">Employer contributions</td>
+            <td class="text-end fw-bold text-warning">{{ totals.empl|floatformat:0|intcomma }} FCFA</td>
+          </tr>
+          <tr class="border-top">
+            <td class="fw-bold">Total payable to CNPS</td>
+            <td class="text-end fw-bold fs-6">
+              {% with t=totals.emp|add:totals.empl %}{{ t|floatformat:0|intcomma }}{% endwith %} FCFA
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="col-md-4 offset-md-4 text-end">
+        <div class="fw-semibold mb-3">Authorized Signature</div>
+        <div style="border-top:1px solid #888;margin-top:40px;padding-top:4px;font-size:.7rem;color:#666;">
+          Finance Director / Admin Director
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:50px;width:auto;flex-shrink:0;">
+    <div style="flex:1">
+      <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8pt;color:#555">CNPS Monthly Declaration &mdash; {{ run.period_label }}</div>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+  </div>
+</div>
+
+{% endblock %}
