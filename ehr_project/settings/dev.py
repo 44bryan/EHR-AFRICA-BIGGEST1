@@ -10,7 +10,7 @@ try:
 except ImportError:
     pass
 
-# Use file-based cache in dev if Redis not running
+# Use file-based cache in dev — no Redis required
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
@@ -18,7 +18,11 @@ CACHES = {
     }
 }
 
+# Force DB-only sessions in dev — no Redis, no cached_db
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+
 # Celery — run tasks eagerly in dev (no Redis needed)
+CELERY_BROKER_URL = 'memory://'
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
