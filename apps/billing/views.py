@@ -6253,6 +6253,9 @@ def journal_entry_list(request):
     # Pending counts for workflow badges
     draft_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.DRAFT).count()
     reviewed_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.REVIEWED).count()
+    totals = JournalLine.objects.filter(entry__in=qs, entry__is_deleted=False).aggregate(
+        grand_dr=Sum('debit_amount'), grand_cr=Sum('credit_amount')
+    )
     return render(request, 'billing/journal_entry_list.html', {
         'entries': qs[:200],
         'total': qs.count(),
@@ -6264,6 +6267,8 @@ def journal_entry_list(request):
         'status_choices': JournalEntryStatus.choices,
         'draft_count': draft_count,
         'reviewed_count': reviewed_count,
+        'grand_dr': totals['grand_dr'] or 0,
+        'grand_cr': totals['grand_cr'] or 0,
     })
 
 
@@ -9558,6 +9563,7 @@ def report_monthly_summary(request):
 
     net_position = revenue - total_expense - ap_paid
 
+    from .models import PaymentMethod, ExpenseCategory
     return render(request, 'billing/reports/monthly_summary.html', {
         'year': year, 'month': month,
         'month_name': calendar.month_name[month],
@@ -9571,6 +9577,8 @@ def report_monthly_summary(request):
         'invoices_paid': invoices_paid,
         'ap_paid': ap_paid,
         'net_position': net_position,
+        'method_labels': dict(PaymentMethod.choices),
+        'cat_labels': dict(ExpenseCategory.choices),
     })
 
 
