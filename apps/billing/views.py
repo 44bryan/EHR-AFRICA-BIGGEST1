@@ -6480,6 +6480,185 @@ def cost_center_edit(request, center_id):
     })
 
 
+# ── Journal Types ─────────────────────────────────────────────────────────────
+
+@login_required
+def journal_type_list(request):
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    from .models import JournalType
+    types = JournalType.objects.filter(is_deleted=False).order_by('code')
+    return render(request, 'billing/journal_type_list.html', {'types': types})
+
+
+@login_required
+def journal_type_create(request):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    from .models import JournalType
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip().upper()
+        name = request.POST.get('name', '').strip()
+        if not code or not name:
+            messages.error(request, 'Code and Name are required.')
+        elif JournalType.objects.filter(code=code).exists():
+            messages.error(request, f'Journal type {code} already exists.')
+        else:
+            JournalType.objects.create(
+                code=code, name=name,
+                description=request.POST.get('description', '').strip(),
+                created_by=request.user,
+            )
+            messages.success(request, f'Journal type {code} — {name} created.')
+            return redirect('billing:journal_type_list')
+    return render(request, 'billing/journal_type_form.html', {'action': 'Create Journal Type'})
+
+
+@login_required
+def journal_type_edit(request, jt_id):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    from .models import JournalType
+    jt = get_object_or_404(JournalType, pk=jt_id, is_deleted=False)
+    if request.method == 'POST':
+        jt.name = request.POST.get('name', jt.name).strip()
+        jt.description = request.POST.get('description', '').strip()
+        jt.is_active = request.POST.get('is_active') == 'on'
+        jt.save(update_fields=['name', 'description', 'is_active', 'updated_at'])
+        messages.success(request, f'Journal type {jt.code} updated.')
+        return redirect('billing:journal_type_list')
+    return render(request, 'billing/journal_type_form.html', {'jtype': jt, 'action': 'Edit Journal Type'})
+
+
+# ── Stock Operation Types ─────────────────────────────────────────────────────
+
+@login_required
+def stock_operation_type_list(request):
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    from .models import StockOperationType
+    types = StockOperationType.objects.filter(is_deleted=False).select_related(
+        'debit_account', 'credit_account'
+    ).order_by('category', 'code')
+    return render(request, 'billing/stock_operation_type_list.html', {'types': types})
+
+
+@login_required
+def stock_operation_type_create(request):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    from .models import StockOperationType, StockOperationCategory
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip().upper()
+        name = request.POST.get('name', '').strip()
+        category = request.POST.get('category', '')
+        debit_id = request.POST.get('debit_account')
+        credit_id = request.POST.get('credit_account')
+        if not code or not name or not category or not debit_id or not credit_id:
+            messages.error(request, 'All fields are required.')
+        elif StockOperationType.objects.filter(code=code).exists():
+            messages.error(request, f'Operation type {code} already exists.')
+        else:
+            StockOperationType.objects.create(
+                code=code, name=name, category=category,
+                debit_account_id=debit_id, credit_account_id=credit_id,
+                description=request.POST.get('description', '').strip(),
+                created_by=request.user,
+            )
+            messages.success(request, f'Stock operation type {code} — {name} created.')
+            return redirect('billing:stock_operation_type_list')
+    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    return render(request, 'billing/stock_operation_type_form.html', {
+        'action': 'Create Stock Operation Type',
+        'categories': StockOperationCategory.choices,
+        'accounts': accounts,
+    })
+
+
+@login_required
+def stock_operation_type_edit(request, sot_id):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    from .models import StockOperationType, StockOperationCategory
+    sot = get_object_or_404(StockOperationType, pk=sot_id, is_deleted=False)
+    if request.method == 'POST':
+        sot.name = request.POST.get('name', sot.name).strip()
+        sot.category = request.POST.get('category', sot.category)
+        sot.debit_account_id = request.POST.get('debit_account', sot.debit_account_id)
+        sot.credit_account_id = request.POST.get('credit_account', sot.credit_account_id)
+        sot.description = request.POST.get('description', '').strip()
+        sot.is_active = request.POST.get('is_active') == 'on'
+        sot.save(update_fields=['name', 'category', 'debit_account', 'credit_account',
+                                'description', 'is_active', 'updated_at'])
+        messages.success(request, f'Operation type {sot.code} updated.')
+        return redirect('billing:stock_operation_type_list')
+    accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    return render(request, 'billing/stock_operation_type_form.html', {
+        'sot': sot, 'action': 'Edit Stock Operation Type',
+        'categories': StockOperationCategory.choices,
+        'accounts': accounts,
+    })
+
+
+# ── Cost Center P&L Report ───────────────────────────────────────────────────
+
+@login_required
+def cost_center_pl_report(request):
+    """Departmental P&L — revenue vs expenses per cost center."""
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    from django.db.models import Sum, Q as _Q
+
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_to = request.GET.get('date_to') or str(today)
+
+    centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+
+    rows = []
+    grand_revenue = Decimal('0')
+    grand_expense = Decimal('0')
+
+    for cc in centers:
+        # Revenue: Class 7 accounts
+        rev_data = JournalLine.objects.filter(
+            entry__is_deleted=False, entry__is_posted=True,
+            entry__cost_center=cc,
+            entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+            account__code__startswith='7',
+        ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+        revenue = (rev_data['cr'] or Decimal('0')) - (rev_data['dr'] or Decimal('0'))
+
+        # Expenses: Class 6 accounts
+        exp_data = JournalLine.objects.filter(
+            entry__is_deleted=False, entry__is_posted=True,
+            entry__cost_center=cc,
+            entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
+            account__code__startswith='6',
+        ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+        expense = (exp_data['dr'] or Decimal('0')) - (exp_data['cr'] or Decimal('0'))
+
+        margin = revenue - expense
+        rows.append({
+            'center': cc,
+            'revenue': revenue,
+            'expense': expense,
+            'margin': margin,
+            'margin_pct': (margin / revenue * 100) if revenue else Decimal('0'),
+        })
+        grand_revenue += revenue
+        grand_expense += expense
+
+    return render(request, 'billing/cost_center_pl_report.html', {
+        'rows': rows,
+        'date_from': date_from,
+        'date_to': date_to,
+        'grand_revenue': grand_revenue,
+        'grand_expense': grand_expense,
+        'grand_margin': grand_revenue - grand_expense,
+    })
+
+
 # ── General Ledger Report ─────────────────────────────────────────────────────
 
 @login_required

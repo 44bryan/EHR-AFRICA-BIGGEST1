@@ -1,0 +1,100 @@
+{% extends 'base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Cost Center P&L{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0 fw-bold"><i class="bi bi-building me-2"></i>Cost Center P&L (Compte de Resultat par Centre)</h5>
+    <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Chart of Accounts
+    </a>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label small mb-0">From</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small mb-0">To</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr>
+            <th>Code</th>
+            <th>Cost Center</th>
+            <th class="text-end">Revenue (Cl. 7)</th>
+            <th class="text-end">Expenses (Cl. 6)</th>
+            <th class="text-end">Margin</th>
+            <th class="text-end">Margin %</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><strong>{{ r.center.code }}</strong></td>
+            <td>{{ r.center.name }}</td>
+            <td class="text-end {% if r.revenue %}text-success{% endif %}">{{ r.revenue|intcomma }}</td>
+            <td class="text-end {% if r.expense %}text-danger{% endif %}">{{ r.expense|intcomma }}</td>
+            <td class="text-end fw-bold {% if r.margin >= 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ r.margin|intcomma }}
+            </td>
+            <td class="text-end">
+              {% if r.margin_pct > 0 %}
+                <span class="badge bg-success">{{ r.margin_pct|floatformat:1 }}%</span>
+              {% elif r.margin_pct < 0 %}
+                <span class="badge bg-danger">{{ r.margin_pct|floatformat:1 }}%</span>
+              {% else %}
+                <span class="badge bg-secondary">0%</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No cost centers with posted entries in this period.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if rows %}
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td colspan="2">TOTAL</td>
+            <td class="text-end text-success">{{ grand_revenue|intcomma }}</td>
+            <td class="text-end text-danger">{{ grand_expense|intcomma }}</td>
+            <td class="text-end {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ grand_margin|intcomma }}
+            </td>
+            <td class="text-end">
+              {% if grand_revenue %}
+                {% widthratio grand_margin grand_revenue 100 as pct %}
+                {{ pct }}%
+              {% else %}
+                0%
+              {% endif %}
+            </td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mt-3">
+    <div class="card-body small text-muted">
+      <strong>How it works:</strong> Revenue = net credit balance on Class 7 accounts per cost center.
+      Expenses = net debit balance on Class 6 accounts per cost center.
+      Margin = Revenue - Expenses. Only posted journal entries within the selected date range are included.
+    </div>
+  </div>
+</div>
+{% endblock %}

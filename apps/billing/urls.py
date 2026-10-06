@@ -156,10 +156,19 @@ urlpatterns = [
     path('gl/journal/<uuid:entry_id>/review/', views.journal_entry_review, name='journal_entry_review'),
     path('gl/journal/<uuid:entry_id>/post/', views.journal_entry_post, name='journal_entry_post'),
     path('gl/journal/<uuid:entry_id>/reject/', views.journal_entry_reject, name='journal_entry_reject'),
+    # Journal Types
+    path('gl/journal-types/', views.journal_type_list, name='journal_type_list'),
+    path('gl/journal-types/create/', views.journal_type_create, name='journal_type_create'),
+    path('gl/journal-types/<uuid:jt_id>/edit/', views.journal_type_edit, name='journal_type_edit'),
+    # Stock Operation Types
+    path('gl/stock-operation-types/', views.stock_operation_type_list, name='stock_operation_type_list'),
+    path('gl/stock-operation-types/create/', views.stock_operation_type_create, name='stock_operation_type_create'),
+    path('gl/stock-operation-types/<uuid:sot_id>/edit/', views.stock_operation_type_edit, name='stock_operation_type_edit'),
     # Cost Centers
     path('gl/cost-centers/', views.cost_center_list, name='cost_center_list'),
     path('gl/cost-centers/create/', views.cost_center_create, name='cost_center_create'),
     path('gl/cost-centers/<uuid:center_id>/edit/', views.cost_center_edit, name='cost_center_edit'),
+    path('gl/cost-center-pl/', views.cost_center_pl_report, name='cost_center_pl_report'),
     path('gl/ledger/', views.general_ledger, name='general_ledger'),
     path('gl/trial-balance/', views.trial_balance, name='trial_balance'),
     path('gl/auxiliary-balance/', views.auxiliary_balance, name='auxiliary_balance'),

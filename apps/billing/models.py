@@ -1330,6 +1330,58 @@ class CostCenter(AuditModel):
         return f"{self.code} — {self.name}"
 
 
+class JournalType(AuditModel):
+    """
+    OHADA Journal Type — categorises every journal entry for audit & reporting.
+    Standard types: AC (Achats), VE (Ventes), CA (Caisse), BQ (Banque),
+    ST (Stocks), SA (Salaires), OD (Opérations Diverses), AN (À-Nouveau).
+    Finance Director can create custom types.
+    """
+    code = models.CharField(max_length=10, unique=True, help_text='e.g. AC, VE, CA, BQ, ST')
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['code']
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+
+class StockOperationCategory(models.TextChoices):
+    ENTRY = 'ENTRY', 'Stock Entry'
+    EXIT  = 'EXIT',  'Stock Exit'
+
+
+class StockOperationType(AuditModel):
+    """
+    Types of stock entry/exit — each linked to specific GL accounts for auto-posting.
+    e.g. EN-ACH (Purchase) → Dr 31x / Cr 6031
+         EX-CON (Consumption) → Dr 6031 / Cr 31x
+         EX-DIS (Disposal) → Dr 6591 / Cr 31x
+    """
+    code = models.CharField(max_length=10, unique=True, help_text='e.g. EN-ACH, EX-CON, EX-DIS')
+    name = models.CharField(max_length=200)
+    category = models.CharField(max_length=5, choices=StockOperationCategory.choices)
+    debit_account = models.ForeignKey(
+        GLAccount, on_delete=models.PROTECT, related_name='op_type_debits',
+        help_text='GL account to DEBIT for this operation type',
+    )
+    credit_account = models.ForeignKey(
+        GLAccount, on_delete=models.PROTECT, related_name='op_type_credits',
+        help_text='GL account to CREDIT for this operation type',
+    )
+    description = models.TextField(blank=True, help_text='OHADA accounting rule explanation')
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['category', 'code']
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+
 class JournalEntryStatus(models.TextChoices):
     DRAFT     = 'DRAFT',     'Draft — Recorded by Accountant'
     REVIEWED  = 'REVIEWED',  'Reviewed by Senior Accountant'
@@ -1361,6 +1413,9 @@ class JournalEntry(AuditModel):
         'self', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='reversals'
     )
+    # Journal Type (OHADA classification)
+    journal_type = models.ForeignKey(JournalType, on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='entries', help_text='OHADA journal type: AC, VE, CA, BQ, ST, SA, OD, AN')
     # Source tracking — which model generated this entry
     source_type  = models.CharField(max_length=30, blank=True,
                     help_text='payment | expense | payroll | petty_cash | manual')

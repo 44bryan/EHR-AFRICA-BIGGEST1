@@ -1,0 +1,100 @@
+{% extends 'base_authenticated.html' %}
+{% block title %}{{ action }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2"></i>{{ action }}</h5>
+    <a href="{% url 'billing:stock_operation_type_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+  </div>
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <form method="post" style="max-width:640px;">
+        {% csrf_token %}
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Code <span class="text-danger">*</span></label>
+            <input type="text" name="code" class="form-control form-control-sm" maxlength="10"
+                   value="{{ sot.code|default:'' }}" placeholder="e.g. EN-ACH, EX-CON"
+                   {% if sot %}readonly{% endif %} required>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control form-control-sm" maxlength="200"
+                   value="{{ sot.name|default:'' }}" placeholder="e.g. Purchase Entry, Consumption Exit" required>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+          <select name="category" class="form-select form-select-sm" required>
+            <option value="">-- Select --</option>
+            {% for val, label in categories %}
+              <option value="{{ val }}" {% if sot.category == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Debit Account (Dr) <span class="text-danger">*</span></label>
+            <select name="debit_account" class="form-select form-select-sm" required>
+              <option value="">-- Select GL Account --</option>
+              {% for a in accounts %}
+                <option value="{{ a.id }}" {% if sot.debit_account_id == a.id %}selected{% endif %}>
+                  {{ a.code }} — {{ a.name }}
+                </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">e.g. 311001 Stock of Frames (entry) or 603101 Variation de stocks (exit)</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Credit Account (Cr) <span class="text-danger">*</span></label>
+            <select name="credit_account" class="form-select form-select-sm" required>
+              <option value="">-- Select GL Account --</option>
+              {% for a in accounts %}
+                <option value="{{ a.id }}" {% if sot.credit_account_id == a.id %}selected{% endif %}>
+                  {{ a.code }} — {{ a.name }}
+                </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">e.g. 603101 Variation de stocks (entry) or 311001 Stock (exit)</div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Description</label>
+          <textarea name="description" class="form-control form-control-sm" rows="2"
+                    placeholder="Optional description...">{{ sot.description|default:'' }}</textarea>
+        </div>
+
+        {% if sot %}
+        <div class="mb-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
+                   {% if sot.is_active %}checked{% endif %}>
+            <label class="form-check-label" for="is_active">Active</label>
+          </div>
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg me-1"></i>{% if sot %}Update{% else %}Create{% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mt-3">
+    <div class="card-body small text-muted">
+      <strong>Common OHADA Mappings:</strong><br>
+      <strong>Entries:</strong> EN-ACH (Purchase): Dr 31x / Cr 603 &bull; EN-TRF (Transfer In): Dr 31x dest / Cr 31x source &bull;
+      EN-RET (Return): Dr 31x / Cr 603 &bull; EN-DON (Donation Rx): Dr 31x / Cr 758<br>
+      <strong>Exits:</strong> EX-CON (Consumption): Dr 603 / Cr 31x &bull; EX-VTE (Sale): Dr 603 / Cr 31x &bull;
+      EX-DIS (Disposal): Dr 659 / Cr 31x &bull; EX-DON (Donation): Dr 658 / Cr 31x &bull;
+      EX-PER (Loss): Dr 659 / Cr 31x &bull; EX-AJU (Adjustment): Dr 658 / Cr 31x
+    </div>
+  </div>
+</div>
+{% endblock %}
