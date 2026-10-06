@@ -7211,7 +7211,7 @@ def auxiliary_balance(request):
         if pid not in patient_map:
             patient_map[pid] = {
                 'name': inv.patient.full_name,
-                'ref':  inv.patient.patient_number,
+                'ref':  inv.patient.patient_id,
                 'billed': D0, 'paid': D0,
             }
         patient_map[pid]['billed'] += Decimal(str(inv.total))

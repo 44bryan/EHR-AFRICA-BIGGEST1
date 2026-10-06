@@ -3477,8 +3477,8 @@ def registration_stats(request):
     # New patients in period (first visit ever)
     new_patient_ids = set(
         Patient.objects.filter(
-            registration_date__date__gte=_df,
-            registration_date__date__lte=_dt,
+            registration_date__gte=_df,
+            registration_date__lte=_dt,
             is_deleted=False,
         ).values_list('id', flat=True)
     )
@@ -3487,9 +3487,9 @@ def registration_stats(request):
 
     # Departments list for filter dropdown
     from apps.departments.models import Department
-    departments = Department.objects.filter(is_deleted=False).order_by('name')
+    departments = Department.objects.all().order_by('name')
 
-    return render(request, 'ipd/reports/registration_stats.html', {
+    return render(request, 'ipd/registration_stats.html', {
         'total': total,
         'new_patients': new_patients,
         'returning': returning,
@@ -3539,7 +3539,7 @@ def journal_of_registrations(request):
         is_deleted=False,
         visit_date__date__gte=_df,
         visit_date__date__lte=_dt,
-    ).select_related('patient', 'department', 'insurance_company').order_by('visit_date')
+    ).select_related('patient', 'department').order_by('visit_date')
 
     if visit_type_filter:
         qs = qs.filter(visit_type=visit_type_filter)
@@ -3553,7 +3553,7 @@ def journal_of_registrations(request):
             DQ(patient__first_name__icontains=q) |
             DQ(patient__last_name__icontains=q) |
             DQ(visit_number__icontains=q) |
-            DQ(patient__patient_number__icontains=q)
+            DQ(patient__patient_id__icontains=q)
         )
 
     total = qs.count()
@@ -3561,7 +3561,7 @@ def journal_of_registrations(request):
     visits = qs[:500]
 
     from apps.departments.models import Department
-    departments = Department.objects.filter(is_deleted=False).order_by('name')
+    departments = Department.objects.all().order_by('name')
 
     # CSV export
     if request.GET.get('export') == 'csv':
@@ -3588,7 +3588,7 @@ def journal_of_registrations(request):
             ])
         return response
 
-    return render(request, 'ipd/reports/journal_of_registrations.html', {
+    return render(request, 'ipd/journal_of_registrations.html', {
         'visits': visits,
         'total': total,
         'date_from': date_from,

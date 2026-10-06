@@ -32,6 +32,9 @@ urlpatterns = [
     path('records/documents/', views.document_review_view, name='document_review'),
     path('prereg/manage/', views.prereg_management_view, name='prereg_management'),
 
+    # ── Registration Statistics (must come BEFORE <str:patient_id>/ to avoid conflict) ──
+    path('registration-stats/', views.registration_stats_view, name='registration_stats'),
+
     # ── Patient-specific routes ─────────────────────────────────────────────
     path('visit/<str:visit_number>/', views.visit_detail_view, name='visit_detail'),
     path('visit/<str:visit_number>/summary/', views.visit_summary_view, name='visit_summary'),
@@ -76,8 +79,5 @@ urlpatterns = [
 
     # ── Disability Questionnaire (TurboClinic Admission parity) ─────────────
     path('<str:patient_id>/disability-questionnaire/', views.disability_questionnaire_view, name='disability_questionnaire'),
-
-    # ── Registration Statistics (TurboClinic Admission Reports parity) ───────
-    path('registration-stats/', views.registration_stats_view, name='registration_stats'),
 
 ]
