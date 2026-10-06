@@ -15,6 +15,18 @@
     {% csrf_token %}
     <div class="row g-2 mb-3">
       <div class="col-md-3">
+        <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
+        <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect">
+          <option value="">-- Select Operation --</option>
+          {% for op in operation_types %}
+          <option value="{{ op.id }}" data-dr="{{ op.debit_account.code }}" data-cr="{{ op.credit_account.code }}">
+            {{ op.code }} &mdash; {{ op.name }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="text-muted" style="font-size:.7rem;" id="opGlHint">GL accounts auto-selected from operation type</div>
+      </div>
+      <div class="col-md-3">
         <label class="form-label small fw-semibold">Source Store <span class="text-danger">*</span></label>
         <select name="source_store" class="form-select form-select-sm" required>
           <option value="">-- Select Store --</option>
@@ -26,12 +38,6 @@
         <select name="department" class="form-select form-select-sm" required>
           <option value="">-- Select Department --</option>
           {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
-        <select name="reason" class="form-select form-select-sm" required>
-          {% for val, label in reasons %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-3">
@@ -100,6 +106,19 @@ function addExitLine(){
   clone.querySelector('.stock-display').textContent = '—';
   tbody.appendChild(clone);
 }
+// Show GL hint when operation type changes
+document.getElementById('opTypeSelect')?.addEventListener('change', function(){
+  var opt = this.options[this.selectedIndex];
+  var hint = document.getElementById('opGlHint');
+  if(opt.value){
+    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
+    hint.className = 'text-success small fw-semibold';
+  } else {
+    hint.textContent = 'GL accounts auto-selected from operation type';
+    hint.className = 'text-muted';
+    hint.style.fontSize = '.7rem';
+  }
+});
 function showStock(sel){
   const opt = sel.options[sel.selectedIndex];
   const stock = opt?.dataset?.stock || '—';

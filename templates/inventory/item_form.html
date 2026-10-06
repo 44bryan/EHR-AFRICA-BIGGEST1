@@ -2,94 +2,87 @@
 {% block title %}{{ action }} Inventory Item{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">{{ action }} Item</h1>
-  <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2"></i>{{ action }} Item</h5>
+  <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
 </div>
 
-<div class="row justify-content-center">
-  <div class="col-lg-7">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <form method="post">
-          {% csrf_token %}
+<form method="post">
+  {% csrf_token %}
+  <div class="row g-3">
 
-          <!-- Basic info -->
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
-            <input type="text" name="name" class="form-control" required value="{{ item.name|default:'' }}" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Item Code <span class="text-danger">*</span>
-              {% if action == 'Edit' %}<small class="text-muted">(read-only)</small>{% endif %}
-            </label>
-            <input type="text" name="item_code" class="form-control"
-                   value="{{ item.item_code|default:'' }}"
-                   {% if action == 'Edit' %}readonly{% else %}required{% endif %} />
-          </div>
-          <div class="row g-3 mb-3">
-            <div class="col-sm-6">
-              <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
-              <select name="category" class="form-select" required>
+    {# ── LEFT COLUMN: Inventory / Physical Details ── #}
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-2">
+          <span class="fw-semibold small"><i class="bi bi-boxes me-1 text-primary"></i>Item Details</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-8">
+              <label class="form-label small fw-semibold">Item Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control form-control-sm" required
+                     value="{{ item.name|default:'' }}" placeholder="e.g. Timolol 0.5% Eye Drops" />
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Item Code <span class="text-danger">*</span>
+                {% if action == 'Edit' %}<small class="text-muted">(read-only)</small>{% endif %}
+              </label>
+              <input type="text" name="item_code" class="form-control form-control-sm"
+                     value="{{ item.item_code|default:'' }}" placeholder="e.g. PHR-TIM05"
+                     {% if action == 'Edit' %}readonly{% else %}required{% endif %} />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" class="form-select form-select-sm" required>
                 {% for val, label in categories %}
                 <option value="{{ val }}" {% if item.category == val %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
             </div>
-            <div class="col-sm-6">
-              <label class="form-label fw-semibold">Unit</label>
-              <input type="text" name="unit" class="form-control" value="{{ item.unit|default:'unit' }}"
-                     placeholder="e.g. box, piece, ml" />
+            <div class="col-3">
+              <label class="form-label small fw-semibold">Unit</label>
+              <input type="text" name="unit" class="form-control form-control-sm"
+                     value="{{ item.unit|default:'unit' }}" placeholder="box, ml" />
             </div>
-          </div>
-          <div class="row g-3 mb-3">
-            <div class="col-sm-4">
-              <label class="form-label fw-semibold">Unit Cost (FCFA)</label>
-              <input type="number" name="unit_cost" class="form-control" step="0.01" min="0"
+            <div class="col-3">
+              <label class="form-label small fw-semibold">Unit Cost</label>
+              <input type="number" name="unit_cost" class="form-control form-control-sm" step="0.01" min="0"
                      value="{{ item.unit_cost|default:'0' }}" />
             </div>
-            <div class="col-sm-4">
-              <label class="form-label fw-semibold">Reorder Level</label>
-              <input type="number" name="reorder_level" class="form-control" min="0"
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Reorder Level</label>
+              <input type="number" name="reorder_level" class="form-control form-control-sm" min="0"
                      value="{{ item.reorder_level|default:'5' }}" />
             </div>
             {% if action == 'Create' %}
-            <div class="col-sm-4">
-              <label class="form-label fw-semibold">Opening Stock</label>
-              <input type="number" name="current_stock" class="form-control" min="0" value="0" />
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Opening Stock</label>
+              <input type="number" name="current_stock" class="form-control form-control-sm" min="0" value="0" />
             </div>
             {% endif %}
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Store</label>
-            <select name="store_location" class="form-select ts-select">
-              <option value="">-- Select Store --</option>
-              {% for sl in store_locations %}
-              <option value="{{ sl.id }}" {% if item.store_location_id == sl.id %}selected{% endif %}>
-                {{ sl.name }} ({{ sl.get_location_type_display }}) &mdash; GL {{ sl.gl_account_code }}
-              </option>
-              {% endfor %}
-            </select>
-            <div class="text-muted small mt-1">Determines which OHADA Class 3 GL account this item posts to</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Shelf / Bin Location</label>
-            <input type="text" name="location" class="form-control" value="{{ item.location|default:'' }}"
-                   placeholder="e.g. Shelf 3, Bin A-12" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Description</label>
-            <textarea name="description" class="form-control" rows="2">{{ item.description|default:'' }}</textarea>
-          </div>
-
-          <!-- International standard fields -->
-          <hr class="my-3">
-          <div class="text-muted small fw-semibold mb-2"><i class="bi bi-shield-check me-1"></i>International Standard Controls (JCI / ISO 9001)</div>
-
-          <div class="row g-3 mb-3">
-            <div class="col-sm-6">
-              <label class="form-label fw-semibold">Preferred Vendor (Auto-reorder)</label>
-              <select name="preferred_vendor" class="form-select ts-select">
+            <div class="col-{% if action == 'Create' %}4{% else %}8{% endif %}">
+              <label class="form-label small fw-semibold">Shelf / Bin</label>
+              <input type="text" name="location" class="form-control form-control-sm"
+                     value="{{ item.location|default:'' }}" placeholder="Shelf 3, Bin A-12" />
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Store Location</label>
+              <select name="store_location" class="form-select form-select-sm ts-select">
+                <option value="">-- Select Store --</option>
+                {% for sl in store_locations %}
+                <option value="{{ sl.id }}" {% if item.store_location_id == sl.id %}selected{% endif %}>
+                  {{ sl.name }} ({{ sl.get_location_type_display }}) &mdash; GL {{ sl.gl_account_code }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="text-muted" style="font-size:.72rem;">OHADA Class 3 GL account for stock valuation</div>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Preferred Vendor</label>
+              <select name="preferred_vendor" class="form-select form-select-sm ts-select">
                 <option value="">None</option>
                 {% for vendor in vendors %}
                 <option value="{{ vendor.id }}" {% if item.preferred_vendor_id == vendor.id %}selected{% endif %}>
@@ -98,59 +91,190 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-sm-6">
-              <label class="form-label fw-semibold">Storage Conditions</label>
-              <input type="text" name="storage_conditions" class="form-control"
-                     value="{{ item.storage_conditions|default:'' }}"
-                     placeholder="e.g. Refrigerate 2–8 °C, Room temp" />
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Storage Conditions</label>
+              <input type="text" name="storage_conditions" class="form-control form-control-sm"
+                     value="{{ item.storage_conditions|default:'' }}" placeholder="Room temp / 2-8 °C" />
             </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">UDI Code</label>
-            <input type="text" name="udi_code" class="form-control"
-                   value="{{ item.udi_code|default:'' }}"
-                   placeholder="Unique Device Identifier (implants / reusable devices)" />
-          </div>
-          <div class="row g-3 mb-3">
-            <div class="col-sm-6">
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Description</label>
+              <textarea name="description" class="form-control form-control-sm" rows="2">{{ item.description|default:'' }}</textarea>
+            </div>
+            <div class="col-6">
               <div class="form-check">
                 <input type="checkbox" name="requires_expiry_tracking" class="form-check-input" id="chk_expiry"
                        {% if item.requires_expiry_tracking %}checked{% endif %}>
-                <label class="form-check-label fw-semibold" for="chk_expiry">
-                  Track Lot / Batch &amp; Expiry Date
-                </label>
-                <div class="text-muted" style="font-size:0.78rem;">
-                  Enables FEFO dispensing. Required for medicines, reagents, implants.
-                </div>
+                <label class="form-check-label small" for="chk_expiry">Track Lot &amp; Expiry</label>
               </div>
             </div>
-            <div class="col-sm-6">
+            <div class="col-6">
               <div class="form-check">
                 <input type="checkbox" name="is_consignment" class="form-check-input" id="chk_cons"
                        {% if item.is_consignment %}checked{% endif %}>
-                <label class="form-check-label fw-semibold" for="chk_cons">
-                  Consignment Stock
-                </label>
-                <div class="text-muted" style="font-size:0.78rem;">
-                  Not invoiced until used (e.g. ophthalmic lenses, prosthetics).
-                </div>
+                <label class="form-check-label small" for="chk_cons">Consignment Stock</label>
               </div>
             </div>
           </div>
-
-          <div class="d-flex justify-content-end gap-2">
-            <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">
-              <i class="bi bi-save me-1"></i>{{ action }} Item
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
+
+    {# ── RIGHT COLUMN: Pricing & GL Accounts ── #}
+    <div class="col-lg-6">
+
+      {# ── Pricing ── #}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white py-2">
+          <span class="fw-semibold small"><i class="bi bi-cash-coin me-1 text-success"></i>Pricing (Billing Catalog)</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Sub-Category</label>
+              <select name="sub_category" class="form-select form-select-sm">
+                <option value="">-- none --</option>
+                {% for sc in sub_categories %}
+                <option value="{{ sc.id }}" {% if sp_sub_category == sc.id %}selected{% endif %}>{{ sc.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Desk Tier</label>
+              <select name="tier" class="form-select form-select-sm">
+                <option value="">-- All Tiers --</option>
+                <option value="STANDARD" {% if sp_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
+                <option value="EXPRESS" {% if sp_tier == 'EXPRESS' %}selected{% endif %}>Express</option>
+                <option value="VIP" {% if sp_tier == 'VIP' %}selected{% endif %}>VIP</option>
+                <option value="EVIP" {% if sp_tier == 'EVIP' %}selected{% endif %}>Executive VIP</option>
+                <option value="INSURED" {% if sp_tier == 'INSURED' %}selected{% endif %}>Insured / HMO</option>
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Price HT (FCFA)</label>
+              <input type="number" name="price_ht" class="form-control form-control-sm" min="0" step="1"
+                     id="inp_ht" value="{{ sp_price_ht|default:'0' }}" />
+            </div>
+            <div class="col-3">
+              <label class="form-label small fw-semibold">Tax %</label>
+              <input type="number" name="tax_rate" class="form-control form-control-sm" min="0" step="0.01"
+                     id="inp_tax" value="{{ sp_tax_rate|default:'0' }}" />
+            </div>
+            <div class="col-5">
+              <label class="form-label small fw-semibold">Selling Price TTC <span class="text-danger">*</span></label>
+              <input type="number" name="price" class="form-control form-control-sm" min="0" step="1"
+                     id="inp_ttc" value="{{ sp_price|default:'0' }}" required />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">NHIS Rate</label>
+              <input type="number" name="nhis_price" class="form-control form-control-sm" min="0" step="100"
+                     value="{{ sp_nhis|default:'' }}" placeholder="optional" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Insurance Rate</label>
+              <input type="number" name="insurance_price" class="form-control form-control-sm" min="0" step="100"
+                     value="{{ sp_insurance|default:'' }}" placeholder="optional" />
+            </div>
+            <div class="col-4">
+              <div class="form-check mt-1">
+                <input type="checkbox" name="is_stockable" class="form-check-input" id="chk_stockable" checked disabled>
+                <label class="form-check-label small" for="chk_stockable"><i class="bi bi-box-seam me-1"></i>Stockable</label>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="form-check mt-1">
+                <input type="checkbox" name="is_taxable" class="form-check-input" id="chk_taxable"
+                       {% if sp_taxable %}checked{% endif %}>
+                <label class="form-check-label small" for="chk_taxable"><i class="bi bi-percent me-1"></i>Taxable</label>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="form-check mt-1">
+                <input type="checkbox" name="requires_price_entry" class="form-check-input" id="chk_manual"
+                       {% if sp_manual %}checked{% endif %}>
+                <label class="form-check-label small" for="chk_manual"><i class="bi bi-pencil me-1"></i>Manual Price</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── GL Account Linking ── #}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-2">
+          <span class="fw-semibold small"><i class="bi bi-link-45deg me-1 text-info"></i>GL Account Linking (ERP)</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold"><i class="bi bi-cash-coin me-1 text-success"></i>Sales GL (Revenue)</label>
+              <select name="gl_account" class="form-select form-select-sm ts-select">
+                <option value="">-- default --</option>
+                {% for a in gl_accounts %}
+                <option value="{{ a.pk }}" {% if sp_gl == a.pk %}selected{% endif %}>{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold"><i class="bi bi-cart me-1 text-danger"></i>Purchase GL (Expense)</label>
+              <select name="purchase_gl_account" class="form-select form-select-sm ts-select">
+                <option value="">-- none --</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}" {% if sp_purchase_gl == a.pk %}selected{% endif %}>{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold"><i class="bi bi-building me-1 text-info"></i>Stock GL (Asset)</label>
+              <select name="stock_gl_account" class="form-select form-select-sm ts-select">
+                <option value="">-- none --</option>
+                {% for a in gl_asset_accounts %}
+                <option value="{{ a.pk }}" {% if sp_stock_gl == a.pk %}selected{% endif %}>{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold"><i class="bi bi-arrow-left-right me-1 text-warning"></i>Stock Variation (COGS)</label>
+              <select name="stock_variation_gl_account" class="form-select form-select-sm ts-select">
+                <option value="">-- none --</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}" {% if sp_var_gl == a.pk %}selected{% endif %}>{{ a.code }} - {{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">UDI Code</label>
+              <input type="text" name="udi_code" class="form-control form-control-sm"
+                     value="{{ item.udi_code|default:'' }}" placeholder="Unique Device Identifier (implants)" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
-</div>
+
+  <div class="d-flex justify-content-end gap-2 mt-3">
+    <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-save me-1"></i>{{ action }} Item
+    </button>
+  </div>
+</form>
 {% endblock %}
 
 {% block extra_js %}
 {% include 'components/tom_select.html' %}
+<script>
+/* Auto-calc TTC from HT + tax */
+const ht = document.getElementById('inp_ht');
+const tax = document.getElementById('inp_tax');
+const ttc = document.getElementById('inp_ttc');
+function calcTTC() {
+  const h = parseFloat(ht.value) || 0;
+  const t = parseFloat(tax.value) || 0;
+  if (h > 0) ttc.value = Math.round(h * (1 + t / 100));
+}
+ht.addEventListener('input', calcTTC);
+tax.addEventListener('input', calcTTC);
+</script>
 {% endblock %}

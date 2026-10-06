@@ -50,11 +50,12 @@ def _can_access_store(user):
 
 
 def _can_manage_store(user):
-    """Store Keeper write ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal."""
+    """Store Keeper write ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal.
+    Finance Director has read-only access via _can_access_store — not write access."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
-        UserRole.ADMIN, UserRole.FINANCE_DIRECTOR,
+        UserRole.ADMIN,
     )
 
 
@@ -86,7 +87,7 @@ def _can_view_reports(user):
 # ── 4-Eyes Stock Validation Helper ────────────────────────────────────────────
 
 def _create_stock_validation(validation_type, source_id, reference, description,
-                              total_value, user):
+                              total_value, user, operation_type_id=None):
     """
     Auto-create a StockValidation record (PENDING) for Finance Director review.
     Every inventory transaction with financial impact goes through this.
@@ -99,6 +100,7 @@ def _create_stock_validation(validation_type, source_id, reference, description,
         total_value=Decimal(str(total_value)),
         submitted_by=user,
         created_by=user,
+        operation_type_id=operation_type_id,
     )
 
 
@@ -731,8 +733,15 @@ def item_create(request):
     if not _can_manage_store(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import ServicePrice, ServiceSubCategory, GLAccount
+    from decimal import Decimal, InvalidOperation
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    gl_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='7').order_by('code')
+    gl_expense_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='6').order_by('code')
+    gl_asset_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='3').order_by('code')
+    sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).order_by('name')
+
     if request.method == 'POST':
         pv_id = request.POST.get('preferred_vendor') or None
         preferred_vendor = Vendor.objects.filter(id=pv_id).first() if pv_id else None
@@ -762,12 +771,51 @@ def item_create(request):
                 quantity=item.current_stock, balance_after=item.current_stock,
                 notes='Opening stock', performed_by=request.user,
             )
-        messages.success(request, f'Item "{item.name}" created.')
+        # Auto-create ServicePrice entry in billing catalog
+        price_str = request.POST.get('price', '0').strip()
+        try:
+            price_val = Decimal(price_str) if price_str else Decimal('0')
+        except (InvalidOperation, ValueError):
+            price_val = Decimal('0')
+        ht_str = request.POST.get('price_ht', '0').strip()
+        tax_str = request.POST.get('tax_rate', '0').strip()
+        nhis_str = request.POST.get('nhis_price', '').strip()
+        ins_str = request.POST.get('insurance_price', '').strip()
+        sub_cat_id = request.POST.get('sub_category', '').strip()
+        gl_id = request.POST.get('gl_account', '').strip()
+        pgl_id = request.POST.get('purchase_gl_account', '').strip()
+        sgl_id = request.POST.get('stock_gl_account', '').strip()
+        vgl_id = request.POST.get('stock_variation_gl_account', '').strip()
+        ServicePrice.objects.create(
+            entry_type='ITEM',
+            name=item.name,
+            code=item.item_code,
+            category=item.category,
+            sub_category_id=sub_cat_id or None,
+            tier=request.POST.get('tier', '').strip(),
+            gl_account_id=gl_id or None,
+            purchase_gl_account_id=pgl_id or None,
+            stock_gl_account_id=sgl_id or None,
+            stock_variation_gl_account_id=vgl_id or None,
+            price_ht=Decimal(ht_str) if ht_str else Decimal('0'),
+            tax_rate=Decimal(tax_str) if tax_str else Decimal('0'),
+            price=price_val,
+            nhis_price=Decimal(nhis_str) if nhis_str else None,
+            insurance_price=Decimal(ins_str) if ins_str else None,
+            is_stockable=True,
+            is_taxable='is_taxable' in request.POST,
+            requires_price_entry='requires_price_entry' in request.POST,
+        )
+        messages.success(request, f'Item "{item.name}" created + added to billing catalog.')
         return redirect('inventory:item_detail', item_id=item.id)
     return render(request, 'inventory/item_form.html', {
         'categories': ItemCategory.choices,
         'vendors': vendors,
         'store_locations': store_locations,
+        'gl_accounts': gl_accounts,
+        'gl_expense_accounts': gl_expense_accounts,
+        'gl_asset_accounts': gl_asset_accounts,
+        'sub_categories': sub_categories,
         'action': 'Create',
     })
 
@@ -777,9 +825,18 @@ def item_edit(request, item_id):
     if not _can_manage_store(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import ServicePrice, ServiceSubCategory, GLAccount
+    from decimal import Decimal, InvalidOperation
     item    = get_object_or_404(InventoryItem, id=item_id, is_deleted=False)
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    gl_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='7').order_by('code')
+    gl_expense_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='6').order_by('code')
+    gl_asset_accounts = GLAccount.objects.filter(is_deleted=False, code__startswith='3').order_by('code')
+    sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).order_by('name')
+    # Find linked ServicePrice
+    sp = ServicePrice.objects.filter(code=item.item_code, entry_type='ITEM', is_deleted=False).first()
+
     if request.method == 'POST':
         pv_id = request.POST.get('preferred_vendor') or None
         item.preferred_vendor = Vendor.objects.filter(id=pv_id).first() if pv_id else None
@@ -797,13 +854,67 @@ def item_edit(request, item_id):
         item.udi_code           = request.POST.get('udi_code', '').strip()
         item.storage_conditions = request.POST.get('storage_conditions', '').strip()
         item.save()
+        # Update or create linked ServicePrice
+        price_str = request.POST.get('price', '0').strip()
+        try:
+            price_val = Decimal(price_str) if price_str else Decimal('0')
+        except (InvalidOperation, ValueError):
+            price_val = Decimal('0')
+        ht_str = request.POST.get('price_ht', '0').strip()
+        tax_str = request.POST.get('tax_rate', '0').strip()
+        nhis_str = request.POST.get('nhis_price', '').strip()
+        ins_str = request.POST.get('insurance_price', '').strip()
+        sub_cat_id = request.POST.get('sub_category', '').strip()
+        gl_id = request.POST.get('gl_account', '').strip()
+        pgl_id = request.POST.get('purchase_gl_account', '').strip()
+        sgl_id = request.POST.get('stock_gl_account', '').strip()
+        vgl_id = request.POST.get('stock_variation_gl_account', '').strip()
+        sp_data = dict(
+            entry_type='ITEM', name=item.name, category=item.category,
+            sub_category_id=sub_cat_id or None,
+            tier=request.POST.get('tier', '').strip(),
+            gl_account_id=gl_id or None,
+            purchase_gl_account_id=pgl_id or None,
+            stock_gl_account_id=sgl_id or None,
+            stock_variation_gl_account_id=vgl_id or None,
+            price_ht=Decimal(ht_str) if ht_str else Decimal('0'),
+            tax_rate=Decimal(tax_str) if tax_str else Decimal('0'),
+            price=price_val,
+            nhis_price=Decimal(nhis_str) if nhis_str else None,
+            insurance_price=Decimal(ins_str) if ins_str else None,
+            is_stockable=True,
+            is_taxable='is_taxable' in request.POST,
+            requires_price_entry='requires_price_entry' in request.POST,
+        )
+        if sp:
+            for k, v in sp_data.items():
+                setattr(sp, k, v)
+            sp.save()
+        else:
+            sp_data['code'] = item.item_code
+            ServicePrice.objects.create(**sp_data)
         messages.success(request, f'Item "{item.name}" updated.')
         return redirect('inventory:item_detail', item_id=item.id)
-    return render(request, 'inventory/item_form.html', {
+
+    # Pre-fill ServicePrice fields for the template
+    ctx = {
         'item': item, 'categories': ItemCategory.choices,
         'vendors': vendors, 'store_locations': store_locations,
+        'gl_accounts': gl_accounts, 'gl_expense_accounts': gl_expense_accounts,
+        'gl_asset_accounts': gl_asset_accounts, 'sub_categories': sub_categories,
         'action': 'Edit',
-    })
+    }
+    if sp:
+        ctx.update({
+            'sp_sub_category': sp.sub_category_id,
+            'sp_tier': sp.tier,
+            'sp_price_ht': sp.price_ht, 'sp_tax_rate': sp.tax_rate,
+            'sp_price': sp.price, 'sp_nhis': sp.nhis_price, 'sp_insurance': sp.insurance_price,
+            'sp_gl': sp.gl_account_id, 'sp_purchase_gl': sp.purchase_gl_account_id,
+            'sp_stock_gl': sp.stock_gl_account_id, 'sp_var_gl': sp.stock_variation_gl_account_id,
+            'sp_taxable': sp.is_taxable, 'sp_manual': sp.requires_price_entry,
+        })
+    return render(request, 'inventory/item_form.html', ctx)
 
 
 # ── Batch Stock (lot/expiry management) ───────────────────────────────────────
@@ -2940,11 +3051,16 @@ def stock_exit_create(request):
     """Create a stock exit / issue note — multi-line, batch optional."""
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import StockOperationType
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    exit_op_types = StockOperationType.objects.filter(
+        category='EXIT', is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('code')
 
     if request.method == 'POST':
         department = request.POST.get('department', '').strip()
+        op_type_id = request.POST.get('operation_type', '')
         reason = request.POST.get('reason', 'DEPT_ISSUE')
         reference = request.POST.get('reference', '').strip()
         notes = request.POST.get('notes', '').strip()
@@ -3028,12 +3144,18 @@ def stock_exit_create(request):
             )
             exit_ref = f'SEX-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
             if total_value > 0:
+                op_label = ''
+                if op_type_id:
+                    op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
+                    if op_obj:
+                        op_label = f' [OP:{op_obj.code}]'
                 _create_stock_validation(
                     validation_type=StockValidationType.EXIT,
                     source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
                     reference=exit_ref,
-                    description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s)',
+                    description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s){op_label}',
                     total_value=total_value, user=request.user,
+                    operation_type_id=op_type_id or None,
                 )
             messages.success(request, f'{issued_count} item(s) issued — awaiting GL validation.')
         else:
@@ -3043,6 +3165,7 @@ def stock_exit_create(request):
     return render(request, 'inventory/stock_exit_form.html', {
         'items': items, 'departments': DEPARTMENTS,
         'reasons': EXIT_REASONS, 'store_locations': store_locations,
+        'operation_types': exit_op_types,
     })
 
 
@@ -3088,12 +3211,17 @@ def stock_entry_create(request):
     """Create a stock entry note — multi-line, batch optional."""
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import StockOperationType
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    entry_op_types = StockOperationType.objects.filter(
+        category='ENTRY', is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('code')
 
     if request.method == 'POST':
         source = request.POST.get('source', 'PURCHASE')
+        op_type_id = request.POST.get('operation_type', '')
         vendor_name = request.POST.get('vendor_name', '').strip()
         delivery_note = request.POST.get('delivery_note', '').strip()
         invoice_number = request.POST.get('invoice_number', '').strip()
@@ -3184,12 +3312,18 @@ def stock_entry_create(request):
             )
             entry_ref = f'SEN-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
             if total_value > 0:
+                op_label = ''
+                if op_type_id:
+                    op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
+                    if op_obj:
+                        op_label = f' [OP:{op_obj.code}]'
                 _create_stock_validation(
                     validation_type=StockValidationType.ENTRY,
                     source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
                     reference=entry_ref,
-                    description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s)',
+                    description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s){op_label}',
                     total_value=total_value, user=request.user,
+                    operation_type_id=op_type_id or None,
                 )
             messages.success(request, f'{received_count} item(s) received — awaiting GL validation.')
         return redirect('inventory:stock_entry_list')
@@ -3197,6 +3331,7 @@ def stock_entry_create(request):
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES, 'store_locations': store_locations,
+        'operation_types': entry_op_types,
     })
 
 
@@ -3397,19 +3532,23 @@ def stock_validation_approve(request, validation_id):
         elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT):
             # For direct entries/exits, the stock is already adjusted.
             # GL posting uses the movement data from StockMovement records.
+            # If an operation type is linked, its GL accounts override defaults.
             movements = StockMovement.objects.filter(pk=sv.source_id).select_related('item')
             if movements.exists():
                 m = movements.first()
                 items_data = [(m.item, abs(m.quantity), m.item.unit_cost)]
+                op_type = sv.operation_type  # StockOperationType or None
                 if sv.validation_type == StockValidationType.ENTRY:
                     journal_entry = post_stock_entry(
                         sv.reference, items_data,
                         m.created_at.date(), user=request.user,
+                        operation_type=op_type,
                     )
                 else:
                     journal_entry = post_stock_exit(
                         sv.reference, items_data,
                         m.created_at.date(), reason=sv.description, user=request.user,
+                        operation_type=op_type,
                     )
 
     except Exception as e:

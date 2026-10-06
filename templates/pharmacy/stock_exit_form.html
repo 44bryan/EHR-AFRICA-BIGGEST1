@@ -21,6 +21,20 @@
     <form method="post" action="{% url 'pharmacy:stock_exit_create' %}">
       {% csrf_token %}
 
+      {# ── Operation Type ── #}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Operation Type <span class="text-danger">*</span></label>
+        <select name="operation_type" class="form-select" required id="opTypeSelect">
+          <option value="">-- Select Operation --</option>
+          {% for op in operation_types %}
+          <option value="{{ op.id }}" data-dr="{{ op.debit_account.code }}" data-cr="{{ op.credit_account.code }}">
+            {{ op.code }} &mdash; {{ op.name }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="text-muted small" id="opGlHint">GL accounts auto-selected from operation type</div>
+      </div>
+
       {# ── Drug Selection ── #}
       <div class="mb-3">
         <label for="id_drug" class="form-label fw-semibold">Drug <span class="text-danger">*</span></label>
@@ -116,6 +130,18 @@
 </div>
 
 <script>
+// Show GL hint when operation type changes
+document.getElementById('opTypeSelect')?.addEventListener('change', function(){
+  var opt = this.options[this.selectedIndex];
+  var hint = document.getElementById('opGlHint');
+  if(opt.value){
+    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
+    hint.className = 'text-success small fw-semibold';
+  } else {
+    hint.textContent = 'GL accounts auto-selected from operation type';
+    hint.className = 'text-muted small';
+  }
+});
 (function() {
   const drugSelect = document.getElementById('id_drug');
   const batchSelect = document.getElementById('id_stock_batch');

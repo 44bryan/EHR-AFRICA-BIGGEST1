@@ -993,6 +993,10 @@ class StockValidation(AuditModel):
                                        related_name='stock_validations_reviewed')
     validated_at   = models.DateTimeField(null=True, blank=True)
     validation_notes = models.TextField(blank=True)
+    # Operation type (determines GL accounts for posting)
+    operation_type = models.ForeignKey('billing.StockOperationType', on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='validations',
+                                       help_text='Stock operation type — determines Dr/Cr GL accounts')
     # GL link
     journal_entry  = models.ForeignKey('billing.JournalEntry', on_delete=models.SET_NULL,
                                        null=True, blank=True, related_name='stock_validation_source')

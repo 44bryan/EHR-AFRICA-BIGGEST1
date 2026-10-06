@@ -106,7 +106,7 @@ def _can_waive(user):
 
 
 def _can_view_financial_reports(user):
-    """Operational financial reports — Chief Cashier, Accountants and above."""
+    """Operational financial reports — Chief Cashier, Accountants, Store Keeper and above."""
     return user.role in (
         UserRole.CHIEF_CASHIER,
         UserRole.ACCOUNTANT,
@@ -117,6 +117,7 @@ def _can_view_financial_reports(user):
         UserRole.CEO,
         UserRole.ADMIN_DIRECTOR,
         UserRole.SUPER_ADMIN,
+        UserRole.STORE_KEEPER,
     ) or user.is_superuser
 
 
@@ -3238,8 +3239,8 @@ def service_price_list(request):
 @login_required
 @require_POST
 def service_price_create(request):
-    """Create a new service price entry."""
-    if not _can_authorize_billing(request.user):
+    """Create a new service price entry. Store Keeper can add ITEM entries only."""
+    if not _can_authorize_billing(request.user) and request.user.role != UserRole.STORE_KEEPER:
         messages.error(request, 'Access denied.')
         return redirect('billing:service_price_list')
     name = request.POST.get('name', '').strip()
@@ -3304,8 +3305,8 @@ def service_price_create(request):
 @login_required
 @require_POST
 def service_price_edit(request, price_id):
-    """Edit an existing service price."""
-    if not _can_authorize_billing(request.user):
+    """Edit an existing service price. Store Keeper can edit ITEM entries."""
+    if not _can_authorize_billing(request.user) and request.user.role != UserRole.STORE_KEEPER:
         return JsonResponse({'success': False, 'error': 'Access denied.'}, status=403)
     sp = get_object_or_404(ServicePrice, id=price_id, is_deleted=False)
     try:

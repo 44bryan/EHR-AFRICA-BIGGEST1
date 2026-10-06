@@ -158,7 +158,7 @@ class PaySlip(AuditModel):
 class PaySlipLine(AuditModel):
     """Individual line on a payslip (one per component)."""
     payslip = models.ForeignKey(PaySlip, on_delete=models.CASCADE, related_name='lines')
-    component = models.ForeignKey(SalaryComponent, on_delete=models.PROTECT)
+    component = models.ForeignKey(SalaryComponent, on_delete=models.PROTECT, null=True, blank=True)
     description = models.CharField(max_length=200)
     component_type = models.CharField(max_length=20, choices=ComponentType.choices)
     amount = models.DecimalField(max_digits=12, decimal_places=2)

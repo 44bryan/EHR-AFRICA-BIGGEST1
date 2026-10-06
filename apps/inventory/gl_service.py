@@ -270,33 +270,44 @@ def post_stock_disposal(disposal, user=None):
         return None
 
 
-def post_stock_entry(entry_ref, items_data, entry_date, user=None):
+def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_type=None):
     """
     GL posting for direct stock entry (walk-in delivery, donation, etc.).
     items_data = list of (item, quantity, unit_cost) tuples.
-        Dr  Class 3 (Stock account)
-        Cr  603 (Variation in Stock)
+
+    If operation_type (StockOperationType) is provided, use its debit_account/credit_account
+    instead of the default Class 3 / 603 mapping.
+        Default:  Dr Class 3 (Stock) / Cr 603 (Variation in Stock)
+        With op:  Dr operation_type.debit_account / Cr operation_type.credit_account
     """
     try:
         lines = []
         total = Decimal('0')
+
+        # Determine GL accounts from operation type or fall back to defaults
+        op_dr_code = None
+        op_cr_code = None
+        if operation_type and operation_type.debit_account and operation_type.credit_account:
+            op_dr_code = operation_type.debit_account.code
+            op_cr_code = operation_type.credit_account.code
 
         for item, qty, unit_cost in items_data:
             amount = Decimal(str(qty)) * Decimal(str(unit_cost or 0))
             if amount <= 0:
                 continue
             total += amount
-            stock_code = _stock_code_for_item(item)
+            dr_code = op_dr_code or _stock_code_for_item(item)
             lines.append((
-                stock_code, amount, 0,
+                dr_code, amount, 0,
                 f"Stock entry: {item.name} x{qty} @ {unit_cost}"
             ))
 
         if total <= 0 or not lines:
             return None
 
+        cr_code = op_cr_code or VARIATION_IN_STOCK
         lines.append((
-            VARIATION_IN_STOCK, 0, total,
+            cr_code, 0, total,
             f"Variation in stock — Entry {entry_ref}"
         ))
 
@@ -314,33 +325,44 @@ def post_stock_entry(entry_ref, items_data, entry_date, user=None):
         return None
 
 
-def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None):
+def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, operation_type=None):
     """
     GL posting for direct stock exit (patient use, maintenance, etc.).
     items_data = list of (item, quantity, unit_cost) tuples.
-        Dr  603 (Variation in Stock)
-        Cr  Class 3 (Stock account)
+
+    If operation_type (StockOperationType) is provided, use its debit_account/credit_account
+    instead of the default 603 / Class 3 mapping.
+        Default:  Dr 603 (Variation in Stock) / Cr Class 3 (Stock)
+        With op:  Dr operation_type.debit_account / Cr operation_type.credit_account
     """
     try:
         lines = []
         total = Decimal('0')
+
+        # Determine GL accounts from operation type or fall back to defaults
+        op_dr_code = None
+        op_cr_code = None
+        if operation_type and operation_type.debit_account and operation_type.credit_account:
+            op_dr_code = operation_type.debit_account.code
+            op_cr_code = operation_type.credit_account.code
 
         for item, qty, unit_cost in items_data:
             amount = Decimal(str(qty)) * Decimal(str(unit_cost or 0))
             if amount <= 0:
                 continue
             total += amount
-            stock_code = _stock_code_for_item(item)
+            cr_code = op_cr_code or _stock_code_for_item(item)
             lines.append((
-                stock_code, 0, amount,
+                cr_code, 0, amount,
                 f"Stock exit: {item.name} x{qty} ({reason})"
             ))
 
         if total <= 0 or not lines:
             return None
 
+        dr_code = op_dr_code or VARIATION_IN_STOCK
         lines.insert(0, (
-            VARIATION_IN_STOCK, total, 0,
+            dr_code, total, 0,
             f"Variation in stock — Exit {exit_ref}"
         ))
 

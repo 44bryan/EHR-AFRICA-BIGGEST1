@@ -3860,10 +3860,16 @@ def stock_exit_create(request):
     witnesses = User.objects.filter(
         role__in=[UserRole.PHARMACIST, UserRole.HEAD_PHARMACIST], is_active=True
     ).exclude(pk=request.user.pk).order_by('first_name')
+    from apps.billing.models import StockOperationType
+    exit_op_types = StockOperationType.objects.filter(
+        category='EXIT', is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('code')
+
     return render(request, 'pharmacy/stock_exit_form.html', {
         'drugs': drugs_with_stock,
         'reasons': StockExitReason.choices,
         'witnesses': witnesses,
+        'operation_types': exit_op_types,
     })
 
 
@@ -4435,10 +4441,16 @@ def receive_stock(request):
         received_date__gte=timezone.localdate() - timezone.timedelta(days=7),
     ).select_related('drug').order_by('-created_at')[:20]
 
+    from apps.billing.models import StockOperationType
+    entry_op_types = StockOperationType.objects.filter(
+        category='ENTRY', is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('code')
+
     return render(request, 'pharmacy/receive_stock.html', {
         'drugs': drugs,
         'suppliers': suppliers,
         'recent': recent,
+        'operation_types': entry_op_types,
     })
 
 
