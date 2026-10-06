@@ -162,6 +162,7 @@ urlpatterns = [
     path('gl/cost-centers/<uuid:center_id>/edit/', views.cost_center_edit, name='cost_center_edit'),
     path('gl/ledger/', views.general_ledger, name='general_ledger'),
     path('gl/trial-balance/', views.trial_balance, name='trial_balance'),
+    path('gl/auxiliary-balance/', views.auxiliary_balance, name='auxiliary_balance'),
     path('gl/balance-sheet/', views.balance_sheet, name='balance_sheet'),
     path('gl/cash-flow/', views.cash_flow_statement, name='cash_flow_statement'),
 

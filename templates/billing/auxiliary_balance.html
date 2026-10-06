@@ -1,0 +1,209 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize static %}
+{% block title %}Auxiliary Balance{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Auxiliary Balance</h4>
+    <p class="text-muted small mb-0">
+      Breakdown of collective accounts by individual third party — as of <strong>{{ as_of }}</strong>
+    </p>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <a href="?as_of={{ as_of }}&export=csv" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-download me-1"></i>CSV
+    </a>
+    <button class="btn btn-sm btn-outline-dark" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Trial Balance
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Print letterhead -->
+<div class="print-letterhead border-bottom pb-2 mb-3">
+  <div class="text-center">
+    <strong class="fs-5">{{ hconfig.hospital_name }}</strong><br>
+    <span class="fw-semibold text-uppercase">Balance Auxiliaire — Comptes de Tiers</span><br>
+    <span class="text-muted small">Au {{ as_of }}</span>
+  </div>
+  <hr class="mt-2 mb-0">
+</div>
+
+<!-- Filter bar -->
+<form method="get" class="d-flex gap-2 align-items-center mb-3 no-print">
+  <label class="small fw-semibold text-muted mb-0">As of:</label>
+  <input type="date" name="as_of" class="form-control form-control-sm" value="{{ as_of }}" style="width:150px">
+  <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+</form>
+
+{% for sec in sections %}
+<div class="card shadow-sm mb-4">
+
+  <!-- Section header -->
+  <div class="card-header py-2 d-flex justify-content-between align-items-center"
+       style="background:#1e3a5f;color:#fff">
+    <div>
+      <span class="fw-bold font-monospace me-2">{{ sec.code }}</span>
+      <span class="fw-semibold">{{ sec.name }}</span>
+      <div class="small opacity-75 mt-1">{{ sec.note }}</div>
+    </div>
+    <div class="text-end">
+      {% if sec.balanced %}
+      <span class="badge bg-success fs-6"><i class="bi bi-check-circle-fill me-1"></i>Reconciled</span>
+      {% else %}
+      <span class="badge bg-danger fs-6"><i class="bi bi-x-circle-fill me-1"></i>Difference: {{ sec.diff|floatformat:0|intcomma }} XAF</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Reconciliation banner -->
+  <div class="px-3 py-2 border-bottom d-flex gap-4 align-items-center flex-wrap"
+       style="background:{% if sec.balanced %}#f0fff4{% else %}#fff5f5{% endif %}">
+    <div class="small">
+      <span class="text-muted">Subsidiary total:</span>
+      <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
+        {{ sec.subtotal|floatformat:0|intcomma }} XAF {{ sec.side }}
+      </strong>
+    </div>
+    <div class="small">
+      <span class="text-muted">GL {{ sec.code }}xxx balance:</span>
+      <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
+        {{ sec.gl_bal|floatformat:0|intcomma }} XAF {{ sec.side }}
+      </strong>
+    </div>
+    {% if not sec.balanced %}
+    <div class="small text-danger fw-semibold">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>
+      Gap of {{ sec.diff|floatformat:0|intcomma }} XAF — posting error or unposted journal entry
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Third-party detail table -->
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.83rem">
+      <thead class="table-light">
+        <tr>
+          <th style="width:120px">Ref / Code</th>
+          <th>Name</th>
+          <th class="text-end" style="width:150px">{{ sec.col_a }} (XAF)</th>
+          <th class="text-end" style="width:150px">{{ sec.col_b }} (XAF)</th>
+          <th class="text-end" style="width:160px">
+            Balance (XAF)
+            <span class="badge bg-secondary ms-1 fw-normal" style="font-size:.65rem">{{ sec.side }}</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sec.rows %}
+        <tr>
+          <td class="font-monospace text-muted small">{{ row.ref }}</td>
+          <td class="fw-semibold">{{ row.name }}</td>
+          <td class="text-end font-monospace small">{{ row.billed|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace small text-success">
+            {% if row.paid %}{{ row.paid|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end font-monospace fw-bold
+                     {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
+            {{ row.balance|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-3">
+            <i class="bi bi-inbox me-1 opacity-50"></i>No outstanding balances
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if sec.rows %}
+      <tfoot style="border-top:2px solid #1e3a5f">
+        <tr style="background:#e8eef7">
+          <td colspan="2" class="fw-bold text-end pe-3 small text-uppercase">
+            Subsidiary Total ({{ sec.rows|length }} tiers)
+          </td>
+          <td class="text-end font-monospace fw-bold">{{ sec.subtotal|floatformat:0|intcomma }}</td>
+          <td></td>
+          <td class="text-end font-monospace fw-bold
+                     {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
+            {{ sec.subtotal|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        <tr style="background:#f5f7fb">
+          <td colspan="2" class="text-end pe-3 small text-muted">
+            GL Balance — {{ sec.code }}xxx
+          </td>
+          <td></td>
+          <td></td>
+          <td class="text-end font-monospace fw-semibold text-dark">
+            {{ sec.gl_bal|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        <tr style="background:{% if sec.balanced %}#f0fff4{% else %}#fff0f0{% endif %}">
+          <td colspan="2" class="text-end pe-3 small fw-semibold">
+            {% if sec.balanced %}
+            <i class="bi bi-check-circle-fill text-success me-1"></i>Difference
+            {% else %}
+            <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>Difference
+            {% endif %}
+          </td>
+          <td></td>
+          <td></td>
+          <td class="text-end font-monospace fw-bold
+                     {% if sec.balanced %}text-success{% else %}text-danger{% endif %}">
+            {{ sec.diff|floatformat:0|intcomma }}
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+<!-- Print letterhead & footer -->
+<div id="printHeader" style="display:none">
+  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
+    <div style="flex:1">
+      <div style="font-size:14pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
+      <div style="font-size:8.5pt;color:#555">OHADA SYCEBNL — Accounting System</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:7.5pt;color:#888;text-transform:uppercase">Printed</div>
+      <div style="font-size:8pt;font-weight:600">{% now "d/m/Y H:i" %}</div>
+    </div>
+  </div>
+  <div style="text-align:center;margin-bottom:8px">
+    <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">
+      BALANCE AUXILIAIRE — COMPTES DE TIERS
+    </div>
+    <div style="font-size:9pt;color:#444;margin-top:3px">
+      Au : <strong>{{ as_of }}</strong> &nbsp;|&nbsp;
+      Préparé par : {{ request.user.get_full_name }}
+    </div>
+  </div>
+</div>
+
+<style>
+.print-letterhead { display: none; }
+@media print {
+  .no-print { display: none !important; }
+  .print-letterhead { display: block !important; }
+  #printHeader { display: block !important; }
+  nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display: none !important; }
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 8.5pt !important; }
+  .card { box-shadow: none !important; break-inside: avoid; }
+  .card-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table { font-size: 7.5pt !important; }
+  th, td { padding: 2px 4px !important; }
+}
+</style>
+{% endblock %}

@@ -6973,6 +6973,197 @@ def trial_balance(request):
     })
 
 
+# ── Auxiliary Balance ──────────────────────────────────────────────────────────
+
+@login_required
+def auxiliary_balance(request):
+    """
+    True OHADA auxiliary balance — breaks down collective (control) accounts
+    by individual third party:
+      411  Clients    → one row per patient (from Invoice model)
+      401  Fournisseurs → one row per vendor  (from APBill model)
+      421  Personnel  → one row per staff member (from StaffAdvance model)
+    Each section shows: Subsidiary total vs GL collective account balance.
+    If they match → reconciled. If not → data entry error exists.
+    """
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+
+    from django.db.models import Sum, Prefetch
+    from .models import (Invoice, InvoiceStatus, APBill, APBillStatus,
+                         StaffAdvance, AdvanceStatus, JournalLine)
+
+    today     = timezone.localdate()
+    as_of     = request.GET.get('as_of', str(today))
+    try:
+        from datetime import date as _d
+        as_of_date = _d.fromisoformat(as_of)
+    except Exception:
+        as_of_date = today
+
+    D0 = Decimal('0')
+
+    def gl_net(prefix):
+        """Dr − Cr for all posted lines on accounts starting with prefix, up to as_of_date."""
+        r = JournalLine.objects.filter(
+            entry__is_deleted=False,
+            entry__status='POSTED',
+            entry__entry_date__lte=as_of_date,
+            account__code__startswith=prefix,
+        ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+        return (r['dr'] or D0) - (r['cr'] or D0)
+
+    # ── 1. CLIENTS 411 — AR per patient ───────────────────────────────────────
+    ar_gl = gl_net('41')
+
+    invoices = Invoice.objects.filter(
+        is_deleted=False,
+        issue_date__lte=as_of_date,
+        status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+    ).select_related('patient').prefetch_related(
+        Prefetch('items',    to_attr='_items_cache'),
+        Prefetch('payments', to_attr='_payments_cache'),
+        Prefetch('refunds',  to_attr='_refunds_cache'),
+    )
+
+    patient_map = {}
+    for inv in invoices:
+        pid = inv.patient_id
+        if pid not in patient_map:
+            patient_map[pid] = {
+                'name': inv.patient.full_name,
+                'ref':  inv.patient.patient_number,
+                'billed': D0, 'paid': D0,
+            }
+        patient_map[pid]['billed'] += Decimal(str(inv.total))
+        patient_map[pid]['paid']   += Decimal(str(inv.net_paid))
+
+    ar_rows = sorted([
+        {**d, 'balance': d['billed'] - d['paid']}
+        for d in patient_map.values()
+        if d['billed'] - d['paid'] > D0
+    ], key=lambda r: r['name'])
+    ar_sub = sum(r['balance'] for r in ar_rows) or D0
+
+    # ── 2. FOURNISSEURS 401 — AP per vendor ───────────────────────────────────
+    ap_gl = gl_net('40')   # credit balance → negative; we abs() for display
+
+    bills = APBill.objects.filter(
+        is_deleted=False,
+        status__in=[APBillStatus.PENDING, APBillStatus.PARTIAL, APBillStatus.OVERDUE],
+    ).select_related('vendor')
+
+    vendor_map = {}
+    for bill in bills:
+        vid = bill.vendor_id
+        if vid not in vendor_map:
+            vendor_map[vid] = {
+                'name': bill.vendor.name,
+                'ref':  getattr(bill.vendor, 'vendor_code', '') or '—',
+                'billed': D0, 'paid': D0,
+            }
+        vendor_map[vid]['billed'] += Decimal(str(bill.amount_due))
+        vendor_map[vid]['paid']   += Decimal(str(bill.total_paid))
+
+    ap_rows = sorted([
+        {**d, 'balance': d['billed'] - d['paid']}
+        for d in vendor_map.values()
+        if d['billed'] - d['paid'] > D0
+    ], key=lambda r: r['name'])
+    ap_sub  = sum(r['balance'] for r in ap_rows) or D0
+    ap_gl_abs = abs(ap_gl)
+
+    # ── 3. PERSONNEL 421 — Advances per staff member ──────────────────────────
+    adv_gl = gl_net('421')
+
+    advances = StaffAdvance.objects.filter(
+        is_deleted=False,
+        status=AdvanceStatus.DISBURSED,
+    ).select_related('staff')
+
+    adv_rows = sorted([
+        {
+            'name':    adv.staff.get_full_name(),
+            'ref':     adv.staff.get_role_display() if hasattr(adv.staff, 'get_role_display') else '',
+            'billed':  Decimal(str(adv.amount_approved)),
+            'paid':    D0,
+            'balance': Decimal(str(adv.amount_approved)),
+        }
+        for adv in advances
+    ], key=lambda r: r['name'])
+    adv_sub = sum(r['balance'] for r in adv_rows) or D0
+
+    sections = [
+        {
+            'code':      '411',
+            'name':      'Clients — Créances patients & corporatifs',
+            'note':      'Outstanding patient invoices (Issued + Partially Paid) as of date',
+            'rows':      ar_rows,
+            'subtotal':  ar_sub,
+            'gl_bal':    ar_gl,
+            'gl_display': ar_gl,
+            'balanced':  abs(ar_sub - ar_gl) < Decimal('1'),
+            'diff':      ar_sub - ar_gl,
+            'col_a':     'Invoiced',
+            'col_b':     'Collected',
+            'side':      'DR',
+        },
+        {
+            'code':      '401',
+            'name':      'Fournisseurs — Dettes envers fournisseurs',
+            'note':      'Outstanding vendor bills (Pending + Partial + Overdue) as of date',
+            'rows':      ap_rows,
+            'subtotal':  ap_sub,
+            'gl_bal':    ap_gl_abs,
+            'gl_display': ap_gl_abs,
+            'balanced':  abs(ap_sub - ap_gl_abs) < Decimal('1'),
+            'diff':      ap_sub - ap_gl_abs,
+            'col_a':     'Bill Amount',
+            'col_b':     'Paid',
+            'side':      'CR',
+        },
+        {
+            'code':      '421',
+            'name':      'Personnel — Avances non remboursées',
+            'note':      'Staff advances with status DISBURSED (not yet settled)',
+            'rows':      adv_rows,
+            'subtotal':  adv_sub,
+            'gl_bal':    adv_gl,
+            'gl_display': adv_gl,
+            'balanced':  abs(adv_sub - adv_gl) < Decimal('1'),
+            'diff':      adv_sub - adv_gl,
+            'col_a':     'Advance',
+            'col_b':     'Settled',
+            'side':      'DR',
+        },
+    ]
+
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse
+        resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        resp['Content-Disposition'] = f'attachment; filename="balance_auxiliaire_{as_of}.csv"'
+        w = csv.writer(resp)
+        for sec in sections:
+            w.writerow([])
+            w.writerow([f'{sec["code"]} — {sec["name"]}'])
+            w.writerow(['Ref / Code', 'Name', sec['col_a'], sec['col_b'], 'Balance'])
+            for row in sec['rows']:
+                w.writerow([row['ref'], row['name'], row['billed'], row['paid'], row['balance']])
+            w.writerow(['', 'SUBTOTAL (Subsidiary)', '', '', sec['subtotal']])
+            w.writerow(['', f'GL Balance ({sec["code"]}xxx)', '', '', sec['gl_bal']])
+            w.writerow(['', 'Difference', '', '', sec['diff']])
+        return resp
+
+    from apps.accounts.models import HospitalConfig
+    return render(request, 'billing/auxiliary_balance.html', {
+        'sections':  sections,
+        'as_of':     as_of,
+        'today':     today,
+        'hconfig':   HospitalConfig.get(),
+    })
+
+
 # ── Balance Sheet ─────────────────────────────────────────────────────────────
 
 @login_required
