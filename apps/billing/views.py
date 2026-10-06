@@ -6693,12 +6693,92 @@ def trial_balance(request):
             tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
             tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
-    else:  # auxiliaire — leaf accounts only, grouped under parent headers
-        leaf_accts = [a for a in all_accounts if not a.is_summary and _in_range(a)]
+    else:  # auxiliaire — control account header + indented children + subtotal
+        # Build parent → children map (leaf accounts only)
+        parent_children = {}
+        standalone_leaves = []
+        for acct in all_accounts:
+            if acct.is_summary:
+                continue
+            if acct.parent_id and acct.parent_id in acct_by_id:
+                parent_children.setdefault(acct.parent_id, []).append(acct)
+            else:
+                standalone_leaves.append(acct)
+
         for cls, label in classes_to_show:
             rows = []
             sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-            for acct in [a for a in leaf_accts if a.code.startswith(cls)]:
+
+            # ── 1. Summary accounts as control-account groups ─────────────────
+            summary_in_cls = sorted(
+                [a for a in all_accounts if a.is_summary and a.code.startswith(cls) and _in_range(a)],
+                key=lambda a: a.code,
+            )
+            for parent_acct in summary_in_cls:
+                children = sorted(
+                    [a for a in parent_children.get(parent_acct.id, []) if _in_range(a)],
+                    key=lambda a: a.code,
+                )
+                # Compute each child and accumulate parent totals
+                p_o_dr = p_o_cr = p_m_dr = p_m_cr = D0
+                child_rows = []
+                for child in children:
+                    o_raw_dr, o_raw_cr = open_map.get(child.id, (D0, D0))
+                    m_dr,     m_cr     = move_map.get(child.id, (D0, D0))
+                    if avec_mouvement == '1' and not (o_raw_dr or o_raw_cr or m_dr or m_cr):
+                        continue
+                    open_net = o_raw_dr - o_raw_cr
+                    o_dr = max(D0, open_net);  o_cr = max(D0, -open_net)
+                    clos_net = open_net + m_dr - m_cr
+                    c_dr = max(D0, clos_net);  c_cr = max(D0, -clos_net)
+                    p_o_dr += o_dr;  p_o_cr += o_cr
+                    p_m_dr += m_dr;  p_m_cr += m_cr
+                    child_rows.append({
+                        'row_type': 'child',
+                        'code': child.code, 'name': child.name, 'pk': child.pk,
+                        'open_dr': o_dr, 'open_cr': o_cr,
+                        'move_dr': m_dr, 'move_cr': m_cr,
+                        'clos_dr': c_dr, 'clos_cr': c_cr,
+                    })
+
+                if avec_mouvement == '1' and not child_rows and not (
+                    open_map.get(parent_acct.id) or move_map.get(parent_acct.id)
+                ):
+                    continue
+
+                p_clos_net = (p_o_dr - p_o_cr) + p_m_dr - p_m_cr
+                p_c_dr = max(D0, p_clos_net);  p_c_cr = max(D0, -p_clos_net)
+
+                # Parent header row (bold, with aggregated amounts)
+                rows.append({
+                    'row_type': 'parent',
+                    'code': parent_acct.code, 'name': parent_acct.name, 'pk': parent_acct.pk,
+                    'open_dr': p_o_dr, 'open_cr': p_o_cr,
+                    'move_dr': p_m_dr, 'move_cr': p_m_cr,
+                    'clos_dr': p_c_dr, 'clos_cr': p_c_cr,
+                })
+                rows.extend(child_rows)
+
+                # Subtotal line when there are multiple children
+                if len(child_rows) > 1:
+                    rows.append({
+                        'row_type': 'subtotal',
+                        'code': '', 'name': f'= Sous-total {parent_acct.code} — {parent_acct.name}',
+                        'pk': parent_acct.pk,
+                        'open_dr': p_o_dr, 'open_cr': p_o_cr,
+                        'move_dr': p_m_dr, 'move_cr': p_m_cr,
+                        'clos_dr': p_c_dr, 'clos_cr': p_c_cr,
+                    })
+
+                for k, v in [('open_dr', p_o_dr), ('open_cr', p_o_cr),
+                              ('move_dr', p_m_dr), ('move_cr', p_m_cr),
+                              ('clos_dr', p_c_dr), ('clos_cr', p_c_cr)]:
+                    sub[k] += v
+
+            # ── 2. Standalone leaf accounts (no parent) in this class ─────────
+            for acct in sorted([a for a in standalone_leaves
+                                 if a.code.startswith(cls) and _in_range(a)],
+                                key=lambda a: a.code):
                 o_raw_dr, o_raw_cr = open_map.get(acct.id, (D0, D0))
                 m_dr,     m_cr     = move_map.get(acct.id, (D0, D0))
                 if avec_mouvement == '1' and not (o_raw_dr or o_raw_cr or m_dr or m_cr):
@@ -6708,17 +6788,17 @@ def trial_balance(request):
                 clos_net = open_net + m_dr - m_cr
                 c_dr = max(D0, clos_net);  c_cr = max(D0, -clos_net)
                 rows.append({
+                    'row_type': 'standalone',
                     'code': acct.code, 'name': acct.name, 'pk': acct.pk,
-                    'is_summary': False,
                     'open_dr': o_dr, 'open_cr': o_cr,
                     'move_dr': m_dr, 'move_cr': m_cr,
                     'clos_dr': c_dr, 'clos_cr': c_cr,
-                    'parent_code': parent_code_of.get(acct.id, ''),
-                    'parent_name': parent_name_of.get(acct.id, ''),
                 })
-                for k, v in [('open_dr',o_dr),('open_cr',o_cr),('move_dr',m_dr),
-                              ('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
+                for k, v in [('open_dr', o_dr), ('open_cr', o_cr),
+                              ('move_dr', m_dr), ('move_cr', m_cr),
+                              ('clos_dr', c_dr), ('clos_cr', c_cr)]:
                     sub[k] += v
+
             if rows:
                 sections.append({'label': label, 'rows': rows, **sub})
             tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
