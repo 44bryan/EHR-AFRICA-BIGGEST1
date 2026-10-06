@@ -10,6 +10,8 @@ urlpatterns = [
     path('admissions/<uuid:admission_id>/', views.admission_detail, name='admission_detail'),
     path('admissions/<uuid:admission_id>/nursing-note/', views.add_nursing_note, name='add_nursing_note'),
     path('admissions/<uuid:admission_id>/discharge/', views.discharge_patient, name='discharge'),
+    path('admissions/<uuid:admission_id>/post-bed-charge/', views.post_bed_charge, name='post_bed_charge'),
+    path('admissions/<uuid:admission_id>/transfer-bed/', views.bed_transfer, name='bed_transfer'),
 
     # ── Surgical pathway ──────────────────────────────────────────────────────
     path('counseling/', views.counseling_queue, name='counseling_queue'),

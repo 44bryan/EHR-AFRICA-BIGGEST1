@@ -1,0 +1,123 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Transfer Bed — {{ admission.admission_number }}{% endblock %}
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-left-right me-2"></i>Transfer Patient Bed</h4>
+    <p class="text-muted small mb-0">{{ admission.patient.full_name }} — {{ admission.admission_number }}</p>
+  </div>
+  <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Admission
+  </a>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+
+    <!-- Current bed info -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-warning bg-opacity-10 border-warning py-2">
+        <span class="fw-semibold text-warning-emphasis"><i class="bi bi-hospital me-2"></i>Current Bed</span>
+      </div>
+      <div class="card-body py-3">
+        <div class="row g-2 text-center">
+          <div class="col-4">
+            <div class="small text-muted">Ward</div>
+            <div class="fw-semibold">{{ admission.bed.ward.name }}</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-muted">Bed</div>
+            <div class="fw-semibold">{{ admission.bed.bed_number }}</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-muted">Rate / Night</div>
+            <div class="fw-semibold">{{ admission.bed.nightly_rate|floatformat:0 }} FCFA</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer form -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header py-2">
+        <span class="fw-semibold"><i class="bi bi-arrow-right-circle me-2 text-primary"></i>Transfer To</span>
+      </div>
+      <div class="card-body">
+        {% if available_beds %}
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Select Destination Bed <span class="text-danger">*</span></label>
+            <select name="new_bed_id" class="form-select" required id="bedSelect" onchange="updateRate(this)">
+              <option value="">— Choose an available bed —</option>
+              {% regroup available_beds by ward as ward_groups %}
+              {% for group in ward_groups %}
+              <optgroup label="{{ group.grouper.name }} ({{ group.grouper.get_ward_type_display }})">
+                {% for bed in group.list %}
+                <option value="{{ bed.pk }}" data-rate="{{ bed.nightly_rate }}">
+                  Bed {{ bed.bed_number }} — {{ bed.nightly_rate|floatformat:0 }} FCFA/night
+                </option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="alert alert-info py-2 small d-none" id="rateInfo">
+            <i class="bi bi-info-circle me-1"></i>
+            New nightly rate: <strong id="newRate">—</strong> FCFA/night
+            <span id="rateDiff"></span>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Reason for Transfer</label>
+            <input type="text" name="reason" class="form-control"
+                   placeholder="e.g. Upgrade to private room, post-op move, bed needed for emergency">
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>Confirm Transfer
+            </button>
+            <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-hospital display-4 opacity-50"></i>
+          <p class="mt-2">No available beds at this time. All other beds are occupied or under maintenance.</p>
+          <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-outline-secondary mt-2">Back</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function updateRate(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  const rate = parseFloat(opt.getAttribute('data-rate') || 0);
+  const currentRate = {{ admission.bed.nightly_rate }};
+  const info = document.getElementById('rateInfo');
+  const newRate = document.getElementById('newRate');
+  const diff = document.getElementById('rateDiff');
+  if (sel.value) {
+    info.classList.remove('d-none');
+    newRate.textContent = rate.toLocaleString();
+    const delta = rate - currentRate;
+    if (delta > 0) {
+      diff.innerHTML = ' <span class="text-danger">(+' + delta.toLocaleString() + ' vs current)</span>';
+    } else if (delta < 0) {
+      diff.innerHTML = ' <span class="text-success">(' + delta.toLocaleString() + ' vs current)</span>';
+    } else {
+      diff.innerHTML = ' <span class="text-muted">(same rate)</span>';
+    }
+  } else {
+    info.classList.add('d-none');
+  }
+}
+</script>
+{% endblock %}

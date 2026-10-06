@@ -1510,6 +1510,54 @@ def theatre_procedure_record(request, procedure_id):
             proc.surgical_booking.status = SurgicalBookingStatus.COMPLETED
             proc.surgical_booking.save(update_fields=['status', 'updated_at'])
 
+        # ── Theatre Auto-Billing — emergency/ad-hoc procedures (no booking) ──
+        # For scheduled surgeries the billing is handled via Proforma → Invoice.
+        # For ad-hoc procedures added without a booking, we create/add to invoice.
+        if proc.outcome and proc.sign_out_done and not proc.surgical_booking:
+            try:
+                from apps.billing.models import (
+                    Invoice, InvoiceItem, ServiceCategory,
+                    InvoiceStatus, InvoiceRoutingType,
+                )
+                open_invoice = Invoice.objects.filter(
+                    patient=proc.patient,
+                    status__in=[InvoiceStatus.DRAFT, InvoiceStatus.PARTIALLY_PAID],
+                    is_deleted=False,
+                ).order_by('-created_at').first()
+                if not open_invoice:
+                    open_invoice = Invoice.objects.create(
+                        patient=proc.patient,
+                        issued_by=request.user,
+                        routing_type=InvoiceRoutingType.TIER,
+                        notes=f'Theatre — {proc.session.session_date}',
+                        created_by=request.user,
+                    )
+                already_billed = open_invoice.items.filter(
+                    category=ServiceCategory.SURGICAL,
+                    description__icontains=proc.get_procedure_display(),
+                    is_deleted=False,
+                ).exists()
+                if not already_billed:
+                    InvoiceItem.objects.create(
+                        invoice=open_invoice,
+                        category=ServiceCategory.SURGICAL,
+                        description=(
+                            f'Theatre — {proc.get_procedure_display()}'
+                            + (f' ({proc.get_eye_laterality_display()})' if proc.eye_laterality else '')
+                            + f' — {proc.session.session_date}'
+                        ),
+                        quantity=1,
+                        unit_price=0,
+                        created_by=request.user,
+                    )
+                    messages.warning(
+                        request,
+                        f'Billing alert: Theatre charge added to invoice for {proc.patient.full_name}. '
+                        'Cashier must confirm the procedure fee before closing the invoice.'
+                    )
+            except Exception:
+                pass
+
         # ── Gap 1: Auto DrugPrescription from post_op_medications ────────────
         post_op_meds = proc.post_op_medications
         if post_op_meds and proc.surgical_booking and proc.surgical_booking.consultation:
@@ -3193,4 +3241,136 @@ def procedure_room_stats(request):
         'eye_filter': eye_filter,
         'procedure_types': ProcedureType.choices,
         'status_choices': ProcedureRecordStatus.choices,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WARD BED CHARGES  —  Post daily bed/room charges to patient invoice
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+@require_POST
+def post_bed_charge(request, admission_id):
+    """Post daily bed charges (N days × nightly_rate) to the patient's active invoice."""
+    if not (request.user.is_nurse_director or request.user.is_senior_accountant
+            or request.user.is_finance_director or request.user.is_accountant
+            or request.user.is_admission_officer or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    admission = get_object_or_404(Admission, pk=admission_id, is_deleted=False)
+    try:
+        days = max(1, int(request.POST.get('days', 1)))
+    except (ValueError, TypeError):
+        days = 1
+
+    rate = admission.bed.nightly_rate
+    if not rate or rate == 0:
+        messages.warning(
+            request,
+            'This bed/ward has no nightly rate configured. '
+            'Set a price in Ward Management before posting bed charges.'
+        )
+        return redirect('ipd:admission_detail', admission_id=admission.pk)
+
+    amount = rate * days
+
+    # Find the best invoice to attach the charge to
+    invoice = None
+    if admission.surgical_booking and admission.surgical_booking.invoice:
+        inv = admission.surgical_booking.invoice
+        from apps.billing.models import InvoiceStatus
+        if inv.status not in (InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.WAIVED):
+            invoice = inv
+
+    if not invoice:
+        from apps.billing.models import Invoice, InvoiceStatus, InvoiceRoutingType
+        invoice = Invoice.objects.filter(
+            patient=admission.patient,
+            status__in=[InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
+            is_deleted=False,
+        ).order_by('-created_at').first()
+
+        if not invoice:
+            invoice = Invoice.objects.create(
+                patient=admission.patient,
+                issued_by=request.user,
+                routing_type=InvoiceRoutingType.TIER,
+                notes=f'IPD Charges — {admission.admission_number}',
+                created_by=request.user,
+            )
+
+    from apps.billing.models import InvoiceItem, ServiceCategory
+    InvoiceItem.objects.create(
+        invoice=invoice,
+        category=ServiceCategory.ADMISSION,
+        description=f'Ward Stay — {admission.bed} — {days} day(s) @ {int(rate):,} FCFA/day',
+        quantity=days,
+        unit_price=rate,
+        created_by=request.user,
+    )
+
+    messages.success(
+        request,
+        f'Bed charge posted: {days} day(s) × {int(rate):,} FCFA = {int(amount):,} FCFA '
+        f'→ Invoice {invoice.invoice_number}.'
+    )
+    return redirect('ipd:admission_detail', admission_id=admission.pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BED TRANSFER  —  Move admitted patient to a different bed / ward
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def bed_transfer(request, admission_id):
+    """Transfer an admitted patient to a different available bed."""
+    if not (request.user.is_admission_officer or request.user.is_nurse_director
+            or request.user.is_medical_director or request.user.is_super_admin):
+        return HttpResponseForbidden()
+
+    admission = get_object_or_404(
+        Admission, pk=admission_id, is_deleted=False, status=AdmissionStatus.ADMITTED
+    )
+    available_beds = (
+        Bed.objects.filter(status=BedStatus.AVAILABLE, is_deleted=False)
+        .select_related('ward')
+        .exclude(pk=admission.bed.pk)
+        .order_by('ward__name', 'bed_number')
+    )
+
+    if request.method == 'POST':
+        new_bed_id = request.POST.get('new_bed_id', '').strip()
+        reason = request.POST.get('reason', '').strip()
+
+        if not new_bed_id:
+            messages.error(request, 'Please select a destination bed.')
+            return render(request, 'ipd/bed_transfer.html', {
+                'admission': admission, 'available_beds': available_beds,
+            })
+
+        new_bed = get_object_or_404(Bed, pk=new_bed_id, status=BedStatus.AVAILABLE, is_deleted=False)
+        old_bed = admission.bed
+
+        old_bed.status = BedStatus.AVAILABLE
+        old_bed.save(update_fields=['status', 'updated_at'])
+
+        new_bed.status = BedStatus.OCCUPIED
+        new_bed.save(update_fields=['status', 'updated_at'])
+
+        transfer_note = (
+            f'\n[Transfer {timezone.now().strftime("%d/%m/%Y %H:%M")}] '
+            f'{old_bed} → {new_bed}'
+            + (f' — Reason: {reason}' if reason else '')
+            + f' (by {request.user.get_full_name()})'
+        )
+        admission.bed = new_bed
+        admission.notes = (admission.notes or '') + transfer_note
+        admission.save(update_fields=['bed', 'notes', 'updated_at'])
+
+        messages.success(request, f'Patient transferred from {old_bed} to {new_bed}.')
+        return redirect('ipd:admission_detail', admission_id=admission.pk)
+
+    return render(request, 'ipd/bed_transfer.html', {
+        'admission': admission,
+        'available_beds': available_beds,
     })
