@@ -282,6 +282,7 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════════════════
     path('reports/liquidity/', views.report_daily_liquidity, name='report_daily_liquidity'),
     path('reports/surgery-revenue/', views.report_surgery_revenue, name='report_surgery_revenue'),
+    path('reports/surgical-cost-summary/', views.surgical_cost_summary, name='surgical_cost_summary'),
     path('reports/revenue-by-department/', views.report_revenue_by_department, name='report_revenue_by_department'),
     path('reports/donor/', views.report_donor, name='report_donor'),
     path('reports/dsf/', views.report_dsf, name='report_dsf'),

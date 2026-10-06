@@ -3374,3 +3374,231 @@ def bed_transfer(request, admission_id):
         'admission': admission,
         'available_beds': available_beds,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGISTRATION STATISTICS  (TurboClinic-style — CEO, MD, Admin Director)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _can_view_reg_stats(user):
+    from apps.accounts.models import UserRole
+    return user.role in {
+        UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR, UserRole.CEO,
+        UserRole.ADMIN_DIRECTOR, UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+        UserRole.ADMISSION_OFFICER,
+    }
+
+
+@login_required
+def registration_stats(request):
+    """
+    Registration Statistics — visit volumes, types, billing mix, tier, gender.
+    Matches TurboClinic's Registration Statistics report family.
+    """
+    if not _can_view_reg_stats(request.user):
+        return HttpResponseForbidden()
+
+    from django.db.models import Count, Q, Case, When, IntegerField
+    from django.db.models.functions import TruncDate
+    from apps.patients.models import Visit, VisitType, BillingType, ServiceTier, Patient
+    import datetime
+
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from', (today.replace(day=1)).isoformat())
+    date_to = request.GET.get('date_to', today.isoformat())
+    dept_filter = request.GET.get('dept', '')
+
+    try:
+        _df = datetime.date.fromisoformat(date_from)
+        _dt = datetime.date.fromisoformat(date_to)
+    except ValueError:
+        _df = today.replace(day=1)
+        _dt = today
+        date_from = _df.isoformat()
+        date_to = _dt.isoformat()
+
+    qs = Visit.objects.filter(
+        is_deleted=False,
+        visit_date__date__gte=_df,
+        visit_date__date__lte=_dt,
+    ).select_related('patient', 'department')
+
+    if dept_filter:
+        qs = qs.filter(department_id=dept_filter)
+
+    total = qs.count()
+
+    # ── By visit type ─────────────────────────────────────────────────────────
+    by_type_raw = dict(qs.values('visit_type').annotate(n=Count('id')).values_list('visit_type', 'n'))
+    type_labels = dict(VisitType.choices)
+    by_type = [
+        {'code': code, 'label': type_labels.get(code, code), 'n': by_type_raw.get(code, 0)}
+        for code, _ in VisitType.choices
+    ]
+
+    # ── By billing type ───────────────────────────────────────────────────────
+    by_billing_raw = dict(qs.values('billing_type').annotate(n=Count('id')).values_list('billing_type', 'n'))
+    billing_labels = dict(BillingType.choices)
+    by_billing = [
+        {'code': code, 'label': billing_labels.get(code, code), 'n': by_billing_raw.get(code, 0)}
+        for code, _ in BillingType.choices
+    ]
+
+    # ── By service tier ───────────────────────────────────────────────────────
+    by_tier_raw = dict(qs.values('service_tier').annotate(n=Count('id')).values_list('service_tier', 'n'))
+    tier_labels = dict(ServiceTier.choices)
+    by_tier = [
+        {'code': code, 'label': tier_labels.get(code, code), 'n': by_tier_raw.get(code, 0)}
+        for code, _ in ServiceTier.choices
+    ]
+
+    # ── By gender ─────────────────────────────────────────────────────────────
+    by_gender_raw = dict(
+        qs.values('patient__gender').annotate(n=Count('id')).values_list('patient__gender', 'n')
+    )
+    by_gender = [
+        {'code': 'M', 'label': 'Male', 'n': by_gender_raw.get('M', 0)},
+        {'code': 'F', 'label': 'Female', 'n': by_gender_raw.get('F', 0)},
+        {'code': '', 'label': 'Unknown', 'n': by_gender_raw.get('', 0) + by_gender_raw.get(None, 0)},
+    ]
+
+    # ── By department (top 10) ────────────────────────────────────────────────
+    by_dept = list(
+        qs.exclude(department__isnull=True)
+        .values('department__name').annotate(n=Count('id')).order_by('-n')[:10]
+    )
+
+    # ── Daily trend ───────────────────────────────────────────────────────────
+    daily_trend = list(
+        qs.annotate(day=TruncDate('visit_date'))
+        .values('day').annotate(n=Count('id')).order_by('day')
+    )
+
+    # New patients in period (first visit ever)
+    new_patient_ids = set(
+        Patient.objects.filter(
+            registration_date__date__gte=_df,
+            registration_date__date__lte=_dt,
+            is_deleted=False,
+        ).values_list('id', flat=True)
+    )
+    new_patients = len(new_patient_ids)
+    returning = total - qs.filter(patient_id__in=new_patient_ids).count()
+
+    # Departments list for filter dropdown
+    from apps.departments.models import Department
+    departments = Department.objects.filter(is_deleted=False).order_by('name')
+
+    return render(request, 'ipd/reports/registration_stats.html', {
+        'total': total,
+        'new_patients': new_patients,
+        'returning': returning,
+        'by_type': by_type,
+        'by_billing': by_billing,
+        'by_tier': by_tier,
+        'by_gender': by_gender,
+        'by_dept': by_dept,
+        'daily_trend': daily_trend,
+        'date_from': date_from,
+        'date_to': date_to,
+        'dept_filter': dept_filter,
+        'departments': departments,
+        'today': today,
+    })
+
+
+@login_required
+def journal_of_registrations(request):
+    """
+    Journal of Registrations — chronological visit log with patient details.
+    Equivalent to TurboClinic's Journal of Admissions / Registration log.
+    Printable, exportable CSV.
+    """
+    if not _can_view_reg_stats(request.user):
+        return HttpResponseForbidden()
+
+    from apps.patients.models import Visit, VisitType, BillingType, ServiceTier
+    import datetime
+
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from', today.isoformat())
+    date_to = request.GET.get('date_to', today.isoformat())
+    visit_type_filter = request.GET.get('visit_type', '')
+    billing_filter = request.GET.get('billing_type', '')
+    dept_filter = request.GET.get('dept', '')
+    q = request.GET.get('q', '').strip()
+
+    try:
+        _df = datetime.date.fromisoformat(date_from)
+        _dt = datetime.date.fromisoformat(date_to)
+    except ValueError:
+        _df = _dt = today
+        date_from = date_to = today.isoformat()
+
+    qs = Visit.objects.filter(
+        is_deleted=False,
+        visit_date__date__gte=_df,
+        visit_date__date__lte=_dt,
+    ).select_related('patient', 'department', 'insurance_company').order_by('visit_date')
+
+    if visit_type_filter:
+        qs = qs.filter(visit_type=visit_type_filter)
+    if billing_filter:
+        qs = qs.filter(billing_type=billing_filter)
+    if dept_filter:
+        qs = qs.filter(department_id=dept_filter)
+    if q:
+        from django.db.models import Q as DQ
+        qs = qs.filter(
+            DQ(patient__first_name__icontains=q) |
+            DQ(patient__last_name__icontains=q) |
+            DQ(visit_number__icontains=q) |
+            DQ(patient__patient_number__icontains=q)
+        )
+
+    total = qs.count()
+    # Limit display to 500 rows; encourage date filtering
+    visits = qs[:500]
+
+    from apps.departments.models import Department
+    departments = Department.objects.filter(is_deleted=False).order_by('name')
+
+    # CSV export
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="registrations_{date_from}_{date_to}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['#', 'Visit No.', 'Date', 'Patient Name', 'Patient No.', 'Gender',
+                         'Visit Type', 'Billing Type', 'Tier', 'Department', 'Insurance'])
+        for i, v in enumerate(qs, 1):
+            writer.writerow([
+                i,
+                v.visit_number,
+                v.visit_date.strftime('%d/%m/%Y %H:%M'),
+                v.patient.full_name,
+                v.patient.patient_number,
+                v.patient.get_gender_display() if hasattr(v.patient, 'get_gender_display') else v.patient.gender,
+                v.get_visit_type_display(),
+                v.get_billing_type_display(),
+                v.service_tier,
+                v.department.name if v.department else '—',
+                v.insurance_company.name if v.insurance_company else '—',
+            ])
+        return response
+
+    return render(request, 'ipd/reports/journal_of_registrations.html', {
+        'visits': visits,
+        'total': total,
+        'date_from': date_from,
+        'date_to': date_to,
+        'visit_type_filter': visit_type_filter,
+        'billing_filter': billing_filter,
+        'dept_filter': dept_filter,
+        'q': q,
+        'visit_types': VisitType.choices,
+        'billing_types': BillingType.choices,
+        'departments': departments,
+        'today': today,
+    })

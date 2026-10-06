@@ -1,0 +1,273 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Registration Statistics{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .print-letterhead { display: block !important; }
+  .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+}
+.print-letterhead { display: none; }
+.stat-badge { font-size: 1.6rem; font-weight: 700; }
+.breakdown-bar { height: 8px; border-radius: 4px; background: #e9ecef; overflow: hidden; }
+.breakdown-fill { height: 100%; border-radius: 4px; transition: width .4s; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-bar-chart-line me-2 text-primary"></i>Registration Statistics</h5>
+    <div class="text-muted small">{{ date_from }} — {{ date_to }}</div>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button class="btn btn-sm btn-outline-dark" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'ipd:journal_of_registrations' %}?date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-list-ul me-1"></i>Journal View
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="print-letterhead border-bottom pb-2 mb-3">
+  <div class="text-center">
+    <strong class="fs-5">Africa Eye Foundation — MICEI</strong><br>
+    <span class="fw-semibold">REGISTRATION STATISTICS</span><br>
+    <span class="text-muted small">Period: {{ date_from }} to {{ date_to }}</span>
+  </div>
+  <hr class="mt-2 mb-0">
+</div>
+
+<!-- Filter Bar -->
+<div class="card shadow-sm mb-3 no-print">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-sm-3">
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small mb-1">Department</label>
+        <select name="dept" class="form-select form-select-sm">
+          <option value="">All Departments</option>
+          {% for dept in departments %}
+          <option value="{{ dept.pk }}" {% if dept_filter == dept.pk|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <button type="submit" class="btn btn-sm btn-primary w-100">Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Summary KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Total Visits</div>
+      <div class="stat-badge text-primary">{{ total|intcomma }}</div>
+      <div class="text-muted small">registrations</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">New Patients</div>
+      <div class="stat-badge text-success">{{ new_patients|intcomma }}</div>
+      <div class="text-muted small">first visit</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Returning</div>
+      <div class="stat-badge text-info">{{ returning|intcomma }}</div>
+      <div class="text-muted small">follow-ups &amp; reviews</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Daily Average</div>
+      <div class="stat-badge text-warning">
+        {% if daily_trend %}{% widthratio total daily_trend|length 1 %}{% else %}—{% endif %}
+      </div>
+      <div class="text-muted small">visits/day</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Visit Type Breakdown -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-person-badge me-1 text-primary"></i>By Visit Type
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Type</th><th class="text-end">Count</th><th class="text-end">%</th></tr></thead>
+          <tbody>
+            {% for row in by_type %}
+            {% if row.n > 0 %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end fw-semibold">{{ row.n|intcomma }}</td>
+              <td class="text-end text-muted small">
+                {% if total %}{% widthratio row.n total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Billing Type Breakdown -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-credit-card me-1 text-success"></i>By Billing Type
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Type</th><th class="text-end">Count</th><th class="text-end">%</th></tr></thead>
+          <tbody>
+            {% for row in by_billing %}
+            {% if row.n > 0 %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end fw-semibold">{{ row.n|intcomma }}</td>
+              <td class="text-end text-muted small">
+                {% if total %}{% widthratio row.n total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gender + Tier -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-people me-1 text-info"></i>By Gender
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Gender</th><th class="text-end">Count</th><th class="text-end">%</th></tr></thead>
+          <tbody>
+            {% for row in by_gender %}
+            {% if row.n > 0 %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end fw-semibold">{{ row.n|intcomma }}</td>
+              <td class="text-end text-muted small">
+                {% if total %}{% widthratio row.n total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card border-0 shadow-sm mt-3">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-stars me-1 text-warning"></i>By Service Tier
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Tier</th><th class="text-end">Count</th><th class="text-end">%</th></tr></thead>
+          <tbody>
+            {% for row in by_tier %}
+            {% if row.n > 0 %}
+            <tr>
+              <td>
+                {% if row.code == 'VIP' %}<span class="badge bg-warning-subtle text-warning">VIP</span>
+                {% elif row.code == 'EXPRESS' %}<span class="badge bg-info-subtle text-info">Express</span>
+                {% else %}<span class="badge bg-secondary-subtle text-secondary">Standard</span>{% endif %}
+              </td>
+              <td class="text-end fw-semibold">{{ row.n|intcomma }}</td>
+              <td class="text-end text-muted small">
+                {% if total %}{% widthratio row.n total 100 %}%{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Department breakdown -->
+  {% if by_dept %}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-building me-1 text-secondary"></i>Top Departments
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Department</th><th class="text-end">Visits</th><th class="text-end">%</th></tr></thead>
+          <tbody>
+            {% for row in by_dept %}
+            <tr>
+              <td>{{ row.department__name }}</td>
+              <td class="text-end fw-semibold">{{ row.n|intcomma }}</td>
+              <td class="text-end">
+                <div class="d-flex align-items-center gap-2 justify-content-end">
+                  <div class="breakdown-bar" style="width:80px;">
+                    <div class="breakdown-fill bg-primary" style="width:{% if total %}{% widthratio row.n total 100 %}%{% else %}0%{% endif %};"></div>
+                  </div>
+                  <span class="text-muted small">{% if total %}{% widthratio row.n total 100 %}%{% else %}—{% endif %}</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Daily trend table -->
+  {% if daily_trend %}
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold small border-bottom">
+        <i class="bi bi-calendar3 me-1 text-danger"></i>Daily Volume
+      </div>
+      <div class="card-body p-0" style="max-height:300px;overflow-y:auto;">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Date</th><th class="text-end">Visits</th></tr></thead>
+          <tbody>
+            {% for row in daily_trend %}
+            <tr>
+              <td class="small">{{ row.day|date:"D, d M Y" }}</td>
+              <td class="text-end fw-semibold">{{ row.n }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

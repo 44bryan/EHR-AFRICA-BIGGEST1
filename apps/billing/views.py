@@ -10991,3 +10991,139 @@ def cash_flow_forecast(request):
         'end_60': _fmt_period(60),
         'end_90': _fmt_period(90),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SURGICAL COST SUMMARY  —  Per-case cost breakdown for Finance Director
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def surgical_cost_summary(request):
+    """
+    Per-case surgical cost breakdown: ward stay + theatre + drugs + total billed vs collected.
+    Finance Director view — OHADA cost accounting for each surgical case.
+    """
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+
+    from apps.ipd.models import Admission, AdmissionStatus
+    from apps.ipd.models import SurgicalBooking
+    import datetime
+
+    today = timezone.localdate()
+    date_from = request.GET.get('date_from', today.replace(day=1).isoformat())
+    date_to = request.GET.get('date_to', today.isoformat())
+    surgeon_filter = request.GET.get('surgeon', '')
+
+    try:
+        _df = datetime.date.fromisoformat(date_from)
+        _dt = datetime.date.fromisoformat(date_to)
+    except ValueError:
+        _df = today.replace(day=1)
+        _dt = today
+        date_from = _df.isoformat()
+        date_to = _dt.isoformat()
+
+    # Completed surgical bookings in period
+    bookings_qs = SurgicalBooking.objects.filter(
+        is_deleted=False,
+        status='COMPLETED',
+        surgery_date__date__gte=_df,
+        surgery_date__date__lte=_dt,
+    ).select_related('patient', 'surgeon', 'invoice')
+
+    if surgeon_filter:
+        bookings_qs = bookings_qs.filter(surgeon_id=surgeon_filter)
+
+    cases = []
+    grand_ward = 0
+    grand_theatre = 0
+    grand_drugs = 0
+    grand_billed = 0
+    grand_collected = 0
+
+    for bk in bookings_qs.order_by('surgery_date'):
+        # Ward stay cost from admission
+        admission = Admission.objects.filter(
+            surgical_booking=bk, is_deleted=False
+        ).select_related('bed__ward').first()
+
+        ward_days = 0
+        ward_rate = 0
+        ward_cost = 0
+        if admission:
+            if admission.discharge_date and admission.admission_date:
+                delta = admission.discharge_date.date() - admission.admission_date.date()
+                ward_days = max(delta.days, 1)
+            elif admission.admission_date:
+                ward_days = (today - admission.admission_date.date())
+                ward_days = max(ward_days.days, 1) if hasattr(ward_days, 'days') else 1
+            ward_rate = float(admission.bed.nightly_rate) if admission.bed else 0
+            ward_cost = ward_days * ward_rate
+
+        # Theatre cost (SURGICAL items on invoice)
+        theatre_cost = 0
+        drugs_cost = 0
+        total_billed = 0
+        total_collected = 0
+
+        if bk.invoice:
+            inv = bk.invoice
+            items = inv.items.filter(is_deleted=False)
+            for item in items:
+                line_total = float(item.quantity) * float(item.unit_price)
+                total_billed += line_total
+                if item.category == ServiceCategory.SURGICAL:
+                    theatre_cost += line_total
+                elif item.category == ServiceCategory.PHARMACY:
+                    drugs_cost += line_total
+            # Payments
+            total_collected = float(
+                inv.payments.filter(is_deleted=False).aggregate(t=Sum('amount'))['t'] or 0
+            )
+
+        case_total = ward_cost + theatre_cost + drugs_cost
+        grand_ward += ward_cost
+        grand_theatre += theatre_cost
+        grand_drugs += drugs_cost
+        grand_billed += total_billed
+        grand_collected += total_collected
+
+        cases.append({
+            'booking': bk,
+            'patient': bk.patient,
+            'surgery_date': bk.surgery_date,
+            'procedure': bk.get_procedure_display() if hasattr(bk, 'get_procedure_display') else bk.procedure,
+            'surgeon': bk.surgeon,
+            'ward_days': ward_days,
+            'ward_rate': ward_rate,
+            'ward_cost': ward_cost,
+            'theatre_cost': theatre_cost,
+            'drugs_cost': drugs_cost,
+            'case_total': case_total,
+            'total_billed': total_billed,
+            'total_collected': total_collected,
+            'outstanding': total_billed - total_collected,
+            'admission': admission,
+        })
+
+    # Surgeon list for filter
+    from apps.accounts.models import User, UserRole
+    surgeons = User.objects.filter(role=UserRole.OPHTHALMOLOGIST, is_active=True).order_by('last_name')
+
+    return render(request, 'billing/reports/surgical_cost_summary.html', {
+        'cases': cases,
+        'date_from': date_from,
+        'date_to': date_to,
+        'surgeon_filter': surgeon_filter,
+        'surgeons': surgeons,
+        'total_cases': len(cases),
+        'grand_ward': grand_ward,
+        'grand_theatre': grand_theatre,
+        'grand_drugs': grand_drugs,
+        'grand_billed': grand_billed,
+        'grand_collected': grand_collected,
+        'grand_outstanding': grand_billed - grand_collected,
+        'today': today,
+    })

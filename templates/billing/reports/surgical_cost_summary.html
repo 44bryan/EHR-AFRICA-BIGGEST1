@@ -1,0 +1,206 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Surgical Cost Summary{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .print-letterhead { display: block !important; }
+  .table { font-size: .78rem; }
+}
+.print-letterhead { display: none; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-hospital me-2 text-danger"></i>Surgical Cost Summary</h5>
+    <div class="text-muted small">Per-case cost breakdown — {{ date_from }} to {{ date_to }}</div>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button class="btn btn-sm btn-outline-dark" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="print-letterhead border-bottom pb-2 mb-3">
+  <div class="text-center">
+    <strong class="fs-5">Africa Eye Foundation — MICEI</strong><br>
+    <span class="fw-semibold">SURGICAL COST SUMMARY</span><br>
+    <span class="text-muted small">Period: {{ date_from }} to {{ date_to }}</span>
+  </div>
+  <hr class="mt-2 mb-0">
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-3 no-print">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small mb-1">Surgeon</label>
+        <select name="surgeon" class="form-select form-select-sm">
+          <option value="">All Surgeons</option>
+          {% for s in surgeons %}
+          <option value="{{ s.pk }}" {% if surgeon_filter == s.pk|stringformat:"s" %}selected{% endif %}>
+            Dr. {{ s.get_full_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1 d-block">&nbsp;</label>
+        <button type="submit" class="btn btn-sm btn-primary w-100">Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Summary KPIs -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Cases</div>
+      <div class="fs-3 fw-bold text-primary">{{ total_cases }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Ward Charges</div>
+      <div class="fs-4 fw-bold text-secondary">{{ grand_ward|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Theatre Fees</div>
+      <div class="fs-4 fw-bold text-danger">{{ grand_theatre|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Drugs</div>
+      <div class="fs-4 fw-bold text-warning">{{ grand_drugs|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Total Billed</div>
+      <div class="fs-4 fw-bold text-success">{{ grand_billed|floatformat:0|intcomma }}</div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="text-muted small text-uppercase">Outstanding</div>
+      <div class="fs-4 fw-bold {% if grand_outstanding > 0 %}text-danger{% else %}text-muted{% endif %}">
+        {{ grand_outstanding|floatformat:0|intcomma }}
+      </div>
+      <div class="text-muted small">FCFA</div>
+    </div>
+  </div>
+</div>
+
+<!-- Case Table -->
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Date</th>
+          <th>Patient</th>
+          <th>Procedure</th>
+          <th>Surgeon</th>
+          <th class="text-center">Ward Days</th>
+          <th class="text-end">Ward (FCFA)</th>
+          <th class="text-end">Theatre (FCFA)</th>
+          <th class="text-end">Drugs (FCFA)</th>
+          <th class="text-end">Billed (FCFA)</th>
+          <th class="text-end">Collected</th>
+          <th class="text-end">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cases %}
+        <tr>
+          <td class="text-muted small">{{ forloop.counter }}</td>
+          <td class="small text-nowrap">{{ c.surgery_date|date:"d/m/Y" }}</td>
+          <td>
+            <a href="{% url 'patients:detail' c.patient.pk %}" class="text-decoration-none fw-semibold small">
+              {{ c.patient.full_name }}
+            </a>
+            <div class="text-muted" style="font-size:.7rem;">{{ c.patient.patient_number }}</div>
+          </td>
+          <td class="small">{{ c.procedure }}</td>
+          <td class="small">
+            {% if c.surgeon %}Dr. {{ c.surgeon.get_full_name }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-center small">
+            {% if c.ward_days %}
+            {{ c.ward_days }}d
+            {% if c.ward_rate %}<div class="text-muted" style="font-size:.7rem;">@ {{ c.ward_rate|floatformat:0|intcomma }}/night</div>{% endif %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace small">
+            {% if c.ward_cost %}{{ c.ward_cost|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end font-monospace small">
+            {% if c.theatre_cost %}{{ c.theatre_cost|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end font-monospace small">
+            {% if c.drugs_cost %}{{ c.drugs_cost|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end font-monospace fw-semibold">
+            {% if c.total_billed %}{{ c.total_billed|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace text-success small">
+            {% if c.total_collected %}{{ c.total_collected|floatformat:0|intcomma }}{% else %}<span class="text-muted">0</span>{% endif %}
+          </td>
+          <td class="text-end font-monospace small {% if c.outstanding > 0 %}text-danger{% else %}text-muted{% endif %}">
+            {% if c.outstanding > 0 %}{{ c.outstanding|floatformat:0|intcomma }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="12" class="text-center text-muted py-4">
+            <i class="bi bi-hospital display-6 opacity-50"></i>
+            <p class="mt-2">No completed surgical cases in this period.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if cases %}
+      <tfoot class="table-secondary fw-bold border-top">
+        <tr>
+          <td colspan="5" class="text-end text-muted small pe-3">TOTAL ({{ total_cases }} cases)</td>
+          <td></td>
+          <td class="text-end font-monospace">{{ grand_ward|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace">{{ grand_theatre|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace">{{ grand_drugs|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-success">{{ grand_billed|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-success">{{ grand_collected|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace {% if grand_outstanding > 0 %}text-danger{% else %}text-muted{% endif %}">
+            {{ grand_outstanding|floatformat:0|intcomma }}
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

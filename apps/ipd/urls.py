@@ -64,6 +64,10 @@ urlpatterns = [
     # ── Pre-op Check-in, Stats & Printables ───────────────────────────────────
     path('pre-op/checkin/', views.pre_op_checkin, name='pre_op_checkin'),
     path('stats/', views.admission_stats, name='admission_stats'),
+
+    # ── Registration Statistics & Journal ─────────────────────────────────────
+    path('registration-stats/', views.registration_stats, name='registration_stats'),
+    path('journal/', views.journal_of_registrations, name='journal_of_registrations'),
     path('surgical-booking/<uuid:booking_id>/preop-sheet/', views.preop_instruction_sheet, name='preop_instruction_sheet'),
 
     # ── Vital Signs Flowsheet ─────────────────────────────────────────────────
