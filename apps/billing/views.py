@@ -7197,7 +7197,7 @@ def ap_vendor_list(request):
     ).aggregate(t=_S('amount_due'))['t'] or 0
     overdue_count = APBill.objects.filter(
         is_deleted=False, due_date__lt=today,
-        status__in=[APBillStatus.DRAFT, APBillStatus.PARTIALLY_PAID],
+        status__in=[APBillStatus.DRAFT, APBillStatus.PARTIAL, APBillStatus.PENDING, APBillStatus.OVERDUE],
     ).count()
     active_vendors = APVendor.objects.filter(is_deleted=False, is_active=True).count()
     return render(request, 'billing/ap_vendor_list.html', {
