@@ -1234,10 +1234,21 @@ def post_cash_variance(variance, user=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PHARMACY_STOCK   = '321000'   # OHADA Class 3 — Pharmacy Stock (Marchandises)
+THEATRE_STOCK    = '323000'   # OHADA Class 3 — Theatre/OT Consumables Stock
 COGS_PHARMACY    = '601000'   # OHADA Class 6 — Cost of Goods Sold (Achats de marchandises)
 PHARMACY_REVENUE = '704000'   # OHADA Class 7 — Pharmacy Sales Revenue
 STOCK_LOSS       = '603000'   # OHADA Class 6 — Stock Losses (damage, expiry, pilferage)
 STOCK_GAIN       = '321000'   # Surplus goes back to stock
+
+# GL account by PharmacyLocation type
+_PHARMA_LOC_GL = {
+    'MAIN':       '321000',
+    'SATELLITE':  '321000',
+    'WARD':       '321000',
+    'OUTPATIENT': '321000',
+    'EMERGENCY':  '321000',
+    'THEATRE':    '323000',
+}
 
 
 def post_pharmacy_cogs(dispensing_item, user=None):
@@ -1285,6 +1296,59 @@ def post_pharmacy_cogs(dispensing_item, user=None):
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for pharmacy COGS {dispensing_item.pk}: {e}")
+        return None
+
+
+def post_pharmacy_transfer(transfer, user=None):
+    """
+    GL reclassification when pharmacy stock moves between locations.
+    No P&L impact — just balance sheet sub-account reclass.
+        Dr  destination location GL (e.g. 323000 Theatre or 321000 Pharmacy)
+        Cr  source location GL      (e.g. 321000 Pharmacy)
+    If both locations use the same GL account, no journal entry is posted.
+    """
+    try:
+        from django.utils import timezone as _tz
+        src_code = _PHARMA_LOC_GL.get(transfer.from_location.location_type, '321000')
+        dst_code = _PHARMA_LOC_GL.get(transfer.to_location.location_type, '321000')
+        if src_code == dst_code:
+            return None  # Same sub-account — no reclass needed
+
+        total = Decimal('0')
+        items = transfer.items.select_related('drug', 'stock_batch').all()
+        for item in items:
+            qty = item.quantity_received or item.quantity or 0
+            if qty <= 0:
+                continue
+            cost = Decimal('0')
+            if item.stock_batch:
+                cost = getattr(item.stock_batch, 'unit_cost', None) or \
+                       getattr(item.stock_batch, 'purchase_price', None) or Decimal('0')
+            if cost <= 0 and item.drug:
+                cost = getattr(item.drug, 'cost_price', None) or \
+                       getattr(item.drug, 'purchase_price', None) or Decimal('0')
+            total += Decimal(str(cost)) * Decimal(str(qty))
+
+        if total <= 0:
+            return None
+
+        ref = transfer.transfer_number
+        return _create_entry(
+            date=_tz.localdate(),
+            description=f"Stock transfer: {transfer.from_location.name} → {transfer.to_location.name} [{ref}]",
+            reference=ref,
+            source_type='pharmacy_transfer',
+            source_id=transfer.pk,
+            lines=[
+                (dst_code, total, 0,
+                 f"Transfer IN from {transfer.from_location.name}"),
+                (src_code, 0, total,
+                 f"Transfer OUT to {transfer.to_location.name}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for pharmacy transfer {transfer.pk}: {e}")
         return None
 
 

@@ -3700,7 +3700,7 @@ def transfer_list(request):
 
 @login_required
 def transfer_create(request):
-    if not _is_head_pharmacist(request.user):
+    if not _can_manage_pharmacy(request.user):
         return HttpResponse('Access denied', status=403)
     locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True)
     if request.method == 'POST':
@@ -3778,6 +3778,12 @@ def transfer_action(request, transfer_id):
             item.quantity_received = item.quantity
             item.save(update_fields=['quantity_received'])
         transfer.save()
+        # GL reclassification: Dr destination stock / Cr source stock
+        try:
+            from apps.billing.gl_service import post_pharmacy_transfer
+            post_pharmacy_transfer(transfer, user=request.user)
+        except Exception:
+            pass  # GL failure must never block stock operations
         messages.success(request, f'Transfer {transfer.transfer_number} received.')
     elif action == 'reject' and transfer.status == TransferStatus.PENDING:
         transfer.status = TransferStatus.REJECTED
