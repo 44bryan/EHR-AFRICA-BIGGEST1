@@ -101,6 +101,7 @@ urlpatterns = [
     path('transfers/new/', views.transfer_create, name='transfer_create'),
     path('transfers/<uuid:transfer_id>/', views.transfer_detail, name='transfer_detail'),
     path('transfers/<uuid:transfer_id>/action/', views.transfer_action, name='transfer_action'),
+    path('dispatch-to-store/', views.dispatch_to_store, name='dispatch_to_store'),
 
     # ── Head Pharmacist: Stock Exit ─────────────────────────────────
     path('stock-exits/', views.stock_exit_list, name='stock_exit_list'),

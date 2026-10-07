@@ -3806,6 +3806,161 @@ def transfer_action(request, transfer_id):
     return redirect('pharmacy:transfer_detail', transfer_id=transfer.pk)
 
 
+# ── Pharmacy → Inventory Store Dispatch ──────────────────────────────────
+@login_required
+def dispatch_to_store(request):
+    """
+    Send pharmacy drug stock to any inventory StoreLocation (OT, Ward, Emergency, etc).
+    Reduces DrugStock in pharmacy, creates InventoryItem+BatchStock in destination,
+    posts GL: Dr destination_store_GL / Cr 321000 Pharmacy Stock.
+    """
+    if not _can_manage_pharmacy(request.user):
+        return HttpResponse('Access denied', status=403)
+
+    from apps.inventory.models import StoreLocation, InventoryItem, BatchStock, ItemCategory
+    from django.db import transaction
+    from decimal import Decimal
+    import uuid as _uuid
+
+    stores = StoreLocation.objects.filter(is_active=True, is_deleted=False).exclude(
+        location_type='PHARMACY'
+    ).order_by('name')
+
+    # Drugs with available stock
+    drugs_qs = Drug.objects.filter(
+        is_active=True, is_deleted=False,
+        stock_items__quantity_remaining__gt=0, stock_items__is_deleted=False,
+    ).filter(
+        Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True)
+    ).distinct().prefetch_related(
+        models.Prefetch(
+            'stock_items',
+            queryset=DrugStock.objects.filter(
+                quantity_remaining__gt=0, is_deleted=False
+            ).filter(
+                Q(expiry_date__gte=timezone.localdate()) | Q(expiry_date__isnull=True)
+            ).order_by('expiry_date'),
+            to_attr='_valid_batches',
+        )
+    ).order_by('name')
+
+    if request.method == 'POST':
+        store_id = request.POST.get('destination_store')
+        notes = request.POST.get('notes', '').strip()
+        drug_ids = request.POST.getlist('drug_id[]')
+        batch_ids = request.POST.getlist('batch_id[]')
+        qtys = request.POST.getlist('quantity[]')
+
+        destination = StoreLocation.objects.filter(pk=store_id, is_active=True).first()
+        if not destination:
+            messages.error(request, 'Invalid destination store.')
+            return redirect('pharmacy:dispatch_to_store')
+
+        dispatched = 0
+        total_value = Decimal('0')
+        dispatch_ref = f'PH-DISP-{timezone.now().strftime("%Y%m%d%H%M%S")}'
+
+        try:
+            with transaction.atomic():
+                for drug_id, batch_id, qty_str in zip(drug_ids, batch_ids, qtys):
+                    try:
+                        qty = int(qty_str)
+                    except (ValueError, TypeError):
+                        continue
+                    if qty <= 0:
+                        continue
+
+                    drug = Drug.objects.filter(pk=drug_id, is_active=True).first()
+                    batch = DrugStock.objects.filter(pk=batch_id, is_deleted=False).first()
+                    if not drug or not batch:
+                        continue
+                    if batch.quantity_remaining < qty:
+                        messages.warning(request, f'{drug.name}: only {batch.quantity_remaining} available, skipped.')
+                        continue
+
+                    # 1. Reduce pharmacy stock
+                    batch.quantity_remaining -= qty
+                    batch.save(update_fields=['quantity_remaining'])
+
+                    # 2. Find or create matching InventoryItem in destination store
+                    item_code = f'PH-{destination.store_code}-{drug.barcode or str(drug.pk)[:8]}'.upper()
+                    inv_item, _ = InventoryItem.objects.get_or_create(
+                        store_location=destination,
+                        name=drug.name,
+                        defaults={
+                            'item_code': item_code,
+                            'category': ItemCategory.PHARMACEUTICAL,
+                            'unit': drug.unit or 'unit',
+                            'unit_cost': drug.cost_price or drug.unit_price or Decimal('0'),
+                            'barcode': drug.barcode or None,
+                            'reorder_level': 5,
+                        }
+                    )
+                    # Update unit cost to latest pharmacy cost
+                    cost = drug.cost_price or drug.unit_price or Decimal('0')
+
+                    # 3. Create BatchStock in destination store
+                    BatchStock.objects.create(
+                        item=inv_item,
+                        lot_number=batch.batch_number or f'PH-{dispatch_ref}',
+                        expiry_date=batch.expiry_date or (timezone.localdate().replace(year=timezone.localdate().year + 1)),
+                        quantity_received=qty,
+                        quantity_remaining=qty,
+                        unit_cost=cost,
+                        notes=f'Dispatched from Pharmacy — {dispatch_ref}',
+                    )
+
+                    # 4. Update current_stock on InventoryItem
+                    inv_item.current_stock += qty
+                    inv_item.save(update_fields=['current_stock'])
+
+                    total_value += cost * qty
+                    dispatched += 1
+
+        except Exception as e:
+            messages.error(request, f'Dispatch failed: {e}')
+            return redirect('pharmacy:dispatch_to_store')
+
+        if dispatched == 0:
+            messages.warning(request, 'No items were dispatched — check quantities and availability.')
+            return redirect('pharmacy:dispatch_to_store')
+
+        # 5. Post GL: Dr destination GL / Cr 321000 Pharmacy Stock
+        if total_value > 0:
+            try:
+                from apps.billing.gl_service import _create_entry, PHARMACY_STOCK
+                src_code = PHARMACY_STOCK  # 321000
+                dst_code = destination.gl_account_code or '323000'
+                if src_code != dst_code:
+                    _create_entry(
+                        date=timezone.localdate(),
+                        description=f"Pharmacy dispatch to {destination.name} [{dispatch_ref}]",
+                        reference=dispatch_ref,
+                        source_type='pharmacy_dispatch',
+                        source_id=_uuid.uuid4(),
+                        lines=[
+                            (dst_code, total_value, 0, f"Stock in — {destination.name}"),
+                            (src_code, 0, total_value, f"Pharmacy stock issued to {destination.name}"),
+                        ],
+                        user=request.user,
+                    )
+            except Exception:
+                pass  # GL failure must not block stock operations
+
+        messages.success(
+            request,
+            f'Dispatched {dispatched} item(s) to {destination.name} (ref: {dispatch_ref}). '
+            f'Total value: {int(total_value):,} XAF.'
+        )
+        return redirect('pharmacy:dispatch_to_store')
+
+    return render(request, 'pharmacy/dispatch_to_store.html', {
+        'stores': stores,
+        'drugs': drugs_qs,
+        'today': timezone.localdate(),
+    })
+
+
 # ── Cross-Store Stock Visibility ──────────────────────────────────────────
 
 @login_required

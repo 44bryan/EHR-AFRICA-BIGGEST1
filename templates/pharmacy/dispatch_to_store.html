@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% load ehr_tags %}
+
+{% block title %}Dispatch to Store{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <h4 class="mb-0 fw-bold"><i class="bi bi-box-arrow-up-right text-primary"></i> Dispatch Drugs to Store</h4>
+    <span class="badge bg-warning text-dark">Pharmacy → OT / Ward / Emergency</span>
+  </div>
+  <p class="text-muted small mb-3">
+    Send pharmacy drugs to any store (OT, Ward, Emergency, etc.).
+    Stock is immediately moved. GL posts automatically: <code>Dr destination / Cr 321000 Pharmacy</code>.
+  </p>
+
+  {% if messages %}
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <form method="post" id="dispatchForm">
+    {% csrf_token %}
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-geo-alt-fill"></i> Destination Store
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label fw-semibold">Send To <span class="text-danger">*</span></label>
+            <select name="destination_store" class="form-select" required>
+              <option value="">— Select destination store —</option>
+              {% for store in stores %}
+              <option value="{{ store.pk }}">{{ store.name }} ({{ store.get_location_type_display }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-7">
+            <label class="form-label fw-semibold">Notes / Reason</label>
+            <input type="text" name="notes" class="form-control" placeholder="e.g. Theatre case on 07/10/2026 — Dr. Nkemdirim">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-success text-white fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-capsule-pill"></i> Drug Lines</span>
+        <button type="button" class="btn btn-sm btn-light" id="addLineBtn">
+          <i class="bi bi-plus-circle"></i> Add Drug
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-bordered table-sm mb-0" id="linesTable">
+          <thead class="table-light">
+            <tr>
+              <th style="width:35%">Drug</th>
+              <th style="width:28%">Batch / Lot (select to see stock)</th>
+              <th style="width:12%" class="text-center">Available</th>
+              <th style="width:12%" class="text-center">Qty to Send</th>
+              <th style="width:8%" class="text-center">Unit Cost</th>
+              <th style="width:5%"></th>
+            </tr>
+          </thead>
+          <tbody id="linesBody">
+            <tr id="lineTemplate" class="line-row">
+              <td>
+                <select name="drug_id[]" class="form-select form-select-sm drug-select" required>
+                  <option value="">— Select drug —</option>
+                  {% for drug in drugs %}
+                  <option value="{{ drug.pk }}"
+                    data-batches='[{% for b in drug._valid_batches %}{"id":"{{ b.pk }}","lot":"{{ b.batch_number|default:"—" }}","exp":"{{ b.expiry_date|date:"d/m/Y" }}","qty":{{ b.quantity_remaining }},"cost":"{{ b.unit_cost|default:"0" }}"}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                    data-unit="{{ drug.unit|default:"unit" }}"
+                    data-cost="{{ drug.cost_price|default:drug.unit_price|default:"0" }}">
+                    {{ drug.name }}{% if drug.dosage_form %} — {{ drug.dosage_form }}{% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="batch_id[]" class="form-select form-select-sm batch-select" required disabled>
+                  <option value="">— Select drug first —</option>
+                </select>
+              </td>
+              <td class="text-center align-middle">
+                <span class="avail-qty text-muted">—</span>
+              </td>
+              <td>
+                <input type="number" name="quantity[]" class="form-control form-control-sm qty-input text-center"
+                       min="1" value="" required disabled>
+              </td>
+              <td class="text-center align-middle">
+                <span class="unit-cost text-muted small">—</span>
+              </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-line" title="Remove">
+                  <i class="bi bi-x"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex justify-content-between align-items-center">
+        <span class="small text-muted">Total estimated value: <strong id="totalValue">0</strong> XAF</span>
+        <button type="submit" class="btn btn-primary px-4" id="submitBtn">
+          <i class="bi bi-send-fill"></i> Dispatch to Store
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  function updateTotal() {
+    var total = 0;
+    document.querySelectorAll('.line-row').forEach(function (row) {
+      var qty = parseInt(row.querySelector('.qty-input').value) || 0;
+      var costEl = row.querySelector('.unit-cost');
+      var cost = parseFloat(costEl.dataset.cost || '0') || 0;
+      total += qty * cost;
+    });
+    document.getElementById('totalValue').textContent = Math.round(total).toLocaleString();
+  }
+
+  function wireRow(row) {
+    var drugSel = row.querySelector('.drug-select');
+    var batchSel = row.querySelector('.batch-select');
+    var availEl = row.querySelector('.avail-qty');
+    var qtyInput = row.querySelector('.qty-input');
+    var costEl = row.querySelector('.unit-cost');
+
+    drugSel.addEventListener('change', function () {
+      var opt = drugSel.options[drugSel.selectedIndex];
+      batchSel.innerHTML = '<option value="">— Select batch —</option>';
+      qtyInput.disabled = true;
+      qtyInput.value = '';
+      availEl.textContent = '—';
+      costEl.textContent = '—';
+      costEl.dataset.cost = '0';
+
+      if (!opt.value) { batchSel.disabled = true; return; }
+
+      var batches = [];
+      try { batches = JSON.parse(opt.dataset.batches || '[]'); } catch (e) {}
+      if (batches.length === 0) {
+        batchSel.innerHTML = '<option value="">No stock available</option>';
+        batchSel.disabled = true;
+        return;
+      }
+      batchSel.disabled = false;
+      batches.forEach(function (b) {
+        var o = document.createElement('option');
+        o.value = b.id;
+        o.textContent = 'Lot ' + b.lot + ' | Exp ' + b.exp + ' | Qty ' + b.qty;
+        o.dataset.qty = b.qty;
+        o.dataset.cost = b.cost;
+        batchSel.appendChild(o);
+      });
+    });
+
+    batchSel.addEventListener('change', function () {
+      var opt = batchSel.options[batchSel.selectedIndex];
+      if (!opt.value) {
+        availEl.textContent = '—';
+        qtyInput.disabled = true;
+        qtyInput.value = '';
+        costEl.textContent = '—';
+        costEl.dataset.cost = '0';
+        return;
+      }
+      var qty = parseInt(opt.dataset.qty) || 0;
+      availEl.textContent = qty;
+      availEl.className = 'avail-qty ' + (qty > 0 ? 'text-success fw-semibold' : 'text-danger');
+      qtyInput.disabled = false;
+      qtyInput.max = qty;
+      qtyInput.value = '';
+      var cost = parseFloat(opt.dataset.cost) || 0;
+      costEl.textContent = Math.round(cost).toLocaleString();
+      costEl.dataset.cost = cost;
+      updateTotal();
+    });
+
+    qtyInput.addEventListener('input', updateTotal);
+
+    row.querySelector('.remove-line').addEventListener('click', function () {
+      if (document.querySelectorAll('.line-row').length > 1) {
+        row.remove();
+        updateTotal();
+      }
+    });
+  }
+
+  // Wire first row
+  wireRow(document.getElementById('lineTemplate'));
+
+  document.getElementById('addLineBtn').addEventListener('click', function () {
+    var tmpl = document.getElementById('lineTemplate');
+    var clone = tmpl.cloneNode(true);
+    clone.removeAttribute('id');
+    // Reset clone
+    clone.querySelector('.drug-select').value = '';
+    clone.querySelector('.batch-select').innerHTML = '<option value="">— Select drug first —</option>';
+    clone.querySelector('.batch-select').disabled = true;
+    clone.querySelector('.qty-input').disabled = true;
+    clone.querySelector('.qty-input').value = '';
+    clone.querySelector('.avail-qty').textContent = '—';
+    clone.querySelector('.unit-cost').textContent = '—';
+    clone.querySelector('.unit-cost').dataset.cost = '0';
+    document.getElementById('linesBody').appendChild(clone);
+    wireRow(clone);
+  });
+
+  document.getElementById('dispatchForm').addEventListener('submit', function (e) {
+    var hasItem = false;
+    document.querySelectorAll('.line-row').forEach(function (row) {
+      var qty = parseInt(row.querySelector('.qty-input').value) || 0;
+      if (qty > 0) hasItem = true;
+    });
+    if (!hasItem) {
+      e.preventDefault();
+      alert('Please add at least one drug with a quantity.');
+    }
+  });
+})();
+</script>
+{% endblock %}
