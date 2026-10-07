@@ -162,12 +162,26 @@
 </form>
 
 <script>
-const ITEMS_URL   = '{% url "inventory:items_by_store_ajax" %}';
+/* ── Preloaded operation types and store codes (no AJAX needed for filtering) ── */
+const ITEMS_URL = '{% url "inventory:items_by_store_ajax" %}';
+const ALL_OP_TYPES = [
+  {% for op in operation_types %}
+  {id:"{{ op.id }}", code:"{{ op.code }}", name:"{{ op.name }}",
+   loc:"{{ op.location_types }}", dr:"{% if op.debit_account %}{{ op.debit_account.code }}{% endif %}",
+   cr:"{% if op.credit_account %}{{ op.credit_account.code }}{% endif %}",
+   label:"{{ op.code }} — {{ op.name }}"},
+  {% endfor %}
+];
 const STORE_CODES = {{ store_codes_json|default:"{}"|safe }};
-const OP_TYPE_URL = '{% url "inventory:op_types_by_store_ajax" %}';
-var currentItems  = [];
+var currentItems = [];
 
-/* ─── Store change: cascade op types + items ─── */
+function filterOpTypes(storeType) {
+  return ALL_OP_TYPES.filter(function(op) {
+    if (!op.loc) return true; // blank = all stores
+    return op.loc.split(',').map(s => s.trim()).indexOf(storeType) !== -1;
+  });
+}
+
 document.getElementById('storeSelect').addEventListener('change', function() {
   const storeId   = this.value;
   const opt       = this.options[this.selectedIndex];
@@ -177,49 +191,40 @@ document.getElementById('storeSelect').addEventListener('change', function() {
   const storeHint = document.getElementById('storeGlHint');
 
   if (!storeId) {
-    resetOpTypes();
-    resetAllItemSelects();
+    resetOpTypes(); resetAllItemSelects();
     prompt.style.display = '';
     storeHint.textContent = 'Store GL account displayed after selection';
-    storeHint.className   = 'text-muted';
-    storeHint.style.fontSize = '.7rem';
+    storeHint.className = 'text-muted'; storeHint.style.fontSize = '.7rem';
     return;
   }
   prompt.style.display = 'none';
-  // Update document number preview
+  // Document number preview
   const sc = STORE_CODES[storeId] || '???';
   document.getElementById('docNumberBadge').textContent = 'BE-' + sc + '-XXXXXX';
   if (glCode) {
     storeHint.innerHTML = '<i class="bi bi-bank me-1"></i>GL: <strong>' + glCode + '</strong> &mdash; ' + opt.textContent;
-    storeHint.className = 'text-primary small fw-semibold';
-    delete storeHint.style.fontSize;
+    storeHint.className = 'text-primary small fw-semibold'; delete storeHint.style.fontSize;
   }
 
-  // 1. Load filtered operation types (ENTRY)
-  fetch(OP_TYPE_URL + '?store_id=' + encodeURIComponent(storeId) + '&category=ENTRY', {credentials:'same-origin'})
-    .then(r => r.json())
-    .then(data => {
-      const sel = document.getElementById('opTypeSelect');
-      sel.innerHTML = '<option value="">-- Select Operation Type --</option>';
-      data.op_types.forEach(op => {
-        const o = document.createElement('option');
-        o.value = op.id;
-        o.textContent = op.label;
-        o.setAttribute('data-dr', op.dr_code);
-        o.setAttribute('data-cr', op.cr_code);
-        sel.appendChild(o);
-      });
-      sel.disabled = data.op_types.length === 0;
-      if (data.op_types.length === 0) {
-        sel.innerHTML = '<option value="">— No operation types for this store —</option>';
-      }
-      resetOpGlHint();
-    });
+  // 1. Filter operation types client-side (no AJAX needed)
+  const ops = filterOpTypes(storeType);
+  const sel = document.getElementById('opTypeSelect');
+  sel.innerHTML = '<option value="">-- Select Operation Type --</option>';
+  ops.forEach(function(op) {
+    const o = document.createElement('option');
+    o.value = op.id; o.textContent = op.label;
+    o.setAttribute('data-dr', op.dr); o.setAttribute('data-cr', op.cr);
+    sel.appendChild(o);
+  });
+  sel.disabled = (ops.length === 0);
+  if (ops.length === 0) sel.innerHTML = '<option value="">— No operation types for this store —</option>';
+  resetOpGlHint();
 
-  // 2. Load items for this store
+  // 2. Load items for this store via AJAX
   fetch(ITEMS_URL + '?store_id=' + encodeURIComponent(storeId), {credentials:'same-origin'})
     .then(r => r.json())
-    .then(data => { rebuildAllItemSelects(data.items || []); });
+    .then(data => { rebuildAllItemSelects(data.items || []); })
+    .catch(function() { rebuildAllItemSelects([]); });
 });
 
 /* ─── Op type GL hint ─── */
