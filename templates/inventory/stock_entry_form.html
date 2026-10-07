@@ -1,18 +1,22 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Stock Entry Note{% endblock %}
-{% block content %}
-<div class="container-fluid py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h5 class="fw-bold mb-0">Stock Entry Note</h5>
-      <p class="text-muted small mb-0">Record goods received into store</p>
-    </div>
-    <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Entry Log</a>
-  </div>
+{% block title %}Stock In — New Entry Note{% endblock %}
 
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Stock In — Goods Received</h5>
+    <p class="text-muted small mb-0">Record goods received into store — multi-line, batch tracking, GL posting on FD approval</p>
+  </div>
+  <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stock In Log</a>
+</div>
+{% endblock %}
+
+{% block content %}
   <form method="post">
     {% csrf_token %}
+
+    {# ── Row 1: Operation, Source, Store, Supplier ── #}
     <div class="row g-2 mb-3">
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
@@ -24,7 +28,15 @@
           </option>
           {% endfor %}
         </select>
-        <div class="text-muted" style="font-size:.7rem;" id="opGlHint">GL accounts auto-selected from operation type</div>
+        <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL accounts auto-selected from operation type</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Source / Entry Type <span class="text-danger">*</span></label>
+        <select name="source" class="form-select form-select-sm" required>
+          {% for val, label in sources %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Destination Store <span class="text-danger">*</span></label>
@@ -40,33 +52,34 @@
           {% for v in vendors %}<option value="{{ v.name }}">{% endfor %}
         </datalist>
       </div>
-      <div class="col-md-3">
+    </div>
+
+    {# ── Row 2: PO Ref, DN #, Invoice #, Condition, Temp Check ── #}
+    <div class="row g-2 mb-3">
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">PO Reference</label>
         <input type="text" name="po_reference" class="form-control form-control-sm" placeholder="PO-2026-001">
       </div>
-    </div>
-
-    <div class="row g-2 mb-3">
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">Delivery Note #</label>
-        <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN reference">
+        <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN-001">
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">Invoice #</label>
-        <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="Invoice number">
+        <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="INV-2026-001">
       </div>
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Condition on Receipt</label>
         <select name="condition" class="form-select form-select-sm">
           <option value="GOOD" selected>Good — All items intact</option>
-          <option value="PARTIAL">Partial — Some items damaged/missing</option>
+          <option value="PARTIAL">Partial — Some damaged/missing</option>
           <option value="DAMAGED">Damaged — Significant issues</option>
         </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Temperature Check</label>
         <select name="temp_check" class="form-select form-select-sm">
-          <option value="">N/A — Not temperature-sensitive</option>
+          <option value="">N/A — Not temp-sensitive</option>
           <option value="OK">OK — Within range</option>
           <option value="COLD_CHAIN_BREAK">Cold chain break detected</option>
           <option value="NOT_CHECKED">Not checked</option>
@@ -74,46 +87,71 @@
       </div>
     </div>
 
+    {# ── Items Table ── #}
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span class="fw-semibold small">Items to Receive</span>
-        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEntryLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+        <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Receive</span>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="text-muted small">Total: <strong id="grandTotal" class="text-success">0</strong> XAF</span>
+          <button type="button" class="btn btn-sm btn-success" onclick="addEntryLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+        </div>
       </div>
       <div class="card-body p-0">
+        <div class="table-responsive">
         <table class="table table-sm mb-0" style="font-size:.82rem;">
           <thead class="table-light">
-            <tr><th>Item</th><th style="width:80px;">Qty</th><th style="width:120px;">Batch / Lot</th><th style="width:130px;">Expiry Date</th><th style="width:100px;">Unit Cost</th><th style="width:40px;"></th></tr>
+            <tr>
+              <th style="min-width:200px">Item <span class="text-danger">*</span></th>
+              <th style="width:75px">Qty <span class="text-danger">*</span></th>
+              <th style="width:110px">Batch / Lot</th>
+              <th style="width:125px">Expiry Date</th>
+              <th style="width:125px">Mfg Date</th>
+              <th style="width:105px">Unit Cost</th>
+              <th style="width:100px" class="text-end">Line Total</th>
+              <th style="width:35px"></th>
+            </tr>
           </thead>
           <tbody id="entryLines">
             <tr class="entry-line">
               <td>
                 <select name="item_id[]" class="form-select form-select-sm ts-select-item" required onchange="fillEntryCost(this)">
-                  <option value="">-- Type to search item --</option>
+                  <option value="">-- Search item --</option>
                   {% for item in items %}
                   <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} — {{ item.name }} ({{ item.unit }})</option>
                   {% endfor %}
                 </select>
               </td>
-              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm entry-qty" min="1" required oninput="calcLineTotal(this)"></td>
               <td><input type="text" name="lot_number[]" class="form-control form-control-sm" placeholder="Optional"></td>
               <td><input type="date" name="expiry_date[]" class="form-control form-control-sm"></td>
-              <td><input type="number" name="unit_cost[]" class="form-control form-control-sm" step="0.01" min="0"></td>
-              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+              <td><input type="date" name="manufacture_date[]" class="form-control form-control-sm"></td>
+              <td><input type="number" name="unit_cost[]" class="form-control form-control-sm entry-cost" step="1" min="0" oninput="calcLineTotal(this)"></td>
+              <td class="text-end fw-semibold line-total text-success">0</td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="removeLine(this)"><i class="bi bi-x"></i></button></td>
             </tr>
           </tbody>
         </table>
+        </div>
+      </div>
+      <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+        <button type="button" class="btn btn-sm btn-outline-success" onclick="addEntryLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Line</button>
+        <div class="text-end">
+          <span class="text-muted small me-2">Grand Total:</span>
+          <strong class="fs-6 text-success" id="grandTotal2">0 XAF</strong>
+        </div>
       </div>
     </div>
 
     <div class="mb-3">
-      <label class="form-label small fw-semibold">Notes</label>
-      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
+      <label class="form-label small fw-semibold">Notes / Remarks</label>
+      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks about this delivery..."></textarea>
     </div>
 
-    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Receive Stock</button>
-    <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-success px-4"><i class="bi bi-check-lg me-1"></i>Save Stock In</button>
+      <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
   </form>
-</div>
 
 <script>
 function initTsSelects(){
@@ -123,7 +161,7 @@ function initTsSelects(){
       placeholder:'Type to search item...',
       searchField:['text'],
       maxOptions:50,
-      onChange: function(val){ fillEntryCost(el); }
+      onChange: function(){ fillEntryCost(el); }
     });
   });
 }
@@ -132,21 +170,43 @@ function addEntryLine(){
   const first = tbody.querySelector('.entry-line');
   const clone = first.cloneNode(true);
   clone.querySelectorAll('input').forEach(i => i.value = '');
-  // Reset Tom Select instance on cloned row
+  clone.querySelector('.line-total').textContent = '0';
   const sel = clone.querySelector('select');
   if(sel && sel.tomselect){ sel.tomselect.destroy(); }
   sel.selectedIndex = 0;
   tbody.appendChild(clone);
   initTsSelects();
 }
+function removeLine(btn){
+  const rows = document.querySelectorAll('#entryLines .entry-line');
+  if(rows.length > 1){ btn.closest('tr').remove(); updateGrandTotal(); }
+}
 function fillEntryCost(sel){
   const opt = sel.options[sel.selectedIndex];
   const cost = opt?.dataset?.cost || '';
-  const costInput = sel.closest('tr').querySelector('input[name="unit_cost[]"]');
-  if(costInput && cost) costInput.value = cost;
+  const row = sel.closest('tr');
+  const costInput = row.querySelector('input[name="unit_cost[]"]');
+  if(costInput && cost){ costInput.value = cost; calcLineTotal(costInput); }
+}
+function calcLineTotal(inp){
+  const row = inp.closest('tr');
+  const qty = parseFloat(row.querySelector('.entry-qty')?.value) || 0;
+  const cost = parseFloat(row.querySelector('.entry-cost')?.value) || 0;
+  const total = Math.round(qty * cost);
+  row.querySelector('.line-total').textContent = total.toLocaleString();
+  updateGrandTotal();
+}
+function updateGrandTotal(){
+  let sum = 0;
+  document.querySelectorAll('.line-total').forEach(function(td){
+    sum += parseFloat(td.textContent.replace(/,/g,'')) || 0;
+  });
+  const fmt = Math.round(sum).toLocaleString() + ' XAF';
+  document.getElementById('grandTotal').textContent = Math.round(sum).toLocaleString();
+  const gt2 = document.getElementById('grandTotal2');
+  if(gt2) gt2.textContent = fmt;
 }
 document.addEventListener('DOMContentLoaded', initTsSelects);
-// Show GL hint when operation type changes
 document.getElementById('opTypeSelect')?.addEventListener('change', function(){
   var opt = this.options[this.selectedIndex];
   var hint = document.getElementById('opGlHint');

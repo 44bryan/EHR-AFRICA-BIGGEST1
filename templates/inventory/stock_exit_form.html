@@ -1,18 +1,22 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Stock Exit Note{% endblock %}
-{% block content %}
-<div class="container-fluid py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h5 class="fw-bold mb-0">Stock Exit / Issue Note</h5>
-      <p class="text-muted small mb-0">ISO 9001 &sect;8.5.2 &mdash; Controlled Stock Release</p>
-    </div>
-    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Exit Log</a>
-  </div>
+{% block title %}Stock Out — New Issue Note{% endblock %}
 
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-right me-2 text-warning"></i>Stock Out — Issue / Withdrawal Note</h5>
+    <p class="text-muted small mb-0">ISO 9001 §8.5.2 — Controlled stock release. GL posting on Finance Director approval.</p>
+  </div>
+  <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stock Out Log</a>
+</div>
+{% endblock %}
+
+{% block content %}
   <form method="post">
     {% csrf_token %}
+
+    {# ── Row 1: Operation, Reason, Source Store, Department ── #}
     <div class="row g-2 mb-3">
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
@@ -24,7 +28,16 @@
           </option>
           {% endfor %}
         </select>
-        <div class="text-muted" style="font-size:.7rem;" id="opGlHint">GL accounts auto-selected from operation type</div>
+        <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL accounts auto-selected from operation type</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Reason / Exit Type <span class="text-danger">*</span></label>
+        <select name="reason" class="form-select form-select-sm" required>
+          <option value="">-- Select Reason --</option>
+          {% for val, label in reasons %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Source Store <span class="text-danger">*</span></label>
@@ -40,32 +53,45 @@
           {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Reference / Req. No.</label>
-        <input type="text" name="reference" class="form-control form-control-sm" placeholder="REQ-001 or reference">
-      </div>
     </div>
 
+    {# ── Row 2: Reference, Authorized By, Received By ── #}
     <div class="row g-2 mb-3">
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Authorized By</label>
-        <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Supervisor name">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Reference / Requisition No.</label>
+        <input type="text" name="reference" class="form-control form-control-sm" placeholder="REQ-001 or any reference">
       </div>
-      <div class="col-md-3">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Authorized By</label>
+        <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Supervisor / approving officer name">
+      </div>
+      <div class="col-md-4">
         <label class="form-label small fw-semibold">Received By</label>
-        <input type="text" name="received_by" class="form-control form-control-sm" placeholder="Name of person receiving items">
+        <input type="text" name="received_by" class="form-control form-control-sm" placeholder="Name of person collecting items">
       </div>
     </div>
 
+    {# ── Items Table ── #}
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span class="fw-semibold small">Items to Issue</span>
-        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addExitLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+        <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Issue</span>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="text-muted small">Total Value: <strong id="exitGrandTotal" class="text-warning">0 XAF</strong></span>
+          <button type="button" class="btn btn-sm btn-warning text-dark" onclick="addExitLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
+        </div>
       </div>
       <div class="card-body p-0">
+        <div class="table-responsive">
         <table class="table table-sm mb-0" style="font-size:.82rem;">
           <thead class="table-light">
-            <tr><th>Item</th><th style="width:100px;">Available</th><th style="width:100px;">Qty to Issue</th><th style="width:40px;"></th></tr>
+            <tr>
+              <th style="min-width:220px">Item <span class="text-danger">*</span></th>
+              <th style="width:110px" class="text-center">In Stock</th>
+              <th style="width:100px">Qty to Issue <span class="text-danger">*</span></th>
+              <th style="width:105px" class="text-end">Unit Cost</th>
+              <th style="width:105px" class="text-end">Line Total</th>
+              <th style="width:35px"></th>
+            </tr>
           </thead>
           <tbody id="exitLines">
             <tr class="exit-line">
@@ -73,28 +99,39 @@
                 <select name="item_id[]" class="form-select form-select-sm" required onchange="showStock(this)">
                   <option value="">-- Select Item --</option>
                   {% for item in items %}
-                  <option value="{{ item.id }}" data-stock="{{ item.current_stock }}" data-unit="{{ item.unit }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
+                  <option value="{{ item.id }}" data-stock="{{ item.current_stock }}" data-unit="{{ item.unit }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
                   {% endfor %}
                 </select>
               </td>
-              <td class="stock-display text-muted text-center">—</td>
-              <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" required></td>
-              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('tr').remove()"><i class="bi bi-x"></i></button></td>
+              <td class="stock-display text-center text-muted">—</td>
+              <td><input type="number" name="quantity[]" class="form-control form-control-sm exit-qty" min="1" required oninput="calcExitTotal(this)"></td>
+              <td class="text-end text-muted exit-unit-cost small">—</td>
+              <td class="text-end fw-semibold exit-line-total text-warning">0</td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="removeExitLine(this)"><i class="bi bi-x"></i></button></td>
             </tr>
           </tbody>
         </table>
+        </div>
+      </div>
+      <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+        <button type="button" class="btn btn-sm btn-outline-warning" onclick="addExitLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Item</button>
+        <div class="text-end">
+          <span class="text-muted small me-2">Grand Total:</span>
+          <strong class="fs-6 text-warning" id="exitGrandTotal2">0 XAF</strong>
+        </div>
       </div>
     </div>
 
     <div class="mb-3">
-      <label class="form-label small fw-semibold">Notes</label>
+      <label class="form-label small fw-semibold">Notes / Remarks</label>
       <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
     </div>
 
-    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Issue Stock</button>
-    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-warning text-dark px-4"><i class="bi bi-check-lg me-1"></i>Save Stock Out</button>
+      <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
   </form>
-</div>
 
 <script>
 function addExitLine(){
@@ -104,9 +141,44 @@ function addExitLine(){
   clone.querySelectorAll('input').forEach(i => i.value = '');
   clone.querySelector('select').selectedIndex = 0;
   clone.querySelector('.stock-display').textContent = '—';
+  clone.querySelector('.exit-unit-cost').textContent = '—';
+  clone.querySelector('.exit-line-total').textContent = '0';
   tbody.appendChild(clone);
 }
-// Show GL hint when operation type changes
+function removeExitLine(btn){
+  const rows = document.querySelectorAll('#exitLines .exit-line');
+  if(rows.length > 1){ btn.closest('tr').remove(); updateExitGrandTotal(); }
+}
+function showStock(sel){
+  const opt = sel.options[sel.selectedIndex];
+  const stock = opt?.dataset?.stock || '—';
+  const unit = opt?.dataset?.unit || '';
+  const cost = parseFloat(opt?.dataset?.cost) || 0;
+  const row = sel.closest('tr');
+  row.querySelector('.stock-display').textContent = stock + ' ' + unit;
+  row.querySelector('.exit-unit-cost').textContent = cost ? cost.toLocaleString() : '—';
+  calcExitTotal(row.querySelector('.exit-qty'));
+}
+function calcExitTotal(inp){
+  const row = inp.closest('tr');
+  const qty = parseFloat(inp.value) || 0;
+  const costEl = row.querySelector('.exit-unit-cost');
+  const cost = parseFloat(costEl?.textContent?.replace(/,/g,'')) || 0;
+  const total = Math.round(qty * cost);
+  row.querySelector('.exit-line-total').textContent = total.toLocaleString();
+  updateExitGrandTotal();
+}
+function updateExitGrandTotal(){
+  let sum = 0;
+  document.querySelectorAll('.exit-line-total').forEach(function(td){
+    sum += parseFloat(td.textContent.replace(/,/g,'')) || 0;
+  });
+  const fmt = Math.round(sum).toLocaleString() + ' XAF';
+  const g1 = document.getElementById('exitGrandTotal');
+  const g2 = document.getElementById('exitGrandTotal2');
+  if(g1) g1.textContent = fmt;
+  if(g2) g2.textContent = fmt;
+}
 document.getElementById('opTypeSelect')?.addEventListener('change', function(){
   var opt = this.options[this.selectedIndex];
   var hint = document.getElementById('opGlHint');
@@ -119,11 +191,5 @@ document.getElementById('opTypeSelect')?.addEventListener('change', function(){
     hint.style.fontSize = '.7rem';
   }
 });
-function showStock(sel){
-  const opt = sel.options[sel.selectedIndex];
-  const stock = opt?.dataset?.stock || '—';
-  const unit = opt?.dataset?.unit || '';
-  sel.closest('tr').querySelector('.stock-display').textContent = stock + ' ' + unit;
-}
 </script>
 {% endblock %}
