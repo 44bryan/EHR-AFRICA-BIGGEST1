@@ -84,6 +84,29 @@ def _can_view_reports(user):
     )
 
 
+
+# ── Document Number Generator — Bon d'Entrée / Bon de Sortie ──────────────────
+def _next_doc_number(doc_type, store_code=''):
+    """
+    Generate next sequential document number.
+    Entry: BE-{store_code}-{nnnnnn}  (Bon d'Entrée)
+    Exit:  BS-{store_code}-{nnnnnn}  (Bon de Sortie)
+    Sequence is per store per doc_type.
+    """
+    from django.db.models import Max
+    prefix = 'BE' if doc_type == 'ENTRY' else 'BS'
+    sc = (store_code or 'GEN').upper().replace(' ', '')[:6]
+    tag = f'{prefix}-{sc}-'
+    last = StockValidation.objects.filter(reference__startswith=tag)                                    .aggregate(m=Max('reference'))['m']
+    if last:
+        try:
+            seq = int(last.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f'{tag}{seq:06d}'
+
 # ── 4-Eyes Stock Validation Helper ────────────────────────────────────────────
 
 def _create_stock_validation(validation_type, source_id, reference, description,
@@ -3142,7 +3165,13 @@ def stock_exit_create(request):
                 abs(m.quantity or 0) * float(m.item.unit_cost or 0)
                 for m in recent_movements.select_related('item')
             )
-            exit_ref = f'SEX-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
+            # Get store code for document number
+            try:
+                _exit_store = StoreLocation.objects.get(pk=source_store_id)
+                _exit_store_code = _exit_store.store_code or _exit_store.location_type[:4]
+            except StoreLocation.DoesNotExist:
+                _exit_store_code = 'GEN'
+            exit_ref = _next_doc_number('EXIT', _exit_store_code)
             if total_value > 0:
                 op_label = ''
                 if op_type_id:
@@ -3162,10 +3191,14 @@ def stock_exit_create(request):
             messages.warning(request, 'No items were issued — check stock availability.')
         return redirect('inventory:stock_exit_list')
 
+    import json as _json
+    store_codes = {str(s.pk): (s.store_code or s.location_type[:4]) for s in store_locations}
     return render(request, 'inventory/stock_exit_form.html', {
         'items': items, 'departments': DEPARTMENTS,
         'reasons': EXIT_REASONS, 'store_locations': store_locations,
         'operation_types': exit_op_types,
+        'store_codes': store_codes,
+        'store_codes_json': _json.dumps(store_codes),
     })
 
 
@@ -3294,7 +3327,7 @@ def stock_entry_create(request):
             StockMovement.objects.create(
                 item=inv_item, movement_type='IN', quantity=qty,
                 balance_after=inv_item.current_stock,
-                reference=' | '.join(ref_parts),
+                reference=(entry_ref + ' | ' + ' | '.join(ref_parts)).strip(' | ') if 'entry_ref' in dir() else ' | '.join(ref_parts),
                 notes=' | '.join(note_parts) if note_parts else '',
                 performed_by=request.user, batch=batch,
             )
@@ -3310,7 +3343,13 @@ def stock_entry_create(request):
                 abs(m.quantity or 0) * float(m.item.unit_cost or 0)
                 for m in recent_movements.select_related('item')
             )
-            entry_ref = f'SEN-{timezone.localdate().strftime("%Y%m%d")}-{timezone.now().strftime("%H%M%S")}'
+            # Get store code for document number
+            try:
+                _entry_store = StoreLocation.objects.get(pk=dest_store_id)
+                _entry_store_code = _entry_store.store_code or _entry_store.location_type[:4]
+            except StoreLocation.DoesNotExist:
+                _entry_store_code = 'GEN'
+            entry_ref = _next_doc_number('ENTRY', _entry_store_code)
             if total_value > 0:
                 op_label = ''
                 if op_type_id:
@@ -3328,10 +3367,15 @@ def stock_entry_create(request):
             messages.success(request, f'{received_count} item(s) received — awaiting GL validation.')
         return redirect('inventory:stock_entry_list')
 
+    # Build store_code map for JS preview
+    import json as _json
+    store_codes = {str(s.pk): (s.store_code or s.location_type[:4]) for s in store_locations}
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES, 'store_locations': store_locations,
         'operation_types': entry_op_types,
+        'store_codes': store_codes,
+        'store_codes_json': _json.dumps(store_codes),
     })
 
 

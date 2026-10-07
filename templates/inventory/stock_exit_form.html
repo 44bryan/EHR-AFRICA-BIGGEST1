@@ -5,10 +5,17 @@
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
-    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-right me-2 text-warning"></i>Stock Out — Issue / Withdrawal Note</h5>
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-right me-2 text-warning"></i>Stock Out — Bon de Sortie</h5>
     <p class="text-muted small mb-0">ISO 9001 §8.5.2 — Controlled stock release. GL posting on Finance Director approval.</p>
   </div>
-  <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stock Out Log</a>
+  <div class="d-flex align-items-center gap-2">
+    <div class="text-end">
+      <div class="text-muted small">N° Sortie</div>
+      <span class="badge bg-warning text-dark fs-6 fw-bold font-monospace" id="docNumberBadge">BS-???-XXXXXX</span>
+      <div class="text-muted" style="font-size:.68rem;">Auto-assigned on save</div>
+    </div>
+    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stock Out Log</a>
+  </div>
 </div>
 {% endblock %}
 
@@ -133,6 +140,7 @@
 
 <script>
 const ITEMS_URL   = '{% url "inventory:items_by_store_ajax" %}';
+const STORE_CODES = {{ store_codes_json|default:"{}" }};
 const OP_TYPE_URL = '{% url "inventory:op_types_by_store_ajax" %}';
 var currentItems  = [];
 
@@ -151,6 +159,9 @@ document.getElementById('storeSelect').addEventListener('change', function() {
     return;
   }
   prompt.style.display = 'none';
+  // Update document number preview
+  const sc = STORE_CODES[storeId] || '???';
+  document.getElementById('docNumberBadge').textContent = 'BS-' + sc + '-XXXXXX';
   if (glCode) {
     storeHint.innerHTML = '<i class="bi bi-bank me-1"></i>GL: <strong>' + glCode + '</strong> &mdash; ' + opt.textContent;
     storeHint.className = 'text-primary small fw-semibold';
