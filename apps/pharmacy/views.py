@@ -1968,9 +1968,14 @@ def stock_adjustment_create(request, batch_id):
         )
         return redirect('pharmacy:drug_detail', drug_id=batch.drug.id)
 
+    from apps.billing.models import StockOperationType
+    adj_op_types = StockOperationType.objects.filter(
+        is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('category', 'code')
     return render(request, 'pharmacy/stock_adjustment_form.html', {
         'batch': batch,
         'reasons': AdjustmentReason.choices,
+        'operation_types': adj_op_types,
     })
 
 
@@ -3716,9 +3721,14 @@ def transfer_create(request):
     ).filter(
         Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True)
     ).distinct().prefetch_related('stock_items').order_by('name')
+    from apps.billing.models import StockOperationType
+    transfer_op_types = StockOperationType.objects.filter(
+        is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('category', 'code')
     return render(request, 'pharmacy/transfer_form.html', {
         'locations': locations,
         'drugs': drugs_with_stock,
+        'operation_types': transfer_op_types,
     })
 
 
@@ -4382,6 +4392,23 @@ def receive_stock(request):
     drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
     if request.method == 'POST':
+        # Top-level receipt metadata
+        source = request.POST.get('source', '').strip()
+        po_reference = request.POST.get('po_reference', '').strip()
+        delivery_note = request.POST.get('delivery_note', '').strip()
+        invoice_number = request.POST.get('invoice_number', '').strip()
+        condition = request.POST.get('condition', 'GOOD')
+        temp_check = request.POST.get('temp_check', '')
+        vendor_name = request.POST.get('vendor_name', '').strip()
+        receipt_meta = []
+        if source: receipt_meta.append(f'Source:{source}')
+        if po_reference: receipt_meta.append(f'PO:{po_reference}')
+        if delivery_note: receipt_meta.append(f'DN:{delivery_note}')
+        if invoice_number: receipt_meta.append(f'INV:{invoice_number}')
+        if condition and condition != 'GOOD': receipt_meta.append(f'Condition:{condition}')
+        if temp_check: receipt_meta.append(f'TempCheck:{temp_check}')
+        receipt_prefix = ' | '.join(receipt_meta)
+
         line_count = int(request.POST.get('line_count', 0))
         created = 0
         for i in range(line_count):
@@ -4390,7 +4417,8 @@ def receive_stock(request):
             quantity = request.POST.get(f'lines-{i}-quantity')
             expiry = request.POST.get(f'lines-{i}-expiry_date', '').strip()
             purchase_price = request.POST.get(f'lines-{i}-purchase_price', '0')
-            supplier_name = request.POST.get(f'lines-{i}-supplier', '').strip()
+            # Per-line supplier overrides top-level supplier; top-level vendor_name is fallback
+            supplier_name = request.POST.get(f'lines-{i}-supplier', '').strip() or vendor_name
             notes = request.POST.get(f'lines-{i}-notes', '').strip()
             manufacture_date = request.POST.get(f'lines-{i}-manufacture_date', '').strip()
 
@@ -4424,7 +4452,7 @@ def receive_stock(request):
                 supplier=supplier_name,
                 purchase_price=price,
                 received_date=timezone.localdate(),
-                notes=notes,
+                notes=(receipt_prefix + (' | ' if receipt_prefix and notes else '') + notes).strip(),
                 created_by=request.user,
             )
             created += 1
@@ -4446,11 +4474,24 @@ def receive_stock(request):
         category='ENTRY', is_active=True, is_deleted=False
     ).select_related('debit_account', 'credit_account').order_by('code')
 
+    pharma_entry_sources = [
+        ('PURCHASE', 'Purchase / PO Delivery'),
+        ('DONATION', 'Donation'),
+        ('TRANSFER_IN', 'Transfer In (from other store)'),
+        ('RETURN', 'Department Return'),
+        ('FOUND', 'Found / Physical Count Adjustment'),
+        ('OPENING', 'Opening Stock'),
+        ('OTHER', 'Other'),
+    ]
+    locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
     return render(request, 'pharmacy/receive_stock.html', {
         'drugs': drugs,
         'suppliers': suppliers,
         'recent': recent,
         'operation_types': entry_op_types,
+        'sources': pharma_entry_sources,
+        'locations': locations,
     })
 
 

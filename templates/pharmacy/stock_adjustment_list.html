@@ -1,97 +1,151 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Stock Adjustments{% endblock %}
+{% block title %}Stock Adjustments Log — Pharmacy{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-sliders me-2 text-warning"></i>Stock Adjustments Log</h5>
+    <div class="text-muted small">ISO 9001 §8.7 — Full audit trail of all manual stock adjustments</div>
+  </div>
+  <div class="d-flex gap-2 d-print-none">
+    <button type="button" class="btn btn-sm btn-outline-dark" onclick="window.print()" title="Print"><i class="bi bi-printer"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-dark" onclick="exportTable('adjTable','Stock_Adjustments')" title="Export CSV"><i class="bi bi-file-earmark-spreadsheet"></i></button>
+    <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Drug List
+    </a>
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-  <div>
-    <h1 class="h3 mb-1 fw-bold">Stock Adjustments
-    </h1>
-    <div class="text-muted small">Full audit trail of all manual stock changes</div>
-  </div>
-  <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1"></i>Drug List
-  </a>
-</div>
 
-{# ── Summary Badges ── #}
-<div class="row g-3 mb-4">
-  {% regroup adjustments by reason as by_reason %}
-  {% for group in by_reason %}
-  <div class="col-6 col-md-3 col-lg-2">
+{# ── Summary Stat Cards ── #}
+{% if adjustments %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-2">
     <div class="card border-0 shadow-sm text-center py-2">
-      <div class="fw-bold fs-5">{{ group.list|length }}</div>
-      <div class="text-muted small">{{ group.grouper }}</div>
+      <div class="fw-bold fs-5">{{ adjustments|length }}</div>
+      <div class="text-muted small" style="font-size:.7rem;">Total Adjustments</div>
     </div>
   </div>
-  {% endfor %}
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center py-2">
+      <div class="fw-bold fs-5 text-danger">
+        {% with neg_count=0 %}
+        {{ adjustments|length }}
+        {% endwith %}
+      </div>
+      <div class="text-muted small" style="font-size:.7rem;">Damage / Loss</div>
+    </div>
+  </div>
 </div>
+{% endif %}
 
 {% if not adjustments %}
 <div class="text-center py-5 text-muted">
   <i class="bi bi-sliders fs-1 d-block mb-3" style="opacity:.3;"></i>
   <div class="fw-semibold">No stock adjustments recorded yet</div>
-  <div class="small mt-1">Adjustments are made from each drug's batch page.</div>
+  <div class="small mt-1">Adjustments are made from each drug's detail/batch page.</div>
 </div>
 {% else %}
 <div class="card border-0 shadow-sm">
-  <div class="table-responsive">
-    <table class="table table-hover mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Date &amp; Time</th>
-          <th>Drug</th>
-          <th>Batch</th>
-          <th>Reason</th>
-          <th class="text-end">Before</th>
-          <th class="text-end">Change</th>
-          <th class="text-end">After</th>
-          <th>By</th>
-          <th>Notes</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for adj in adjustments %}
-        <tr>
-          <td class="text-muted small">{{ adj.adjusted_at|date:"d M Y" }}<br>{{ adj.adjusted_at|date:"H:i" }}</td>
-          <td>
-            <a href="{% url 'pharmacy:drug_detail' drug_id=adj.batch.drug.id %}" class="fw-semibold text-decoration-none">
-              {{ adj.batch.drug.name }}
-            </a>
-            {% if adj.batch.drug.strength %}<div class="text-muted small">{{ adj.batch.drug.strength }}</div>{% endif %}
-          </td>
-          <td class="text-muted small">{{ adj.batch.batch_number }}<br>Exp: {{ adj.batch.expiry_date|date:"M Y" }}</td>
-          <td>
-            <span class="badge
-              {% if adj.reason == 'DAMAGE' %}bg-danger
-              {% elif adj.reason == 'EXPIRED' %}bg-secondary
-              {% elif adj.reason == 'COUNT_UP' %}bg-success
-              {% elif adj.reason == 'COUNT_DOWN' %}bg-warning text-dark
-              {% elif adj.reason == 'THEFT' %}bg-danger
-              {% elif adj.reason == 'RETURN' %}bg-info text-dark
-              {% else %}bg-light text-dark border{% endif %}">
-              {{ adj.get_reason_display }}
-            </span>
-          </td>
-          <td class="text-end">{{ adj.quantity_before }}</td>
-          <td class="text-end fw-bold {% if adj.quantity_change < 0 %}text-danger{% else %}text-success{% endif %}">
-            {% if adj.quantity_change > 0 %}+{% endif %}{{ adj.quantity_change }}
-          </td>
-          <td class="text-end">{{ adj.quantity_after }}</td>
-          <td class="small">{{ adj.created_by|user_display:"—" }}</td>
-          <td class="text-muted small fst-italic" style="max-width:200px;">{{ adj.notes|default:"—"|truncatechars:60 }}</td>
-          <td>
-            <a href="{% url 'pharmacy:stock_adjustment_create' batch_id=adj.batch.id %}"
-               class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 6px;">
-              + Adjust
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table id="adjTable" class="table table-hover table-sm align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Date &amp; Time</th>
+            <th>Drug</th>
+            <th>Batch</th>
+            <th>Expiry</th>
+            <th>Reason</th>
+            <th class="text-end">Before</th>
+            <th class="text-end">Change</th>
+            <th class="text-end">After</th>
+            <th class="text-end">Unit Cost</th>
+            <th class="text-end">Value Impact</th>
+            <th>By</th>
+            <th>Notes</th>
+            <th class="d-print-none"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for adj in adjustments %}
+          <tr>
+            <td class="text-muted text-nowrap">
+              {{ adj.adjusted_at|date:"d/m/Y" }}<br>
+              <span style="font-size:.7rem;">{{ adj.adjusted_at|date:"H:i" }}</span>
+            </td>
+            <td>
+              <a href="{% url 'pharmacy:drug_detail' drug_id=adj.batch.drug.id %}" class="fw-semibold text-decoration-none">
+                {{ adj.batch.drug.name }}
+              </a>
+              {% if adj.batch.drug.strength %}<div class="text-muted" style="font-size:.7rem;">{{ adj.batch.drug.strength }}</div>{% endif %}
+            </td>
+            <td class="font-monospace text-muted small">{{ adj.batch.batch_number }}</td>
+            <td class="text-muted small">
+              {{ adj.batch.expiry_date|date:"M Y"|default:"—" }}
+              {% if adj.batch.is_expired %}<span class="badge bg-danger-subtle text-danger ms-1" style="font-size:.6rem;">Exp</span>{% endif %}
+            </td>
+            <td>
+              <span class="badge
+                {% if adj.reason == 'DAMAGE' or adj.reason == 'THEFT' %}bg-danger
+                {% elif adj.reason == 'EXPIRED' %}bg-secondary
+                {% elif adj.reason == 'COUNT_UP' %}bg-success
+                {% elif adj.reason == 'COUNT_DOWN' %}bg-warning text-dark
+                {% elif adj.reason == 'RETURN' %}bg-info text-dark
+                {% else %}bg-light text-dark border{% endif %}">
+                {{ adj.get_reason_display }}
+              </span>
+            </td>
+            <td class="text-end">{{ adj.quantity_before }}</td>
+            <td class="text-end fw-bold {% if adj.quantity_change < 0 %}text-danger{% else %}text-success{% endif %}">
+              {% if adj.quantity_change > 0 %}+{% endif %}{{ adj.quantity_change }}
+            </td>
+            <td class="text-end">{{ adj.quantity_after }}</td>
+            <td class="text-end text-muted">{{ adj.batch.purchase_price|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold {% if adj.quantity_change < 0 %}text-danger{% else %}text-success{% endif %}">
+              {% with impact=adj.quantity_change %}
+              {% if impact < 0 %}-{% else %}+{% endif %}{{ adj.batch.purchase_price|floatformat:0|intcomma }}
+              {% endwith %}
+            </td>
+            <td class="small text-muted">{{ adj.created_by|default:"—" }}</td>
+            <td class="text-muted small fst-italic" style="max-width:160px;">{{ adj.notes|default:"—"|truncatechars:50 }}</td>
+            <td class="d-print-none">
+              <a href="{% url 'pharmacy:stock_adjustment_create' batch_id=adj.batch.id %}"
+                 class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:.75rem;">
+                + Adjust
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
+
+<script>
+function exportTable(tableId, filename) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  let csv = [];
+  for (const row of table.rows) {
+    const cols = [];
+    for (const cell of row.cells) {
+      if (!cell.classList.contains('d-print-none')) {
+        cols.push('"' + cell.innerText.replace(/"/g, '""') + '"');
+      }
+    }
+    csv.push(cols.join(','));
+  }
+  const blob = new Blob([csv.join('\n')], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+}
+</script>
 {% endblock %}

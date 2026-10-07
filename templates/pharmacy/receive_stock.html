@@ -3,17 +3,17 @@
 {% block title %}Stock In — Receive Drugs{% endblock %}
 
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
-    <h4 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Stock In — Receive Drugs</h4>
-    <p class="text-muted small mb-0">Record new drug deliveries into pharmacy — batch, expiry, supplier, quantity</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Stock In — Receive Drugs</h5>
+    <p class="text-muted small mb-0">ISO 9001 §8.5.1 — Controlled receipt of pharmaceutical goods. GL posting on Finance Director approval.</p>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#bulkImportModal">
-      Bulk Import
+  <div class="d-flex gap-2 flex-wrap d-print-none">
+    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bulkImportModal">
+      <i class="bi bi-cloud-upload me-1"></i>Bulk Import
     </button>
     <a href="{% url 'pharmacy:drug_list' %}" class="btn btn-sm btn-outline-secondary">
-      Drug & Stock
+      <i class="bi bi-arrow-left me-1"></i>Drug &amp; Stock
     </a>
   </div>
 </div>
@@ -24,8 +24,9 @@
   {% csrf_token %}
   <input type="hidden" name="line_count" id="lineCount" value="0">
 
+  {# ── Row 1: Operation Type, Source, Supplier, Destination ── #}
   <div class="row g-2 mb-3">
-    <div class="col-md-4">
+    <div class="col-md-3">
       <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
       <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect">
         <option value="">-- Select Operation --</option>
@@ -37,34 +38,95 @@
       </select>
       <div class="text-muted" style="font-size:.7rem;" id="opGlHint">GL accounts auto-selected from operation type</div>
     </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Source / Entry Type <span class="text-danger">*</span></label>
+      <select name="source" class="form-select form-select-sm" required>
+        <option value="">-- Select Source --</option>
+        {% for val, label in sources %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Primary Supplier</label>
+      <input type="text" name="vendor_name" class="form-control form-control-sm" list="supplierList" placeholder="Type supplier name...">
+      <datalist id="supplierList">
+        {% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}
+      </datalist>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Destination Store</label>
+      <select name="destination" class="form-select form-select-sm">
+        <option value="">-- Pharmacy (default) --</option>
+        {% for loc in locations %}<option value="{{ loc.id }}">{{ loc.name }}</option>{% endfor %}
+      </select>
+    </div>
   </div>
 
+  {# ── Row 2: PO Ref, DN#, Invoice#, Condition, Temperature ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">PO Reference</label>
+      <input type="text" name="po_reference" class="form-control form-control-sm" placeholder="PO-2026-001">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">Delivery Note #</label>
+      <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN-001">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">Invoice #</label>
+      <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="INV-2026-001">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Condition on Receipt</label>
+      <select name="condition" class="form-select form-select-sm">
+        <option value="GOOD" selected>Good — All items intact</option>
+        <option value="PARTIAL">Partial — Some damaged/missing</option>
+        <option value="DAMAGED">Damaged — Significant issues</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Temperature Check (WHO GDP §9)</label>
+      <select name="temp_check" class="form-select form-select-sm">
+        <option value="">N/A — Not temp-sensitive</option>
+        <option value="OK">OK — Within cold-chain range</option>
+        <option value="COLD_CHAIN_BREAK">Cold chain break detected</option>
+        <option value="NOT_CHECKED">Not checked</option>
+      </select>
+    </div>
+  </div>
+
+  {# ── Stock Lines ── #}
   <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
-      <strong><i class="bi bi-box-seam me-2"></i>Stock Lines</strong>
-      <button type="button" class="btn btn-sm btn-primary" id="addLineBtn">
-        <i class="bi bi-plus-circle me-1"></i>Add Line
-      </button>
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+      <span class="fw-semibold small"><i class="bi bi-box-seam me-1"></i>Stock Lines</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="text-muted small">Total: <strong id="grandTotal" class="text-success">0</strong> XAF</span>
+        <button type="button" class="btn btn-sm btn-success" id="addLineBtn">
+          <i class="bi bi-plus-circle me-1"></i>Add Line
+        </button>
+      </div>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0" id="linesTable">
+        <table class="table table-sm align-middle mb-0" id="linesTable" style="font-size:.82rem;">
           <thead class="table-light">
             <tr>
               <th style="min-width:200px">Drug <span class="text-danger">*</span></th>
-              <th style="width:120px">Batch #</th>
               <th style="width:90px">Qty <span class="text-danger">*</span></th>
+              <th style="width:120px">Batch #</th>
               <th style="width:130px">Expiry Date</th>
               <th style="width:130px">Mfg Date</th>
-              <th style="width:120px">Cost Price</th>
-              <th style="min-width:150px">Supplier</th>
+              <th style="width:110px">Cost Price</th>
+              <th style="width:110px" class="text-end">Line Total</th>
+              <th style="min-width:140px">Supplier (override)</th>
               <th style="width:150px">Notes</th>
               <th style="width:40px"></th>
             </tr>
           </thead>
           <tbody id="linesBody">
             <tr id="emptyRow">
-              <td colspan="9" class="text-center text-muted py-4">
+              <td colspan="10" class="text-center text-muted py-4">
                 Click <strong>"Add Line"</strong> to add stock entries.
               </td>
             </tr>
@@ -72,45 +134,59 @@
         </table>
       </div>
     </div>
+    <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+      <button type="button" class="btn btn-sm btn-outline-success" id="addLineBtn2">
+        <i class="bi bi-plus-lg me-1"></i>Add Another Line
+      </button>
+      <div class="text-end">
+        <span class="text-muted small me-2">Grand Total:</span>
+        <strong class="fs-6 text-success" id="grandTotal2">0 XAF</strong>
+      </div>
+    </div>
   </div>
 
   <div class="d-flex gap-2 mb-4">
-    <button type="submit" class="btn btn-success fw-bold" id="submitBtn" disabled>
-      <i class="bi bi-check-lg me-1"></i>Receive Stock
+    <button type="submit" class="btn btn-success fw-bold px-4" id="submitBtn" disabled>
+      <i class="bi bi-check-lg me-1"></i>Save Stock In
     </button>
-    <button type="button" class="btn btn-outline-primary" id="addLineBtn2">
-      <i class="bi bi-plus-circle me-1"></i>Add Another Line
-    </button>
+    <button type="button" class="btn btn-outline-secondary" onclick="history.back()">Cancel</button>
   </div>
 </form>
 
 {# ── Recent Receipts ── #}
 {% if recent %}
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-light py-2">
+  <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
     <strong><i class="bi bi-clock-history me-2 text-muted"></i>Recent Stock Receipts (last 7 days)</strong>
+    <span class="badge bg-secondary-subtle text-secondary">{{ recent|length }} record{{ recent|length|pluralize }}</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <table class="table table-hover table-sm align-middle mb-0" style="font-size:.82rem;">
       <thead class="table-light">
         <tr>
           <th>Drug</th>
           <th>Batch #</th>
           <th class="text-end">Qty</th>
+          <th class="text-end">Cost</th>
+          <th class="text-end">Value</th>
           <th>Expiry</th>
           <th>Supplier</th>
           <th>Received</th>
+          <th>By</th>
         </tr>
       </thead>
       <tbody>
         {% for s in recent %}
         <tr>
           <td class="fw-semibold">{{ s.drug.name }}{% if s.drug.strength %} <small class="text-muted">{{ s.drug.strength }}</small>{% endif %}</td>
-          <td class="small">{{ s.batch_number }}</td>
+          <td class="small font-monospace">{{ s.batch_number|default:"—" }}</td>
           <td class="text-end fw-bold text-success">+{{ s.quantity_received }}</td>
+          <td class="text-end text-muted small">{{ s.purchase_price|floatformat:0|intcomma }}</td>
+          <td class="text-end fw-semibold text-success small">{{ s.purchase_price|floatformat:0|intcomma }}</td>
           <td class="small text-muted">{{ s.expiry_date|date:"d M Y"|default:"--" }}</td>
           <td class="small">{{ s.supplier|default:"--" }}</td>
           <td class="small text-muted">{{ s.received_date|date:"d M Y" }}</td>
+          <td class="small text-muted">{{ s.created_by.get_short_name|default:"—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -127,15 +203,27 @@
   {% endfor %}
 </select>
 
-{# Supplier datalist #}
-<datalist id="supplierList">
-  {% for s in suppliers %}
-  <option value="{{ s.name }}">
-  {% endfor %}
-</datalist>
-
 <script>
 var lineCount = 0;
+function calcLineTotal(row) {
+  var qty = parseFloat(row.querySelector('[name$="-quantity"]')?.value) || 0;
+  var cost = parseFloat(row.querySelector('[name$="-purchase_price"]')?.value) || 0;
+  var total = Math.round(qty * cost);
+  var cell = row.querySelector('.line-total-cell');
+  if (cell) cell.textContent = total.toLocaleString();
+  updateGrandTotal();
+}
+function updateGrandTotal() {
+  var sum = 0;
+  document.querySelectorAll('.line-total-cell').forEach(function(td) {
+    sum += parseFloat(td.textContent.replace(/,/g, '')) || 0;
+  });
+  var fmt = Math.round(sum).toLocaleString();
+  var g1 = document.getElementById('grandTotal');
+  var g2 = document.getElementById('grandTotal2');
+  if (g1) g1.textContent = fmt;
+  if (g2) g2.textContent = fmt + ' XAF';
+}
 function addLine() {
   var tbody = document.getElementById('linesBody');
   var empty = document.getElementById('emptyRow');
@@ -153,22 +241,26 @@ function addLine() {
   var tr = document.createElement('tr');
   tr.innerHTML =
     '<td></td>' +
-    '<td><input type="text" name="lines-' + idx + '-batch_number" class="form-control form-control-sm" placeholder="Batch #"></td>' +
     '<td><input type="number" name="lines-' + idx + '-quantity" class="form-control form-control-sm" min="1" value="1" required></td>' +
+    '<td><input type="text" name="lines-' + idx + '-batch_number" class="form-control form-control-sm" placeholder="Batch #"></td>' +
     '<td><input type="date" name="lines-' + idx + '-expiry_date" class="form-control form-control-sm"></td>' +
     '<td><input type="date" name="lines-' + idx + '-manufacture_date" class="form-control form-control-sm"></td>' +
-    '<td><input type="number" name="lines-' + idx + '-purchase_price" class="form-control form-control-sm" step="0.01" min="0" value="0"></td>' +
-    '<td><input type="text" name="lines-' + idx + '-supplier" class="form-control form-control-sm" list="supplierList" placeholder="Supplier"></td>' +
-    '<td><input type="text" name="lines-' + idx + '-notes" class="form-control form-control-sm" placeholder="Notes"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(this)"><i class="bi bi-trash"></i></button></td>';
+    '<td><input type="number" name="lines-' + idx + '-purchase_price" class="form-control form-control-sm" step="1" min="0" value="0"></td>' +
+    '<td class="text-end fw-semibold text-success line-total-cell small">0</td>' +
+    '<td><input type="text" name="lines-' + idx + '-supplier" class="form-control form-control-sm" list="supplierList" placeholder="Override supplier"></td>' +
+    '<td><input type="text" name="lines-' + idx + '-notes" class="form-control form-control-sm" placeholder="Batch notes"></td>' +
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(this)"><i class="bi bi-x"></i></button></td>';
   tr.cells[0].appendChild(drugSel);
 
-  // Auto-fill cost price on drug selection
   drugSel.addEventListener('change', function() {
     var opt = this.options[this.selectedIndex];
     var cost = opt.getAttribute('data-cost');
-    if (cost) tr.querySelector('[name$="-purchase_price"]').value = cost;
+    if (cost) {
+      var priceInput = tr.querySelector('[name$="-purchase_price"]');
+      if (priceInput) { priceInput.value = parseFloat(cost).toFixed(0); calcLineTotal(tr); }
+    }
   });
+  tr.addEventListener('input', function() { calcLineTotal(tr); });
 
   tbody.appendChild(tr);
   updateSubmitBtn();
@@ -178,6 +270,7 @@ function addLine() {
 function removeLine(btn) {
   btn.closest('tr').remove();
   updateSubmitBtn();
+  updateGrandTotal();
 }
 
 function updateSubmitBtn() {
@@ -185,21 +278,19 @@ function updateSubmitBtn() {
   document.getElementById('submitBtn').disabled = rows.length === 0;
   if (rows.length === 0) {
     var tbody = document.getElementById('linesBody');
-    tbody.innerHTML = '<tr id="emptyRow"><td colspan="9" class="text-center text-muted py-4">Click <strong>"Add Line"</strong> to add stock entries.</td></tr>';
+    tbody.innerHTML = '<tr id="emptyRow"><td colspan="10" class="text-center text-muted py-4">Click <strong>"Add Line"</strong> to add stock entries.</td></tr>';
   }
 }
 
 document.getElementById('addLineBtn').addEventListener('click', addLine);
 document.getElementById('addLineBtn2').addEventListener('click', addLine);
 
-// Start with one line
 addLine();
 
-// Show GL hint when operation type changes
 document.getElementById('opTypeSelect')?.addEventListener('change', function(){
   var opt = this.options[this.selectedIndex];
   var hint = document.getElementById('opGlHint');
-  if(opt.value){
+  if (opt.value) {
     hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
     hint.className = 'text-success small fw-semibold';
   } else {
@@ -226,7 +317,6 @@ document.getElementById('opTypeSelect')?.addEventListener('change', function(){
             Upload an Excel (.xlsx) or CSV file to receive multiple stock batches at once.
             Drugs must already exist in the formulary.
           </div>
-
           <div class="row g-3">
             <div class="col-md-7">
               <label class="form-label fw-semibold small">Select File</label>
@@ -239,7 +329,6 @@ document.getElementById('opTypeSelect')?.addEventListener('change', function(){
               </a>
             </div>
           </div>
-
           <div class="mt-3">
             <p class="fw-semibold small mb-2">Template Columns:</p>
             <div class="table-responsive">
@@ -258,10 +347,6 @@ document.getElementById('opTypeSelect')?.addEventListener('change', function(){
                   <tr><td>notes</td><td><span class="badge bg-secondary-subtle text-secondary">Optional</span></td><td>Donation batch</td></tr>
                 </tbody>
               </table>
-            </div>
-            <div class="form-text mt-1">
-              <i class="bi bi-exclamation-triangle text-warning me-1"></i>
-              Row 2 in the template is a hint row — data starts from row 3. The sample row should be deleted.
             </div>
           </div>
         </div>

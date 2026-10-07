@@ -1,18 +1,24 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Stock Transfers{% endblock %}
+{% block title %}Stock Transfers — Pharmacy{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Stock Transfers</h5>
+    <div class="text-muted small">Inter-store pharmaceutical stock transfer management — OHADA Class 3 GL</div>
+  </div>
+  <div class="d-flex gap-2 d-print-none">
+    <button type="button" class="btn btn-sm btn-outline-dark" onclick="window.print()" title="Print"><i class="bi bi-printer"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-dark" onclick="exportTable('transferTable','Stock_Transfers')" title="Export CSV"><i class="bi bi-file-earmark-spreadsheet"></i></button>
+    <a href="{% url 'pharmacy:transfer_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Transfer
+    </a>
+  </div>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div>
-    <h1 class="h3 mb-1 fw-bold">Stock Transfers
-    </h1>
-    <div class="text-muted small">Inter-store stock transfer management</div>
-  </div>
-  <a href="{% url 'pharmacy:transfer_create' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg me-1"></i>New Transfer
-  </a>
-</div>
 
 {# ── Direction Tabs ── #}
 <ul class="nav nav-pills mb-3 gap-1">
@@ -25,13 +31,13 @@
   <li class="nav-item">
     <a class="nav-link {% if direction == 'outgoing' %}active{% endif %} py-1 px-3"
        href="{% url 'pharmacy:transfer_list' %}?direction=outgoing{% if status_filter %}&status={{ status_filter }}{% endif %}">
-      <i class="bi bi-box-arrow-up-right me-1"></i>Outgoing
+      <i class="bi bi-box-arrow-up-right me-1"></i>Transfer Out
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link {% if direction == 'incoming' %}active{% endif %} py-1 px-3"
        href="{% url 'pharmacy:transfer_list' %}?direction=incoming{% if status_filter %}&status={{ status_filter }}{% endif %}">
-      <i class="bi bi-box-arrow-in-down me-1"></i>Incoming
+      <i class="bi bi-box-arrow-in-down me-1"></i>Transfer In
       {% if pending_incoming_count %}
       <span class="badge bg-danger ms-1">{{ pending_incoming_count }}</span>
       {% endif %}
@@ -39,17 +45,26 @@
   </li>
 </ul>
 
-{# ── Status Filter ── #}
-<div class="d-flex gap-2 mb-3 flex-wrap">
-  <form method="get" class="d-inline">
-    {% if direction %}<input type="hidden" name="direction" value="{{ direction }}">{% endif %}
-    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:160px;">
-      <option value="">All Statuses</option>
-      {% for val, label in statuses %}
-      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </form>
+{# ── Filter bar ── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      {% if direction %}<input type="hidden" name="direction" value="{{ direction }}">{% endif %}
+      <div class="col-md-4">
+        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Statuses</option>
+          {% for val, label in statuses %}
+          <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        {% if status_filter %}
+        <a href="{% url 'pharmacy:transfer_list' %}{% if direction %}?direction={{ direction }}{% endif %}" class="btn btn-outline-secondary btn-sm">Clear Filter</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
 </div>
 
 {% if not transfers %}
@@ -60,58 +75,98 @@
 </div>
 {% else %}
 <div class="card border-0 shadow-sm">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Transfer #</th>
-          <th>From Location</th>
-          <th>To Location</th>
-          <th>Status</th>
-          <th>Initiated By</th>
-          <th>Date</th>
-          <th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for t in transfers %}
-        <tr>
-          <td class="fw-semibold">{{ t.transfer_number }}</td>
-          <td>{{ t.from_location }}</td>
-          <td>{{ t.to_location }}</td>
-          <td>
-            <span class="badge
-              {% if t.status == 'PENDING' %}bg-warning text-dark
-              {% elif t.status == 'RECEIVED' %}bg-success
-              {% elif t.status == 'REJECTED' %}bg-danger
-              {% elif t.status == 'CANCELLED' %}bg-secondary
-              {% else %}bg-light text-dark border{% endif %}">
-              {{ t.get_status_display }}
-            </span>
-          </td>
-          <td class="small">{{ t.initiated_by.get_full_name|default:"--" }}</td>
-          <td class="text-muted small">{{ t.created_at|date:"d M Y" }}<br>{{ t.created_at|date:"H:i" }}</td>
-          <td class="text-end text-nowrap">
-            {% if t.status == 'PENDING' and direction == 'incoming' %}
-            <form method="post" action="{% url 'pharmacy:transfer_action' transfer_id=t.id %}" class="d-inline">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="receive">
-              <button type="submit" class="btn btn-sm btn-success py-0"
-                      onclick="return confirm('Receive transfer {{ t.transfer_number }}?');">
-                <i class="bi bi-check-lg me-1"></i>Receive
-              </button>
-            </form>
-            {% endif %}
-            <a href="{% url 'pharmacy:transfer_detail' transfer_id=t.id %}"
-               class="btn btn-sm {% if t.status == 'PENDING' %}btn-primary{% else %}btn-outline-primary{% endif %} py-0">
-              {% if t.status == 'PENDING' %}<i class="bi bi-eye me-1"></i>View / Act{% else %}<i class="bi bi-eye me-1"></i>View{% endif %}
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table id="transferTable" class="table table-hover table-sm align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Transfer #</th>
+            <th>Date</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Status</th>
+            <th class="text-center">Items</th>
+            <th>Initiated By</th>
+            <th>Received By</th>
+            <th class="text-end d-print-none">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transfers %}
+          <tr>
+            <td class="fw-semibold font-monospace">{{ t.transfer_number }}</td>
+            <td class="text-muted text-nowrap">
+              {{ t.created_at|date:"d/m/Y" }}<br>
+              <span style="font-size:.7rem;">{{ t.created_at|date:"H:i" }}</span>
+            </td>
+            <td>
+              <span class="text-danger fw-semibold small">
+                <i class="bi bi-dash-circle me-1 text-danger opacity-75"></i>{{ t.from_location }}
+              </span>
+            </td>
+            <td>
+              <span class="text-success fw-semibold small">
+                <i class="bi bi-plus-circle me-1 text-success opacity-75"></i>{{ t.to_location }}
+              </span>
+            </td>
+            <td>
+              <span class="badge
+                {% if t.status == 'PENDING' %}bg-warning text-dark
+                {% elif t.status == 'RECEIVED' %}bg-success
+                {% elif t.status == 'REJECTED' %}bg-danger
+                {% elif t.status == 'CANCELLED' %}bg-secondary
+                {% else %}bg-light text-dark border{% endif %}">
+                {{ t.get_status_display }}
+              </span>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-primary-subtle text-primary">{{ t.items.count }}</span>
+            </td>
+            <td class="small text-muted">{{ t.initiated_by.get_full_name|default:"—" }}</td>
+            <td class="small text-muted">{{ t.received_by.get_full_name|default:"—" }}</td>
+            <td class="text-end text-nowrap d-print-none">
+              {% if t.status == 'PENDING' and direction == 'incoming' %}
+              <form method="post" action="{% url 'pharmacy:transfer_action' transfer_id=t.id %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="receive">
+                <button type="submit" class="btn btn-sm btn-success py-0 px-2"
+                        onclick="return confirm('Receive transfer {{ t.transfer_number }}?');">
+                  <i class="bi bi-check-lg me-1"></i>Receive
+                </button>
+              </form>
+              {% endif %}
+              <a href="{% url 'pharmacy:transfer_detail' transfer_id=t.id %}"
+                 class="btn btn-sm {% if t.status == 'PENDING' %}btn-primary{% else %}btn-outline-secondary{% endif %} py-0 px-2 ms-1">
+                <i class="bi bi-eye me-1"></i>{% if t.status == 'PENDING' %}Act{% else %}View{% endif %}
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
+
+<script>
+function exportTable(tableId, filename) {
+  const table = document.getElementById(tableId);
+  let csv = [];
+  for (const row of table.rows) {
+    const cols = [];
+    for (const cell of row.cells) {
+      if (!cell.classList.contains('d-print-none')) {
+        cols.push('"' + cell.innerText.replace(/"/g, '""') + '"');
+      }
+    }
+    csv.push(cols.join(','));
+  }
+  const blob = new Blob([csv.join('\n')], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+}
+</script>
 {% endblock %}

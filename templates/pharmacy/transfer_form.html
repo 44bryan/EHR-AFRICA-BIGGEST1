@@ -1,114 +1,147 @@
 {% extends "layouts/base_authenticated.html" %}
 {% block title %}Create Stock Transfer{% endblock %}
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
-    <h1 class="h3 mb-1 fw-bold">Create Stock Transfer
-    </h1>
-    <div class="text-muted small">Transfer stock between pharmacy locations</div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Stock Transfer — Inter-Store Issue</h5>
+    <p class="text-muted small mb-0">OHADA Class 3 — Dr Destination Store / Cr Source Store. GL posting on Finance Director approval.</p>
   </div>
-  <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-outline-secondary btn-sm">
+  <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left me-1"></i>Back to Transfers
   </a>
 </div>
+{% endblock %}
 
-<div class="card border-0 shadow-sm mb-4 mx-auto" style="max-width:900px;">
-  <div class="card-header bg-light border-bottom fw-semibold">
-    <i class="bi bi-pencil-square me-2 text-primary"></i>Transfer Details
+{% block content %}
+<form method="post" action="{% url 'pharmacy:transfer_create' %}" id="transfer-form">
+  {% csrf_token %}
+
+  {# ── Row 1: Operation Type + GL Hint, From, To ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
+      <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect">
+        <option value="">-- Select Operation --</option>
+        {% for op in operation_types %}
+        <option value="{{ op.id }}" data-dr="{{ op.debit_account.code }}" data-cr="{{ op.credit_account.code }}">
+          {{ op.code }} &mdash; {{ op.name }}
+        </option>
+        {% endfor %}
+      </select>
+      <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL accounts auto-selected from operation type</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">From Location (Source) <span class="text-danger">*</span></label>
+      <select name="from_location" class="form-select form-select-sm" required>
+        <option value="">-- Select source --</option>
+        {% for loc in locations %}
+        <option value="{{ loc.id }}">{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">To Location (Destination) <span class="text-danger">*</span></label>
+      <select name="to_location" class="form-select form-select-sm" required>
+        <option value="">-- Select destination --</option>
+        {% for loc in locations %}
+        <option value="{{ loc.id }}">{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
-  <div class="card-body">
-    <form method="post" action="{% url 'pharmacy:transfer_create' %}" id="transfer-form">
-      {% csrf_token %}
 
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">From Location <span class="text-danger">*</span></label>
-          <select name="from_location" class="form-select" required>
-            <option value="">-- Select source --</option>
-            {% for loc in locations %}
-            <option value="{{ loc.id }}">{{ loc.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">To Location <span class="text-danger">*</span></label>
-          <select name="to_location" class="form-select" required>
-            <option value="">-- Select destination --</option>
-            {% for loc in locations %}
-            <option value="{{ loc.id }}">{{ loc.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
+  {# ── Row 2: Reference, Authorized By, Received By ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Transfer Reference</label>
+      <input type="text" name="reference" class="form-control form-control-sm" placeholder="e.g. TRF-2026-001 or requisition ref">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Authorized By</label>
+      <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Head Pharmacist / Supervisor name">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Notes</label>
+      <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional transfer remarks">
+    </div>
+  </div>
 
-      <div class="mb-4">
-        <label class="form-label fw-semibold">Notes</label>
-        <textarea name="notes" class="form-control" rows="2"
-                  placeholder="Optional remarks about this transfer"></textarea>
-      </div>
-
-      {# ── Transfer Items ── #}
-      <div class="border rounded p-3 mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="fw-bold mb-0"><i class="bi bi-box-seam me-2 text-primary"></i>Transfer Items</h6>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item">
-            <i class="bi bi-plus-lg me-1"></i>Add Item
-          </button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="items-table">
-            <thead class="table-light">
-              <tr>
-                <th style="min-width:220px;">Drug <span class="text-danger">*</span></th>
-                <th style="min-width:180px;">Batch <span class="text-danger">*</span></th>
-                <th style="min-width:100px;">Qty <span class="text-danger">*</span></th>
-                <th style="width:50px;"></th>
-              </tr>
-            </thead>
-            <tbody id="items-body">
-              <tr class="item-row" data-index="0">
-                <td>
-                  <select name="items-0-drug_id" class="form-select form-select-sm" required>
-                    <option value="">-- Select drug --</option>
-                    {% for drug in drugs %}
-                    <option value="{{ drug.id }}">{{ drug.name }}{% if drug.strength %} ({{ drug.strength }}){% endif %}</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td>
-                  <select name="items-0-batch_id" class="form-select form-select-sm batch-select" required disabled>
-                    <option value="">-- Select drug first --</option>
-                  </select>
-                </td>
-                <td>
-                  <input type="number" name="items-0-qty" class="form-control form-control-sm"
-                         min="1" placeholder="Qty" required>
-                </td>
-                <td class="text-center">
-                  <button type="button" class="btn btn-sm btn-outline-danger btn-remove-item" title="Remove">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <input type="hidden" name="item_count" id="item-count" value="1">
-      </div>
-
-      <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary px-4">
-          <i class="bi bi-send me-1"></i>Create Transfer
+  {# ── Transfer Items ── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+      <span class="fw-semibold small"><i class="bi bi-box-seam me-1"></i>Transfer Items</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="text-muted small">Total Value: <strong id="transferGrandTotal" class="text-primary">0 XAF</strong></span>
+        <button type="button" class="btn btn-sm btn-primary" id="btn-add-item">
+          <i class="bi bi-plus-lg me-1"></i>Add Item
         </button>
-        <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-outline-secondary">
-          Cancel
-        </a>
       </div>
-    </form>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0" id="items-table" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:220px">Drug <span class="text-danger">*</span></th>
+              <th style="min-width:180px">Batch <span class="text-danger">*</span></th>
+              <th style="width:100px">Qty <span class="text-danger">*</span></th>
+              <th style="width:110px" class="text-end">Unit Cost</th>
+              <th style="width:110px" class="text-end">Line Total</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="items-body">
+            <tr class="item-row" data-index="0">
+              <td>
+                <select name="items-0-drug_id" class="form-select form-select-sm" required>
+                  <option value="">-- Select drug --</option>
+                  {% for drug in drugs %}
+                  <option value="{{ drug.id }}">{{ drug.name }}{% if drug.strength %} ({{ drug.strength }}){% endif %}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="items-0-batch_id" class="form-select form-select-sm batch-select" required disabled>
+                  <option value="">-- Select drug first --</option>
+                </select>
+              </td>
+              <td>
+                <input type="number" name="items-0-qty" class="form-control form-control-sm transfer-qty"
+                       min="1" placeholder="Qty" required>
+              </td>
+              <td class="text-end text-muted small transfer-unit-cost">—</td>
+              <td class="text-end fw-semibold text-primary transfer-line-total small">0</td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-item py-0" title="Remove">
+                  <i class="bi bi-x"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item2">
+        <i class="bi bi-plus-lg me-1"></i>Add Another Item
+      </button>
+      <div class="text-end">
+        <span class="text-muted small me-2">Grand Total:</span>
+        <strong class="fs-6 text-primary" id="transferGrandTotal2">0 XAF</strong>
+      </div>
+    </div>
   </div>
-</div>
+
+  <input type="hidden" name="item_count" id="item-count" value="1">
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary px-4">
+      <i class="bi bi-send me-1"></i>Create Transfer
+    </button>
+    <a href="{% url 'pharmacy:transfer_list' %}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
 
 <script>
 (function() {
@@ -117,7 +150,18 @@
   const STOCK_URL = '{% url "pharmacy:drug_stock_ajax" %}';
   let idx = 1;
 
-  // Load batches when drug is selected
+  function updateTransferTotal() {
+    var sum = 0;
+    document.querySelectorAll('.transfer-line-total').forEach(function(td) {
+      sum += parseFloat(td.textContent.replace(/,/g, '')) || 0;
+    });
+    var fmt = Math.round(sum).toLocaleString() + ' XAF';
+    var g1 = document.getElementById('transferGrandTotal');
+    var g2 = document.getElementById('transferGrandTotal2');
+    if (g1) g1.textContent = fmt;
+    if (g2) g2.textContent = fmt;
+  }
+
   function loadBatches(drugSelect) {
     const row = drugSelect.closest('.item-row');
     const batchSelect = row.querySelector('.batch-select');
@@ -141,7 +185,8 @@
         }
         var html = '<option value="">-- Select batch --</option>';
         batches.forEach(function(b) {
-          html += '<option value="' + b.id + '" data-qty="' + b.qty_remaining + '">' + b.label + '</option>';
+          var label = (b.batch_number || b.batch || b.label) + ' | Qty: ' + (b.qty_remaining || b.quantity_remaining || 0) + ' | Cost: ' + (b.purchase_price || 0).toLocaleString();
+          html += '<option value="' + b.id + '" data-qty="' + (b.qty_remaining || b.quantity_remaining || 0) + '" data-cost="' + (b.purchase_price || 0) + '">' + label + '</option>';
         });
         batchSelect.innerHTML = html;
         batchSelect.disabled = false;
@@ -151,24 +196,41 @@
       });
   }
 
-  // Delegate drug change events
+  function calcLineTotal(row) {
+    var batchSel = row.querySelector('.batch-select');
+    var qtyInput = row.querySelector('.transfer-qty');
+    var opt = batchSel ? batchSel.options[batchSel.selectedIndex] : null;
+    var cost = parseFloat(opt?.getAttribute('data-cost') || 0);
+    var qty = parseFloat(qtyInput?.value) || 0;
+    var total = Math.round(cost * qty);
+    var costCell = row.querySelector('.transfer-unit-cost');
+    var totalCell = row.querySelector('.transfer-line-total');
+    if (costCell) costCell.textContent = cost ? cost.toLocaleString() : '—';
+    if (totalCell) totalCell.textContent = total.toLocaleString();
+    updateTransferTotal();
+  }
+
   tbody.addEventListener('change', function(e) {
     var drugSel = e.target.closest('select[name$="-drug_id"]');
     if (drugSel) loadBatches(drugSel);
-
-    // Update max qty when batch is selected
     var batchSel = e.target.closest('.batch-select');
     if (batchSel) {
       var opt = batchSel.options[batchSel.selectedIndex];
-      var qtyInput = batchSel.closest('.item-row').querySelector('input[name$="-qty"]');
+      var qtyInput = batchSel.closest('.item-row').querySelector('.transfer-qty');
       if (opt && opt.dataset.qty) {
         qtyInput.max = opt.dataset.qty;
         qtyInput.title = 'Max: ' + opt.dataset.qty;
       }
+      calcLineTotal(batchSel.closest('.item-row'));
     }
   });
 
-  document.getElementById('btn-add-item').addEventListener('click', function() {
+  tbody.addEventListener('input', function(e) {
+    var qtyInput = e.target.closest('.transfer-qty');
+    if (qtyInput) calcLineTotal(qtyInput.closest('.item-row'));
+  });
+
+  function addItem() {
     const firstRow = tbody.querySelector('.item-row');
     const newRow = firstRow.cloneNode(true);
     newRow.setAttribute('data-index', idx);
@@ -179,15 +241,19 @@
       else el.value = '';
     });
 
-    // Reset batch select
     var bs = newRow.querySelector('.batch-select');
     bs.innerHTML = '<option value="">-- Select drug first --</option>';
     bs.disabled = true;
+    newRow.querySelector('.transfer-unit-cost').textContent = '—';
+    newRow.querySelector('.transfer-line-total').textContent = '0';
 
     tbody.appendChild(newRow);
     idx++;
     countInput.value = tbody.querySelectorAll('.item-row').length;
-  });
+  }
+
+  document.getElementById('btn-add-item').addEventListener('click', addItem);
+  document.getElementById('btn-add-item2').addEventListener('click', addItem);
 
   tbody.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-remove-item');
@@ -198,6 +264,20 @@
     }
     btn.closest('.item-row').remove();
     countInput.value = tbody.querySelectorAll('.item-row').length;
+    updateTransferTotal();
+  });
+
+  document.getElementById('opTypeSelect')?.addEventListener('change', function(){
+    var opt = this.options[this.selectedIndex];
+    var hint = document.getElementById('opGlHint');
+    if (opt.value) {
+      hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
+      hint.className = 'text-success small fw-semibold';
+    } else {
+      hint.textContent = 'GL accounts auto-selected from operation type';
+      hint.className = 'text-muted';
+      hint.style.fontSize = '.7rem';
+    }
   });
 })();
 </script>
