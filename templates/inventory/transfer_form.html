@@ -4,15 +4,11 @@
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">New Inter-Store Transfer</h5>
-      <div class="text-muted small">Request stock movement between locations</div>
-    </div>
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-1 text-primary"></i>New Inter-Store Transfer</h5>
+    <div class="text-muted small">Move items from one store to another</div>
   </div>
-  <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary btn-sm">
-    Back to Transfers
-  </a>
+  <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary btn-sm">Back to Transfers</a>
 </div>
 {% endblock %}
 
@@ -20,43 +16,47 @@
 <form method="post" id="transferForm">
   {% csrf_token %}
 
-  <!-- Transfer details -->
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white border-bottom">
-      <h6 class="mb-0 fw-bold"><i class="bi bi-info-circle me-1"></i>Transfer Details</h6>
+      <h6 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-1"></i>Stores</h6>
     </div>
     <div class="card-body">
       <div class="row g-3">
-        <div class="col-md-6">
-          <label for="from_location" class="form-label fw-semibold">From Location <span class="text-danger">*</span></label>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">From Store <span class="text-danger">*</span></label>
           <select name="from_location" id="from_location" class="form-select" required>
-            <option value="">-- Select source location --</option>
+            <option value="">— Select source store —</option>
             {% for loc in locations %}
-            <option value="{{ loc.id }}">{{ loc }}</option>
+            <option value="{{ loc.id }}" data-code="{{ loc.store_code }}">{{ loc.name }}</option>
             {% endfor %}
           </select>
+          <div class="form-text" id="fromStockHint"></div>
         </div>
-        <div class="col-md-6">
-          <label for="to_location" class="form-label fw-semibold">To Location <span class="text-danger">*</span></label>
+        <div class="col-md-2 d-flex align-items-center justify-content-center pt-3">
+          <i class="bi bi-arrow-right fs-3 text-primary"></i>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">To Store <span class="text-danger">*</span></label>
           <select name="to_location" id="to_location" class="form-select" required>
-            <option value="">-- Select destination location --</option>
+            <option value="">— Select destination store —</option>
             {% for loc in locations %}
-            <option value="{{ loc.id }}">{{ loc }}</option>
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-12">
-          <label for="notes" class="form-label fw-semibold">Notes</label>
-          <textarea name="notes" id="notes" class="form-control" rows="3" placeholder="Reason for transfer, special instructions..."></textarea>
+          <label class="form-label fw-semibold">Notes / Reason</label>
+          <input type="text" name="notes" class="form-control" placeholder="e.g. Theatre supply for surgical list 07/10/2026">
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Transfer items -->
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
-      <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-1"></i>Transfer Items</h6>
+      <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-1"></i>Items to Transfer
+        <span id="itemCount" class="badge bg-secondary ms-1">0 items in selected store</span>
+      </h6>
       <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">
         <i class="bi bi-plus-lg me-1"></i>Add Row
       </button>
@@ -66,8 +66,9 @@
         <table class="table align-middle mb-0 small" id="itemsTable">
           <thead class="table-light">
             <tr>
-              <th style="min-width:250px;">Item <span class="text-danger">*</span></th>
-              <th style="width:120px;">Quantity <span class="text-danger">*</span></th>
+              <th style="min-width:280px;">Item</th>
+              <th style="width:110px;">Available</th>
+              <th style="width:120px;">Qty to Transfer</th>
               <th>Notes</th>
               <th style="width:50px;"></th>
             </tr>
@@ -75,21 +76,19 @@
           <tbody id="itemsBody">
             <tr class="item-row">
               <td>
-                <select name="item_id[]" class="form-select form-select-sm ts-transfer-item" required>
-                  <option value="">-- Type to search item --</option>
-                  {% for item in items %}
-                  <option value="{{ item.id }}">{{ item.name }} ({{ item.item_code }})</option>
-                  {% endfor %}
+                <select name="item_id[]" class="form-select form-select-sm item-select" required disabled>
+                  <option value="">— Select From Store first —</option>
                 </select>
               </td>
+              <td><span class="item-stock text-muted">—</span></td>
               <td>
-                <input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="1" required>
+                <input type="number" name="quantity[]" class="form-control form-control-sm" min="1" value="" required disabled>
               </td>
               <td>
-                <input type="text" name="item_notes[]" class="form-control form-control-sm" placeholder="Optional notes">
+                <input type="text" name="item_notes[]" class="form-control form-control-sm" placeholder="Optional">
               </td>
               <td class="text-center">
-                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 remove-row" title="Remove row">
+                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 remove-row">
                   <i class="bi bi-trash"></i>
                 </button>
               </td>
@@ -100,61 +99,125 @@
     </div>
   </div>
 
-  <!-- Submit -->
   <div class="d-flex justify-content-end gap-2">
     <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary">Cancel</a>
-    <button type="submit" class="btn btn-primary">
+    <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
       <i class="bi bi-send me-1"></i>Submit Transfer Request
     </button>
   </div>
 </form>
 
 <script>
-function initTransferTsSelects(){
-  document.querySelectorAll('.ts-transfer-item').forEach(function(el){
-    if(el.tomselect) return;
-    new TomSelect(el, {placeholder:'Type to search item...', searchField:['text'], maxOptions:50});
-  });
-}
-document.addEventListener('DOMContentLoaded', function() {
-  initTransferTsSelects();
-  const tbody = document.getElementById('itemsBody');
-  const addBtn = document.getElementById('addRowBtn');
+(function () {
+  var ITEMS_BY_STORE = {{ items_by_store_json|safe }};
 
-  addBtn.addEventListener('click', function() {
-    const firstRow = tbody.querySelector('.item-row');
-    const newRow = firstRow.cloneNode(true);
-    const sel = newRow.querySelector('select[name="item_id[]"]');
-    if(sel && sel.tomselect){ sel.tomselect.destroy(); }
-    sel.value = '';
-    newRow.querySelector('input[name="quantity[]"]').value = '1';
-    newRow.querySelector('input[name="item_notes[]"]').value = '';
-    tbody.appendChild(newRow);
-    initTransferTsSelects();
-    bindRemoveButtons();
-  });
+  function getStoreItems(storeId) {
+    return ITEMS_BY_STORE[storeId] || [];
+  }
 
-  function bindRemoveButtons() {
-    document.querySelectorAll('.remove-row').forEach(function(btn) {
-      btn.onclick = function() {
-        if (tbody.querySelectorAll('.item-row').length > 1) {
-          btn.closest('.item-row').remove();
-        }
-      };
+  function buildOptions(items) {
+    var html = '<option value="">— Select item —</option>';
+    items.forEach(function (it) {
+      html += '<option value="' + it.id + '" data-stock="' + it.stock + '">'
+            + it.name + ' (' + it.code + ')  —  Stock: ' + it.stock + '</option>';
+    });
+    return html;
+  }
+
+  function refreshAllRows(storeId) {
+    var items = getStoreItems(storeId);
+    var count = items.length;
+    document.getElementById('itemCount').textContent = count + ' item' + (count !== 1 ? 's' : '') + ' in selected store';
+    document.getElementById('fromStockHint').textContent = count > 0
+      ? count + ' items available to transfer.'
+      : 'No items found in this store.';
+    var enabled = storeId && count > 0;
+    document.getElementById('addRowBtn').disabled = !enabled;
+    document.getElementById('submitBtn').disabled = !enabled;
+
+    document.querySelectorAll('.item-row').forEach(function (row) {
+      var sel = row.querySelector('.item-select');
+      var qtyInput = row.querySelector('input[name="quantity[]"]');
+      var stockEl = row.querySelector('.item-stock');
+      sel.innerHTML = buildOptions(items);
+      sel.disabled = !enabled;
+      sel.value = '';
+      qtyInput.disabled = true;
+      qtyInput.value = '';
+      stockEl.textContent = '—';
     });
   }
-  bindRemoveButtons();
 
-  // Prevent same from/to location
-  document.getElementById('transferForm').addEventListener('submit', function(e) {
+  function wireRow(row) {
+    var sel = row.querySelector('.item-select');
+    var qtyInput = row.querySelector('input[name="quantity[]"]');
+    var stockEl = row.querySelector('.item-stock');
+
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt.value) {
+        qtyInput.disabled = true; qtyInput.value = ''; stockEl.textContent = '—';
+        return;
+      }
+      var stock = parseInt(opt.dataset.stock) || 0;
+      stockEl.textContent = stock;
+      stockEl.className = 'item-stock ' + (stock > 0 ? 'text-success fw-semibold' : 'text-danger');
+      qtyInput.disabled = false;
+      qtyInput.max = stock;
+      qtyInput.value = stock > 0 ? 1 : '';
+    });
+
+    row.querySelector('.remove-row').addEventListener('click', function () {
+      if (document.querySelectorAll('.item-row').length > 1) row.remove();
+    });
+  }
+
+  // Wire initial row
+  wireRow(document.querySelector('.item-row'));
+
+  // From Location change
+  document.getElementById('from_location').addEventListener('change', function () {
+    var storeId = this.value;
+    refreshAllRows(storeId);
+    // Remove destination if same
+    var toDest = document.getElementById('to_location');
+    if (toDest.value === storeId) toDest.value = '';
+    // Disable the selected from_location in to_location dropdown
+    Array.from(toDest.options).forEach(function (opt) {
+      opt.disabled = (opt.value === storeId);
+    });
+  });
+
+  // Add row
+  document.getElementById('addRowBtn').addEventListener('click', function () {
+    var storeId = document.getElementById('from_location').value;
+    var items = getStoreItems(storeId);
+    var tmpl = document.querySelector('.item-row');
+    var clone = tmpl.cloneNode(true);
+    var sel = clone.querySelector('.item-select');
+    var qtyInput = clone.querySelector('input[name="quantity[]"]');
+    var stockEl = clone.querySelector('.item-stock');
+    sel.innerHTML = buildOptions(items);
+    sel.disabled = false;
+    sel.value = '';
+    qtyInput.disabled = true;
+    qtyInput.value = '';
+    stockEl.textContent = '—';
+    clone.querySelector('input[name="item_notes[]"]').value = '';
+    document.getElementById('itemsBody').appendChild(clone);
+    wireRow(clone);
+  });
+
+  // Submit validation
+  document.getElementById('transferForm').addEventListener('submit', function (e) {
     var from = document.getElementById('from_location').value;
     var to = document.getElementById('to_location').value;
-    if (from && to && from === to) {
-      e.preventDefault();
-      alert('Source and destination locations cannot be the same.');
-    }
+    if (!from || !to) { e.preventDefault(); alert('Select both source and destination store.'); return; }
+    if (from === to) { e.preventDefault(); alert('Source and destination cannot be the same store.'); return; }
+    var hasItem = false;
+    document.querySelectorAll('.item-select').forEach(function (s) { if (s.value) hasItem = true; });
+    if (!hasItem) { e.preventDefault(); alert('Add at least one item to transfer.'); }
   });
-});
+})();
 </script>
-{% include 'components/tom_select.html' %}
 {% endblock %}

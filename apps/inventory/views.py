@@ -1632,6 +1632,20 @@ def transfer_create(request):
         return HttpResponseForbidden('Access denied.')
     locations = StoreLocation.objects.filter(is_active=True, is_deleted=False)
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    # Build JSON dict: {store_id: [{id, name, code, stock}]} for client-side filtering
+    import json as _json
+    items_by_store = {}
+    for it in items:
+        sid = str(it.store_location_id) if it.store_location_id else '__none__'
+        if sid not in items_by_store:
+            items_by_store[sid] = []
+        items_by_store[sid].append({
+            'id': str(it.id),
+            'name': it.name,
+            'code': it.item_code,
+            'stock': it.current_stock,
+        })
+    items_by_store_json = _json.dumps(items_by_store)
     if request.method == 'POST':
         from_loc = get_object_or_404(StoreLocation, pk=request.POST.get('from_location'))
         to_loc = get_object_or_404(StoreLocation, pk=request.POST.get('to_location'))
@@ -1660,7 +1674,9 @@ def transfer_create(request):
         messages.success(request, f'Transfer {tr.transfer_number} created.')
         return redirect('inventory:transfer_list')
     return render(request, 'inventory/transfer_form.html', {
-        'locations': locations, 'items': items,
+        'locations': locations,
+        'items': items,
+        'items_by_store_json': items_by_store_json,
     })
 
 
@@ -1717,14 +1733,33 @@ def transfer_receive(request, transfer_id):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
     tr = get_object_or_404(StoreTransfer, pk=transfer_id, status=StoreTransferStatus.IN_TRANSIT)
-    # Add stock at destination
+    # Add stock at destination — find or create the matching item in the destination store
     for ti in tr.items.select_related('item').all():
-        item = ti.item
-        item.current_stock += ti.quantity
-        item.save(update_fields=['current_stock'])
+        src_item = ti.item
+        # Look for same item already in destination store
+        dst_item = InventoryItem.objects.filter(
+            store_location=tr.to_location,
+            name=src_item.name,
+            is_deleted=False,
+        ).first()
+        if dst_item is None:
+            # Create new item record in destination store
+            dst_item = InventoryItem.objects.create(
+                store_location=tr.to_location,
+                name=src_item.name,
+                item_code=f'{tr.to_location.store_code}-{src_item.item_code}'[:50],
+                category=src_item.category,
+                unit=src_item.unit,
+                unit_cost=src_item.unit_cost,
+                reorder_level=src_item.reorder_level,
+                description=src_item.description,
+                created_by=request.user,
+            )
+        dst_item.current_stock += ti.quantity
+        dst_item.save(update_fields=['current_stock'])
         StockMovement.objects.create(
-            item=item, movement_type='IN', quantity=ti.quantity,
-            balance_after=item.current_stock,
+            item=dst_item, movement_type='IN', quantity=ti.quantity,
+            balance_after=dst_item.current_stock,
             reference=f'Transfer {tr.transfer_number} from {tr.from_location.name}',
             performed_by=request.user,
         )
