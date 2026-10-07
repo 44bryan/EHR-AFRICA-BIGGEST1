@@ -3838,7 +3838,7 @@ def dispatch_to_store(request):
             ).filter(
                 Q(expiry_date__gte=timezone.localdate()) | Q(expiry_date__isnull=True)
             ).order_by('expiry_date'),
-            to_attr='_valid_batches',
+            to_attr='valid_batches',
         )
     ).order_by('name')
 
