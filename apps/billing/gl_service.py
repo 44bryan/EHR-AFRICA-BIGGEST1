@@ -552,6 +552,73 @@ def post_advance_settlement(advance, user=None):
         logger.exception(f"GL auto-post failed for advance settlement {advance.pk}: {e}")
 
 
+def post_asset_addition(asset, user=None):
+    """
+    GL posting when a new fixed asset is registered.
+    OHADA SYSCEBNL:
+        Dr  2xxxxx  (Fixed Asset — e.g. 241000 Equipement)
+        Cr  481000  (Supplier / Accounts Payable for assets)
+
+    Asset category → GL debit account mapping:
+        LAND          → 221000
+        BUILDING      → 231000
+        VEHICLE       → 245000
+        EQUIPMENT     → 241000  (default)
+        FURNITURE     → 244000
+        IT_EQUIPMENT  → 242000
+        MEDICAL       → 241000
+        OTHER         → 249000
+    """
+    try:
+        from decimal import Decimal as _D
+        cost = _D(str(asset.purchase_cost or 0))
+        if cost <= 0:
+            return None
+
+        # Map category to OHADA asset account
+        CAT_MAP = {
+            'LAND':         '221000',
+            'BUILDING':     '231000',
+            'VEHICLE':      '245000',
+            'EQUIPMENT':    '241000',
+            'FURNITURE':    '244000',
+            'IT_EQUIPMENT': '242000',
+            'MEDICAL':      '241000',
+            'OTHER':        '249000',
+        }
+        asset_code = CAT_MAP.get(str(asset.category), '241000')
+        asset_acct = GLAccount.objects.filter(code=asset_code, is_deleted=False).first()
+        if not asset_acct:
+            asset_acct = GLAccount.objects.filter(code__startswith='241', is_deleted=False).first()
+
+        # Cr Suppliers for assets payable
+        ap_asset = GLAccount.objects.filter(code__startswith='481', is_deleted=False).first()
+        if not ap_asset:
+            ap_asset = GLAccount.objects.filter(code__startswith='401', is_deleted=False).first()
+
+        if not asset_acct or not ap_asset:
+            return None
+
+        from django.utils import timezone as _tz
+        return _create_entry(
+            date=asset.purchase_date or _tz.localdate(),
+            description=f"Asset acquisition — {asset.name} [{asset.asset_number}]",
+            reference=asset.asset_number,
+            source_type='asset_addition',
+            source_id=asset.pk,
+            lines=[
+                (asset_code, cost, 0,
+                 f"Fixed asset — {asset.name} ({asset.get_category_display()})"),
+                (ap_asset.code, 0, cost,
+                 f"Supplier payable — {asset.supplier or 'N/A'}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for asset addition {asset.pk}: {e}")
+        return None
+
+
 def post_asset_disposal(disposal, user=None):
     """
     GL posting for fixed asset disposal.

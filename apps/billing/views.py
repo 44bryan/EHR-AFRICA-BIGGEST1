@@ -6023,6 +6023,12 @@ def asset_create(request):
             recorded_by       = request.user,
             created_by        = request.user,
         )
+        # Post GL: Dr Fixed Asset / Cr AP-Assets (OHADA §24x / §481)
+        try:
+            from .gl_service import post_asset_addition
+            post_asset_addition(asset, user=request.user)
+        except Exception:
+            pass
         messages.success(request, f'Asset {asset.asset_number} — {asset.name} registered.')
         return redirect('billing:asset_list')
     return render(request, 'billing/asset_form.html', {

@@ -1691,6 +1691,14 @@ def finalize_dispensing(request, dispensing_id):
     dispensing.status = DispensingStatus.DISPENSED
     dispensing.save(update_fields=['status'])
 
+    # Post COGS to GL for each item in this dispensing
+    try:
+        from apps.billing.gl_service import post_pharmacy_cogs
+        for _item in dispensing.items.select_related('drug', 'stock_batch').all():
+            post_pharmacy_cogs(_item, user=request.user)
+    except Exception:
+        pass  # GL failure must never block dispensing
+
     # Mark linked Rx as dispensed
     if dispensing.prescription and not dispensing.prescription.is_dispensed:
         dispensing.prescription.is_dispensed = True
@@ -1821,6 +1829,15 @@ def complete_dispensing(request, dispensing_id):
     dispensing.status = DispensingStatus.DISPENSED
     dispensing.amount_paid = amount
     dispensing.save(update_fields=['status', 'amount_paid'])
+
+    # Step 3a: Post COGS to GL for each dispensed item
+    # Dr 601000 (COGS) / Cr 321000 (Pharmacy Stock) — OHADA standard
+    try:
+        from apps.billing.gl_service import post_pharmacy_cogs
+        for _item in dispensing.items.select_related('drug', 'stock_batch').all():
+            post_pharmacy_cogs(_item, user=request.user)
+    except Exception:
+        pass  # GL failure must never block dispensing
 
     # Step 3b: Mark the linked prescription as dispensed so it leaves the pending queue
     if dispensing.prescription and not dispensing.prescription.is_dispensed:
