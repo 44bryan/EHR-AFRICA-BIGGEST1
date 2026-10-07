@@ -1,19 +1,19 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Stock Entry Log{% endblock %}
+{% block title %}Stock In — Goods Received Log{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div>
-    <h5 class="mb-0 fw-bold">Stock Entry Log</h5>
-    <div class="text-muted small">Inbound stock movements</div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Stock In — Goods Received</h5>
+    <div class="text-muted small">All inbound stock movements — purchases, donations, returns</div>
   </div>
   <div class="d-flex gap-2 d-print-none">
     <a href="{% url 'inventory:stock_entry_pdf' %}?days={{ days|default:30 }}{% if search %}&q={{ search }}{% endif %}" class="btn btn-sm btn-outline-dark" target="_blank" title="PDF with Letterhead"><i class="bi bi-file-earmark-pdf"></i></a>
     <button type="button" class="btn btn-sm btn-outline-dark" onclick="window.print()" title="Quick Print"><i class="bi bi-printer"></i></button>
     <button type="button" class="btn btn-sm btn-outline-dark" onclick="exportTable('entryTable','Stock_Entry_Log')" title="Export CSV"><i class="bi bi-file-earmark-spreadsheet"></i></button>
     <a href="{% url 'inventory:stock_entry_create' %}" class="btn btn-sm btn-success">
-      <i class="bi bi-plus-lg me-1"></i>New Entry Note
+      <i class="bi bi-plus-lg me-1"></i>New Stock In
     </a>
   </div>
 </div>
@@ -52,12 +52,16 @@
       <table id="entryTable" class="table table-hover align-middle mb-0 small">
         <thead class="table-light">
           <tr>
-            <th>Date/Time</th>
+            <th>Date</th>
+            <th>Type</th>
             <th>Item</th>
             <th>Code</th>
-            <th class="text-end">Qty</th>
+            <th>Category</th>
+            <th class="text-end">Qty In</th>
             <th class="text-end">Balance</th>
-            <th>Batch</th>
+            <th class="text-end">Unit Cost</th>
+            <th class="text-end">Value (XAF)</th>
+            <th>Batch / Lot</th>
             <th>Reference</th>
             <th>By</th>
           </tr>
@@ -65,20 +69,29 @@
         <tbody>
           {% for m in entries %}
           <tr>
-            <td class="text-nowrap">{{ m.created_at|date:"d/m/Y H:i" }}</td>
+            <td class="text-nowrap text-muted">{{ m.created_at|date:"d/m/Y" }}<br><span style="font-size:.7rem;">{{ m.created_at|date:"H:i" }}</span></td>
+            <td>
+              {% if m.movement_type == 'IN' %}<span class="badge bg-success-subtle text-success">Stock In</span>
+              {% elif m.movement_type == 'RETURN' %}<span class="badge bg-info-subtle text-info">Return</span>
+              {% else %}<span class="badge bg-secondary-subtle text-secondary">{{ m.movement_type }}</span>
+              {% endif %}
+            </td>
             <td class="fw-semibold">{{ m.item.name }}</td>
-            <td class="text-muted">{{ m.item.item_code }}</td>
-            <td class="text-end text-success fw-semibold">+{{ m.quantity }}</td>
-            <td class="text-end">{{ m.balance_after }}</td>
-            <td class="text-muted">{% if m.batch %}{{ m.batch.lot_number }}{% else %}&mdash;{% endif %}</td>
-            <td>{{ m.reference|truncatechars:40 }}</td>
-            <td>{{ m.performed_by.get_short_name }}</td>
+            <td class="text-muted font-monospace small">{{ m.item.item_code }}</td>
+            <td class="text-muted small">{{ m.item.get_category_display|default:m.item.category }}</td>
+            <td class="text-end text-success fw-bold">+{{ m.quantity }}</td>
+            <td class="text-end fw-semibold">{{ m.balance_after }}</td>
+            <td class="text-end text-muted">{{ m.item.unit_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold">{% widthratio m.quantity 1 m.item.unit_cost as val %}{{ m.quantity|floatformat:0 }}</td>
+            <td class="text-muted small">{% if m.batch %}{{ m.batch.lot_number }}{% else %}&mdash;{% endif %}</td>
+            <td class="small">{{ m.reference|truncatechars:35 }}</td>
+            <td class="text-muted small">{{ m.performed_by.get_short_name }}</td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="8" class="text-center text-muted py-5">
-              <i class="bi bi-box-arrow-in-down fs-3 d-block mb-2"></i>
-              No stock entries in the last {{ days }} days.
+            <td colspan="12" class="text-center text-muted py-5">
+              <i class="bi bi-box-arrow-in-down fs-3 d-block mb-2 text-success opacity-50"></i>
+              No stock-in movements in the last {{ days }} days.
             </td>
           </tr>
           {% endfor %}

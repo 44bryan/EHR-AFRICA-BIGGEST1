@@ -46,9 +46,11 @@
         <tr>
           <th>Date</th>
           <th>Type</th>
+          <th>Operation</th>
           <th>Reference</th>
           <th>Description</th>
           <th class="text-end">Value (XAF)</th>
+          <th>GL Dr / Cr</th>
           <th>Submitted By</th>
           <th>Status</th>
           <th></th>
@@ -57,11 +59,11 @@
       <tbody>
         {% for sv in validations %}
         <tr>
-          <td class="text-muted small">{{ sv.submitted_at|date:"d M Y H:i" }}</td>
+          <td class="text-muted small text-nowrap">{{ sv.submitted_at|date:"d M Y" }}<br><span class="text-muted" style="font-size:.7rem;">{{ sv.submitted_at|date:"H:i" }}</span></td>
           <td>
             {% if sv.validation_type == 'GRN' %}<span class="badge bg-info-subtle text-info">GRN</span>
-            {% elif sv.validation_type == 'ENTRY' %}<span class="badge bg-success-subtle text-success">Entry</span>
-            {% elif sv.validation_type == 'EXIT' %}<span class="badge bg-warning-subtle text-warning">Exit</span>
+            {% elif sv.validation_type == 'ENTRY' %}<span class="badge bg-success-subtle text-success">Stock In</span>
+            {% elif sv.validation_type == 'EXIT' %}<span class="badge bg-warning-subtle text-warning">Stock Out</span>
             {% elif sv.validation_type == 'DISPOSAL' %}<span class="badge bg-danger-subtle text-danger">Disposal</span>
             {% elif sv.validation_type == 'ADJUSTMENT' %}<span class="badge bg-secondary-subtle text-secondary">Adjustment</span>
             {% elif sv.validation_type == 'COUNT' %}<span class="badge bg-primary-subtle text-primary">Count</span>
@@ -69,9 +71,25 @@
             {% elif sv.validation_type == 'ISSUE' %}<span class="badge bg-warning-subtle text-warning">Issue</span>
             {% endif %}
           </td>
-          <td class="fw-bold font-monospace">{{ sv.reference }}</td>
-          <td>{{ sv.description|truncatechars:60 }}</td>
+          <td>
+            {% if sv.operation_type %}
+              <span class="badge bg-dark text-white" style="font-size:.7rem;" title="{{ sv.operation_type.name }}">{{ sv.operation_type.code }}</span>
+              <div class="text-muted" style="font-size:.65rem;">{{ sv.operation_type.name|truncatechars:25 }}</div>
+            {% else %}
+              <span class="text-muted small">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="fw-bold font-monospace small">{{ sv.reference }}</td>
+          <td class="small">{{ sv.description|truncatechars:50 }}</td>
           <td class="text-end fw-semibold">{{ sv.total_value|floatformat:0|intcomma }}</td>
+          <td style="font-size:.7rem;" class="font-monospace">
+            {% if sv.operation_type %}
+              <span class="text-success">Dr {{ sv.operation_type.debit_account.code }}</span><br>
+              <span class="text-danger">Cr {{ sv.operation_type.credit_account.code }}</span>
+            {% else %}
+              <span class="text-muted">Auto</span>
+            {% endif %}
+          </td>
           <td class="text-muted small">{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username }}</td>
           <td>
             {% if sv.status == 'PENDING' %}<span class="badge bg-warning text-dark">Pending</span>
@@ -86,7 +104,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-center text-muted py-4">No validations found.</td></tr>
+        <tr><td colspan="10" class="text-center text-muted py-4">No validations found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
