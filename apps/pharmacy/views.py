@@ -3822,9 +3822,7 @@ def dispatch_to_store(request):
     from decimal import Decimal
     import uuid as _uuid
 
-    stores = StoreLocation.objects.filter(is_active=True, is_deleted=False).exclude(
-        location_type='PHARMACY'
-    ).order_by('name')
+    stores = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
 
     # Drugs with available stock
     drugs_qs = Drug.objects.filter(
