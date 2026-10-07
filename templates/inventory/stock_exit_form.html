@@ -13,75 +13,76 @@
 {% endblock %}
 
 {% block content %}
-  <form method="post">
-    {% csrf_token %}
+<form method="post">
+  {% csrf_token %}
 
-    {# ── Row 1: Operation, Reason, Source Store, Department ── #}
-    <div class="row g-2 mb-3">
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
-        <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect">
-          <option value="">-- Select Operation --</option>
-          {% for op in operation_types %}
-          <option value="{{ op.id }}" data-dr="{{ op.debit_account.code }}" data-cr="{{ op.credit_account.code }}">
-            {{ op.code }} &mdash; {{ op.name }}
-          </option>
-          {% endfor %}
-        </select>
-        <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL accounts auto-selected from operation type</div>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Reason / Exit Type <span class="text-danger">*</span></label>
-        <select name="reason" class="form-select form-select-sm" required>
-          <option value="">-- Select Reason --</option>
-          {% for val, label in reasons %}
-          <option value="{{ val }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Source Store <span class="text-danger">*</span></label>
-        <select name="source_store" class="form-select form-select-sm" required>
-          <option value="">-- Select Store --</option>
-          {% for loc in store_locations %}<option value="{{ loc.pk }}">{{ loc.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Issued To (Department) <span class="text-danger">*</span></label>
-        <select name="department" class="form-select form-select-sm" required>
-          <option value="">-- Select Department --</option>
-          {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-        </select>
+  {# ── Row 1: Store (FIRST), Operation Type, Reason, Department ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Source Store <span class="text-danger">*</span></label>
+      <select name="source_store" class="form-select form-select-sm" required id="storeSelect">
+        <option value="">-- Select Store First --</option>
+        {% for loc in store_locations %}
+        <option value="{{ loc.pk }}" data-type="{{ loc.location_type }}" data-gl="{{ loc.gl_account_code }}">{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+      <div style="font-size:.7rem;" id="storeGlHint" class="text-muted">Store GL account displayed after selection</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
+      <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect" disabled>
+        <option value="">-- Select Store first --</option>
+      </select>
+      <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL Dr/Cr auto-populated on selection</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Reason / Exit Type <span class="text-danger">*</span></label>
+      <select name="reason" class="form-select form-select-sm" required>
+        <option value="">-- Select Reason --</option>
+        {% for val, label in reasons %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Issued To (Department) <span class="text-danger">*</span></label>
+      <select name="department" class="form-select form-select-sm" required>
+        <option value="">-- Select Department --</option>
+        {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# ── Row 2: Reference, Authorized By, Received By ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Reference / Requisition No.</label>
+      <input type="text" name="reference" class="form-control form-control-sm" placeholder="REQ-001 or any reference">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Authorized By</label>
+      <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Supervisor / approving officer name">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Received By</label>
+      <input type="text" name="received_by" class="form-control form-control-sm" placeholder="Name of person collecting items">
+    </div>
+  </div>
+
+  {# ── Items Table ── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Issue</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="text-muted small">Total Value: <strong id="exitGrandTotal" class="text-warning">0 XAF</strong></span>
+        <button type="button" class="btn btn-sm btn-warning text-dark" onclick="addExitLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
       </div>
     </div>
-
-    {# ── Row 2: Reference, Authorized By, Received By ── #}
-    <div class="row g-2 mb-3">
-      <div class="col-md-4">
-        <label class="form-label small fw-semibold">Reference / Requisition No.</label>
-        <input type="text" name="reference" class="form-control form-control-sm" placeholder="REQ-001 or any reference">
+    <div class="card-body p-0">
+      <div class="alert alert-info small py-2 m-2 mb-0" id="storePrompt">
+        <i class="bi bi-arrow-up-circle me-1"></i>Select a <strong>Source Store</strong> above — items and operation types load automatically.
       </div>
-      <div class="col-md-4">
-        <label class="form-label small fw-semibold">Authorized By</label>
-        <input type="text" name="authorized_by" class="form-control form-control-sm" placeholder="Supervisor / approving officer name">
-      </div>
-      <div class="col-md-4">
-        <label class="form-label small fw-semibold">Received By</label>
-        <input type="text" name="received_by" class="form-control form-control-sm" placeholder="Name of person collecting items">
-      </div>
-    </div>
-
-    {# ── Items Table ── #}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Issue</span>
-        <div class="d-flex gap-2 align-items-center">
-          <span class="text-muted small">Total Value: <strong id="exitGrandTotal" class="text-warning">0 XAF</strong></span>
-          <button type="button" class="btn btn-sm btn-warning text-dark" onclick="addExitLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
-        </div>
-      </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
+      <div class="table-responsive">
         <table class="table table-sm mb-0" style="font-size:.82rem;">
           <thead class="table-light">
             <tr>
@@ -97,10 +98,7 @@
             <tr class="exit-line">
               <td>
                 <select name="item_id[]" class="form-select form-select-sm" required onchange="showStock(this)">
-                  <option value="">-- Select Item --</option>
-                  {% for item in items %}
-                  <option value="{{ item.id }}" data-stock="{{ item.current_stock }}" data-unit="{{ item.unit }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} &mdash; {{ item.name }} ({{ item.unit }})</option>
-                  {% endfor %}
+                  <option value="">-- Select Store first --</option>
                 </select>
               </td>
               <td class="stock-display text-center text-muted">—</td>
@@ -111,85 +109,148 @@
             </tr>
           </tbody>
         </table>
-        </div>
-      </div>
-      <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
-        <button type="button" class="btn btn-sm btn-outline-warning" onclick="addExitLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Item</button>
-        <div class="text-end">
-          <span class="text-muted small me-2">Grand Total:</span>
-          <strong class="fs-6 text-warning" id="exitGrandTotal2">0 XAF</strong>
-        </div>
       </div>
     </div>
-
-    <div class="mb-3">
-      <label class="form-label small fw-semibold">Notes / Remarks</label>
-      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
+    <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+      <button type="button" class="btn btn-sm btn-outline-warning" onclick="addExitLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Item</button>
+      <div class="text-end">
+        <span class="text-muted small me-2">Grand Total:</span>
+        <strong class="fs-6 text-warning" id="exitGrandTotal2">0 XAF</strong>
+      </div>
     </div>
+  </div>
 
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-warning text-dark px-4"><i class="bi bi-check-lg me-1"></i>Save Stock Out</button>
-      <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-outline-secondary">Cancel</a>
-    </div>
-  </form>
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Notes / Remarks</label>
+    <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks..."></textarea>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-warning text-dark px-4"><i class="bi bi-check-lg me-1"></i>Save Stock Out</button>
+    <a href="{% url 'inventory:stock_exit_list' %}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
 
 <script>
-function addExitLine(){
+const ITEMS_URL   = '{% url "inventory:items_by_store_ajax" %}';
+const OP_TYPE_URL = '{% url "inventory:op_types_by_store_ajax" %}';
+var currentItems  = [];
+
+document.getElementById('storeSelect').addEventListener('change', function() {
+  const storeId   = this.value;
+  const opt       = this.options[this.selectedIndex];
+  const glCode    = opt.getAttribute('data-gl') || '';
+  const prompt    = document.getElementById('storePrompt');
+  const storeHint = document.getElementById('storeGlHint');
+
+  if (!storeId) {
+    resetOpTypes(); resetAllItemSelects();
+    prompt.style.display = '';
+    storeHint.textContent = 'Store GL account displayed after selection';
+    storeHint.className = 'text-muted'; storeHint.style.fontSize = '.7rem';
+    return;
+  }
+  prompt.style.display = 'none';
+  if (glCode) {
+    storeHint.innerHTML = '<i class="bi bi-bank me-1"></i>GL: <strong>' + glCode + '</strong> &mdash; ' + opt.textContent;
+    storeHint.className = 'text-primary small fw-semibold';
+    delete storeHint.style.fontSize;
+  }
+
+  fetch(OP_TYPE_URL + '?store_id=' + encodeURIComponent(storeId) + '&category=EXIT', {credentials:'same-origin'})
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('opTypeSelect');
+      sel.innerHTML = '<option value="">-- Select Operation Type --</option>';
+      data.op_types.forEach(op => {
+        const o = document.createElement('option');
+        o.value = op.id; o.textContent = op.label;
+        o.setAttribute('data-dr', op.dr_code); o.setAttribute('data-cr', op.cr_code);
+        sel.appendChild(o);
+      });
+      sel.disabled = data.op_types.length === 0;
+      if (!data.op_types.length) sel.innerHTML = '<option value="">— No exit types for this store —</option>';
+      resetOpGlHint();
+    });
+
+  fetch(ITEMS_URL + '?store_id=' + encodeURIComponent(storeId), {credentials:'same-origin'})
+    .then(r => r.json())
+    .then(data => { rebuildAllItemSelects(data.items || []); });
+});
+
+document.getElementById('opTypeSelect').addEventListener('change', function() {
+  const opt  = this.options[this.selectedIndex];
+  const hint = document.getElementById('opGlHint');
+  if (opt.value) {
+    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.getAttribute('data-dr') + '</strong> / Cr <strong>' + opt.getAttribute('data-cr') + '</strong>';
+    hint.className = 'text-success small fw-semibold'; delete hint.style.fontSize;
+  } else { resetOpGlHint(); }
+});
+
+function resetOpGlHint() {
+  const h = document.getElementById('opGlHint');
+  h.textContent = 'GL Dr/Cr auto-populated on selection'; h.className = 'text-muted'; h.style.fontSize = '.7rem';
+}
+function resetOpTypes() {
+  const sel = document.getElementById('opTypeSelect');
+  sel.innerHTML = '<option value="">-- Select Store first --</option>'; sel.disabled = true; resetOpGlHint();
+}
+function buildItemOptions(sel) {
+  const cur = sel.value; sel.innerHTML = '<option value="">-- Select Item --</option>';
+  currentItems.forEach(item => {
+    const o = document.createElement('option'); o.value = item.id; o.textContent = item.label;
+    o.setAttribute('data-stock', item.current_stock); o.setAttribute('data-unit', item.unit); o.setAttribute('data-cost', item.unit_cost);
+    if (item.id === cur) o.selected = true; sel.appendChild(o);
+  });
+}
+function rebuildAllItemSelects(items) {
+  currentItems = items;
+  document.querySelectorAll('#exitLines .exit-line select[name="item_id[]"]').forEach(sel => buildItemOptions(sel));
+}
+function resetAllItemSelects() {
+  currentItems = [];
+  document.querySelectorAll('#exitLines .exit-line select[name="item_id[]"]').forEach(sel => {
+    sel.innerHTML = '<option value="">-- Select Store first --</option>';
+  });
+}
+function addExitLine() {
   const tbody = document.getElementById('exitLines');
   const first = tbody.querySelector('.exit-line');
   const clone = first.cloneNode(true);
   clone.querySelectorAll('input').forEach(i => i.value = '');
-  clone.querySelector('select').selectedIndex = 0;
+  const sel = clone.querySelector('select[name="item_id[]"]'); buildItemOptions(sel); sel.selectedIndex = 0;
   clone.querySelector('.stock-display').textContent = '—';
   clone.querySelector('.exit-unit-cost').textContent = '—';
   clone.querySelector('.exit-line-total').textContent = '0';
   tbody.appendChild(clone);
 }
-function removeExitLine(btn){
+function removeExitLine(btn) {
   const rows = document.querySelectorAll('#exitLines .exit-line');
-  if(rows.length > 1){ btn.closest('tr').remove(); updateExitGrandTotal(); }
+  if (rows.length > 1) { btn.closest('tr').remove(); updateExitGrandTotal(); }
 }
-function showStock(sel){
+function showStock(sel) {
   const opt = sel.options[sel.selectedIndex];
-  const stock = opt?.dataset?.stock || '—';
-  const unit = opt?.dataset?.unit || '';
-  const cost = parseFloat(opt?.dataset?.cost) || 0;
-  const row = sel.closest('tr');
-  row.querySelector('.stock-display').textContent = stock + ' ' + unit;
+  const stock = opt?.getAttribute('data-stock') ?? '—';
+  const unit  = opt?.getAttribute('data-unit') || '';
+  const cost  = parseFloat(opt?.getAttribute('data-cost') || 0);
+  const row   = sel.closest('tr');
+  row.querySelector('.stock-display').textContent = stock + (unit ? ' ' + unit : '');
   row.querySelector('.exit-unit-cost').textContent = cost ? cost.toLocaleString() : '—';
   calcExitTotal(row.querySelector('.exit-qty'));
 }
-function calcExitTotal(inp){
+function calcExitTotal(inp) {
   const row = inp.closest('tr');
-  const qty = parseFloat(inp.value) || 0;
-  const costEl = row.querySelector('.exit-unit-cost');
-  const cost = parseFloat(costEl?.textContent?.replace(/,/g,'')) || 0;
-  const total = Math.round(qty * cost);
-  row.querySelector('.exit-line-total').textContent = total.toLocaleString();
+  const qty  = parseFloat(inp.value) || 0;
+  const cost = parseFloat(row.querySelector('.exit-unit-cost')?.textContent?.replace(/,/g,'')) || 0;
+  row.querySelector('.exit-line-total').textContent = Math.round(qty * cost).toLocaleString();
   updateExitGrandTotal();
 }
-function updateExitGrandTotal(){
+function updateExitGrandTotal() {
   let sum = 0;
-  document.querySelectorAll('.exit-line-total').forEach(function(td){
-    sum += parseFloat(td.textContent.replace(/,/g,'')) || 0;
-  });
+  document.querySelectorAll('.exit-line-total').forEach(td => { sum += parseFloat(td.textContent.replace(/,/g,'')) || 0; });
   const fmt = Math.round(sum).toLocaleString() + ' XAF';
-  const g1 = document.getElementById('exitGrandTotal');
-  const g2 = document.getElementById('exitGrandTotal2');
-  if(g1) g1.textContent = fmt;
-  if(g2) g2.textContent = fmt;
+  const g1 = document.getElementById('exitGrandTotal'); const g2 = document.getElementById('exitGrandTotal2');
+  if (g1) g1.textContent = fmt; if (g2) g2.textContent = fmt;
 }
-document.getElementById('opTypeSelect')?.addEventListener('change', function(){
-  var opt = this.options[this.selectedIndex];
-  var hint = document.getElementById('opGlHint');
-  if(opt.value){
-    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
-    hint.className = 'text-success small fw-semibold';
-  } else {
-    hint.textContent = 'GL accounts auto-selected from operation type';
-    hint.className = 'text-muted';
-    hint.style.fontSize = '.7rem';
-  }
-});
 </script>
 {% endblock %}

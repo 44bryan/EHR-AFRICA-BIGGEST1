@@ -1373,6 +1373,14 @@ class StockOperationType(AuditModel):
         help_text='GL account to CREDIT for this operation type',
     )
     description = models.TextField(blank=True, help_text='OHADA accounting rule explanation')
+    location_types = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text=(
+            'Comma-separated StoreLocation.location_type codes this op type applies to. '
+            'Leave blank = applies to ALL stores. '
+            'e.g. "GENERAL,PHARMACY" or "PHARMACY" or "OPTICAL,SHOWROOM"'
+        ),
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -1380,6 +1388,12 @@ class StockOperationType(AuditModel):
 
     def __str__(self):
         return f"{self.code} — {self.name}"
+
+    def applies_to_store_type(self, store_type):
+        """Return True if this op type is available for the given store location_type."""
+        if not self.location_types:
+            return True  # blank = all stores
+        return store_type in [t.strip() for t in self.location_types.split(',') if t.strip()]
 
 
 class JournalEntryStatus(models.TextChoices):

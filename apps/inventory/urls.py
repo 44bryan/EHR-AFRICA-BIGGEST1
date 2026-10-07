@@ -169,4 +169,8 @@ urlpatterns = [
     path('three-way-match/create/', views.three_way_match_create, name='three_way_match_create'),
     path('three-way-match/<uuid:match_id>/', views.three_way_match_detail, name='three_way_match_detail'),
     path('three-way-match/<uuid:match_id>/resolve/', views.three_way_match_resolve, name='three_way_match_resolve'),
+
+    # ── AJAX: Store-Filtered Cascading Dropdowns ───────────────
+    path('ajax/items-by-store/', views.items_by_store_ajax, name='items_by_store_ajax'),
+    path('ajax/op-types-by-store/', views.op_types_by_store_ajax, name='op_types_by_store_ajax'),
 ]

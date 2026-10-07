@@ -6,102 +6,105 @@
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
     <h5 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down me-2 text-success"></i>Stock In — Goods Received</h5>
-    <p class="text-muted small mb-0">Record goods received into store — multi-line, batch tracking, GL posting on FD approval</p>
+    <p class="text-muted small mb-0">ISO 9001 §8.5.1 — Controlled stock receipt. GL posting on Finance Director approval.</p>
   </div>
   <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Stock In Log</a>
 </div>
 {% endblock %}
 
 {% block content %}
-  <form method="post">
-    {% csrf_token %}
+<form method="post">
+  {% csrf_token %}
 
-    {# ── Row 1: Operation, Source, Store, Supplier ── #}
-    <div class="row g-2 mb-3">
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
-        <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect">
-          <option value="">-- Select Operation --</option>
-          {% for op in operation_types %}
-          <option value="{{ op.id }}" data-dr="{{ op.debit_account.code }}" data-cr="{{ op.credit_account.code }}">
-            {{ op.code }} &mdash; {{ op.name }}
-          </option>
-          {% endfor %}
-        </select>
-        <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL accounts auto-selected from operation type</div>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Source / Entry Type <span class="text-danger">*</span></label>
-        <select name="source" class="form-select form-select-sm" required>
-          {% for val, label in sources %}
-          <option value="{{ val }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Destination Store <span class="text-danger">*</span></label>
-        <select name="destination_store" class="form-select form-select-sm" required>
-          <option value="">-- Select Store --</option>
-          {% for loc in store_locations %}<option value="{{ loc.pk }}">{{ loc.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Vendor / Supplier</label>
-        <input type="text" name="vendor_name" class="form-control form-control-sm" list="vendorList" placeholder="Type vendor name...">
-        <datalist id="vendorList">
-          {% for v in vendors %}<option value="{{ v.name }}">{% endfor %}
-        </datalist>
+  {# ── Row 1: Store (FIRST), Operation Type, Source, Supplier ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Destination Store <span class="text-danger">*</span></label>
+      <select name="destination_store" class="form-select form-select-sm" required id="storeSelect">
+        <option value="">-- Select Store First --</option>
+        {% for loc in store_locations %}
+        <option value="{{ loc.pk }}" data-type="{{ loc.location_type }}" data-gl="{{ loc.gl_account_code }}">{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+      <div style="font-size:.7rem;" id="storeGlHint" class="text-muted">Store GL account displayed after selection</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
+      <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect" disabled>
+        <option value="">-- Select Store first --</option>
+      </select>
+      <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL Dr/Cr auto-populated on selection</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Source / Entry Type <span class="text-danger">*</span></label>
+      <select name="source" class="form-select form-select-sm" required>
+        <option value="">-- Select Source --</option>
+        {% for val, label in sources %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Vendor / Supplier</label>
+      <input type="text" name="vendor_name" class="form-control form-control-sm" list="vendorList" placeholder="Type vendor name...">
+      <datalist id="vendorList">
+        {% for v in vendors %}<option value="{{ v.name }}">{% endfor %}
+      </datalist>
+    </div>
+  </div>
+
+  {# ── Row 2: PO Ref, DN #, Invoice #, Condition, Temp Check ── #}
+  <div class="row g-2 mb-3">
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">PO Reference</label>
+      <input type="text" name="po_reference" class="form-control form-control-sm" placeholder="PO-2026-001">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">Delivery Note #</label>
+      <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN-001">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small fw-semibold">Invoice #</label>
+      <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="INV-2026-001">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Condition on Receipt</label>
+      <select name="condition" class="form-select form-select-sm">
+        <option value="GOOD" selected>Good — All items intact</option>
+        <option value="PARTIAL">Partial — Some damaged/missing</option>
+        <option value="DAMAGED">Damaged — Significant issues</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">Temperature Check</label>
+      <select name="temp_check" class="form-select form-select-sm">
+        <option value="">N/A — Not temp-sensitive</option>
+        <option value="OK">OK — Within range</option>
+        <option value="COLD_CHAIN_BREAK">Cold chain break detected</option>
+        <option value="NOT_CHECKED">Not checked</option>
+      </select>
+    </div>
+  </div>
+
+  {# ── Items Table ── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Receive</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="text-muted small">Total: <strong id="grandTotal" class="text-success">0</strong> XAF</span>
+        <button type="button" class="btn btn-sm btn-success" onclick="addEntryLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
       </div>
     </div>
-
-    {# ── Row 2: PO Ref, DN #, Invoice #, Condition, Temp Check ── #}
-    <div class="row g-2 mb-3">
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">PO Reference</label>
-        <input type="text" name="po_reference" class="form-control form-control-sm" placeholder="PO-2026-001">
+    <div class="card-body p-0">
+      <div class="alert alert-info small py-2 m-2 mb-0" id="storePrompt">
+        <i class="bi bi-arrow-up-circle me-1"></i>Select a <strong>Destination Store</strong> above — items and operation types load automatically.
       </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Delivery Note #</label>
-        <input type="text" name="delivery_note" class="form-control form-control-sm" placeholder="DN-001">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Invoice #</label>
-        <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="INV-2026-001">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Condition on Receipt</label>
-        <select name="condition" class="form-select form-select-sm">
-          <option value="GOOD" selected>Good — All items intact</option>
-          <option value="PARTIAL">Partial — Some damaged/missing</option>
-          <option value="DAMAGED">Damaged — Significant issues</option>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Temperature Check</label>
-        <select name="temp_check" class="form-select form-select-sm">
-          <option value="">N/A — Not temp-sensitive</option>
-          <option value="OK">OK — Within range</option>
-          <option value="COLD_CHAIN_BREAK">Cold chain break detected</option>
-          <option value="NOT_CHECKED">Not checked</option>
-        </select>
-      </div>
-    </div>
-
-    {# ── Items Table ── #}
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <span class="fw-semibold small"><i class="bi bi-list-ul me-1"></i>Items to Receive</span>
-        <div class="d-flex gap-2 align-items-center">
-          <span class="text-muted small">Total: <strong id="grandTotal" class="text-success">0</strong> XAF</span>
-          <button type="button" class="btn btn-sm btn-success" onclick="addEntryLine()"><i class="bi bi-plus-lg"></i> Add Line</button>
-        </div>
-      </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
+      <div class="table-responsive">
         <table class="table table-sm mb-0" style="font-size:.82rem;">
           <thead class="table-light">
             <tr>
-              <th style="min-width:200px">Item <span class="text-danger">*</span></th>
+              <th style="min-width:220px">Item <span class="text-danger">*</span></th>
+              <th style="width:80px" class="text-center">In Stock</th>
               <th style="width:75px">Qty <span class="text-danger">*</span></th>
               <th style="width:110px">Batch / Lot</th>
               <th style="width:125px">Expiry Date</th>
@@ -114,13 +117,11 @@
           <tbody id="entryLines">
             <tr class="entry-line">
               <td>
-                <select name="item_id[]" class="form-select form-select-sm ts-select-item" required onchange="fillEntryCost(this)">
-                  <option value="">-- Search item --</option>
-                  {% for item in items %}
-                  <option value="{{ item.id }}" data-cost="{{ item.unit_cost }}">{{ item.item_code }} — {{ item.name }} ({{ item.unit }})</option>
-                  {% endfor %}
+                <select name="item_id[]" class="form-select form-select-sm" required onchange="fillEntryCost(this)">
+                  <option value="">-- Select Store first --</option>
                 </select>
               </td>
+              <td class="text-center text-muted item-stock-display small">—</td>
               <td><input type="number" name="quantity[]" class="form-control form-control-sm entry-qty" min="1" required oninput="calcLineTotal(this)"></td>
               <td><input type="text" name="lot_number[]" class="form-control form-control-sm" placeholder="Optional"></td>
               <td><input type="date" name="expiry_date[]" class="form-control form-control-sm"></td>
@@ -131,94 +132,188 @@
             </tr>
           </tbody>
         </table>
-        </div>
-      </div>
-      <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
-        <button type="button" class="btn btn-sm btn-outline-success" onclick="addEntryLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Line</button>
-        <div class="text-end">
-          <span class="text-muted small me-2">Grand Total:</span>
-          <strong class="fs-6 text-success" id="grandTotal2">0 XAF</strong>
-        </div>
       </div>
     </div>
-
-    <div class="mb-3">
-      <label class="form-label small fw-semibold">Notes / Remarks</label>
-      <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks about this delivery..."></textarea>
+    <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+      <button type="button" class="btn btn-sm btn-outline-success" onclick="addEntryLine()"><i class="bi bi-plus-lg me-1"></i>Add Another Line</button>
+      <div class="text-end">
+        <span class="text-muted small me-2">Grand Total:</span>
+        <strong class="fs-6 text-success" id="grandTotal2">0 XAF</strong>
+      </div>
     </div>
+  </div>
 
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-success px-4"><i class="bi bi-check-lg me-1"></i>Save Stock In</button>
-      <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-outline-secondary">Cancel</a>
-    </div>
-  </form>
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Notes / Remarks</label>
+    <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional remarks about this delivery..."></textarea>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-success px-4"><i class="bi bi-check-lg me-1"></i>Save Stock In</button>
+    <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</form>
 
 <script>
-function initTsSelects(){
-  document.querySelectorAll('.ts-select-item').forEach(function(el){
-    if(el.tomselect) return;
-    new TomSelect(el, {
-      placeholder:'Type to search item...',
-      searchField:['text'],
-      maxOptions:50,
-      onChange: function(){ fillEntryCost(el); }
+const ITEMS_URL   = '{% url "inventory:items_by_store_ajax" %}';
+const OP_TYPE_URL = '{% url "inventory:op_types_by_store_ajax" %}';
+var currentItems  = [];
+
+/* ─── Store change: cascade op types + items ─── */
+document.getElementById('storeSelect').addEventListener('change', function() {
+  const storeId   = this.value;
+  const opt       = this.options[this.selectedIndex];
+  const storeType = opt.getAttribute('data-type') || '';
+  const glCode    = opt.getAttribute('data-gl') || '';
+  const prompt    = document.getElementById('storePrompt');
+  const storeHint = document.getElementById('storeGlHint');
+
+  if (!storeId) {
+    resetOpTypes();
+    resetAllItemSelects();
+    prompt.style.display = '';
+    storeHint.textContent = 'Store GL account displayed after selection';
+    storeHint.className   = 'text-muted';
+    storeHint.style.fontSize = '.7rem';
+    return;
+  }
+  prompt.style.display = 'none';
+  if (glCode) {
+    storeHint.innerHTML = '<i class="bi bi-bank me-1"></i>GL: <strong>' + glCode + '</strong> &mdash; ' + opt.textContent;
+    storeHint.className = 'text-primary small fw-semibold';
+    delete storeHint.style.fontSize;
+  }
+
+  // 1. Load filtered operation types (ENTRY)
+  fetch(OP_TYPE_URL + '?store_id=' + encodeURIComponent(storeId) + '&category=ENTRY', {credentials:'same-origin'})
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('opTypeSelect');
+      sel.innerHTML = '<option value="">-- Select Operation Type --</option>';
+      data.op_types.forEach(op => {
+        const o = document.createElement('option');
+        o.value = op.id;
+        o.textContent = op.label;
+        o.setAttribute('data-dr', op.dr_code);
+        o.setAttribute('data-cr', op.cr_code);
+        sel.appendChild(o);
+      });
+      sel.disabled = data.op_types.length === 0;
+      if (data.op_types.length === 0) {
+        sel.innerHTML = '<option value="">— No operation types for this store —</option>';
+      }
+      resetOpGlHint();
     });
+
+  // 2. Load items for this store
+  fetch(ITEMS_URL + '?store_id=' + encodeURIComponent(storeId), {credentials:'same-origin'})
+    .then(r => r.json())
+    .then(data => { rebuildAllItemSelects(data.items || []); });
+});
+
+/* ─── Op type GL hint ─── */
+document.getElementById('opTypeSelect').addEventListener('change', function() {
+  const opt  = this.options[this.selectedIndex];
+  const hint = document.getElementById('opGlHint');
+  if (opt.value) {
+    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.getAttribute('data-dr') + '</strong> / Cr <strong>' + opt.getAttribute('data-cr') + '</strong>';
+    hint.className = 'text-success small fw-semibold';
+    delete hint.style.fontSize;
+  } else {
+    resetOpGlHint();
+  }
+});
+
+function resetOpGlHint() {
+  const hint = document.getElementById('opGlHint');
+  hint.textContent  = 'GL Dr/Cr auto-populated on selection';
+  hint.className    = 'text-muted';
+  hint.style.fontSize = '.7rem';
+}
+
+function resetOpTypes() {
+  const sel = document.getElementById('opTypeSelect');
+  sel.innerHTML = '<option value="">-- Select Store first --</option>';
+  sel.disabled  = true;
+  resetOpGlHint();
+}
+
+/* ─── Item select management ─── */
+function buildItemOptions(sel) {
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">-- Select Item --</option>';
+  currentItems.forEach(item => {
+    const o = document.createElement('option');
+    o.value = item.id;
+    o.textContent = item.label;
+    o.setAttribute('data-cost',  item.unit_cost);
+    o.setAttribute('data-stock', item.current_stock);
+    o.setAttribute('data-unit',  item.unit);
+    if (item.id === cur) o.selected = true;
+    sel.appendChild(o);
   });
 }
-function addEntryLine(){
+
+function rebuildAllItemSelects(items) {
+  currentItems = items;
+  document.querySelectorAll('#entryLines .entry-line select[name="item_id[]"]').forEach(sel => buildItemOptions(sel));
+}
+
+function resetAllItemSelects() {
+  currentItems = [];
+  document.querySelectorAll('#entryLines .entry-line select[name="item_id[]"]').forEach(sel => {
+    sel.innerHTML = '<option value="">-- Select Store first --</option>';
+  });
+}
+
+/* ─── Line add / remove ─── */
+function addEntryLine() {
   const tbody = document.getElementById('entryLines');
   const first = tbody.querySelector('.entry-line');
   const clone = first.cloneNode(true);
   clone.querySelectorAll('input').forEach(i => i.value = '');
   clone.querySelector('.line-total').textContent = '0';
-  const sel = clone.querySelector('select');
-  if(sel && sel.tomselect){ sel.tomselect.destroy(); }
+  clone.querySelector('.item-stock-display').textContent = '—';
+  const sel = clone.querySelector('select[name="item_id[]"]');
+  buildItemOptions(sel);
   sel.selectedIndex = 0;
   tbody.appendChild(clone);
-  initTsSelects();
 }
-function removeLine(btn){
+
+function removeLine(btn) {
   const rows = document.querySelectorAll('#entryLines .entry-line');
-  if(rows.length > 1){ btn.closest('tr').remove(); updateGrandTotal(); }
+  if (rows.length > 1) { btn.closest('tr').remove(); updateGrandTotal(); }
 }
-function fillEntryCost(sel){
-  const opt = sel.options[sel.selectedIndex];
-  const cost = opt?.dataset?.cost || '';
-  const row = sel.closest('tr');
+
+function fillEntryCost(sel) {
+  const opt   = sel.options[sel.selectedIndex];
+  const cost  = opt?.getAttribute('data-cost') || '';
+  const stock = opt?.getAttribute('data-stock') ?? '—';
+  const unit  = opt?.getAttribute('data-unit') || '';
+  const row   = sel.closest('tr');
   const costInput = row.querySelector('input[name="unit_cost[]"]');
-  if(costInput && cost){ costInput.value = cost; calcLineTotal(costInput); }
+  const stockCell = row.querySelector('.item-stock-display');
+  if (stockCell) stockCell.textContent = stock + (unit ? ' ' + unit : '');
+  if (costInput && cost) { costInput.value = parseFloat(cost).toFixed(0); calcLineTotal(costInput); }
 }
-function calcLineTotal(inp){
-  const row = inp.closest('tr');
-  const qty = parseFloat(row.querySelector('.entry-qty')?.value) || 0;
+
+function calcLineTotal(inp) {
+  const row  = inp.closest('tr');
+  const qty  = parseFloat(row.querySelector('.entry-qty')?.value) || 0;
   const cost = parseFloat(row.querySelector('.entry-cost')?.value) || 0;
-  const total = Math.round(qty * cost);
-  row.querySelector('.line-total').textContent = total.toLocaleString();
+  row.querySelector('.line-total').textContent = Math.round(qty * cost).toLocaleString();
   updateGrandTotal();
 }
-function updateGrandTotal(){
+
+function updateGrandTotal() {
   let sum = 0;
-  document.querySelectorAll('.line-total').forEach(function(td){
+  document.querySelectorAll('.line-total').forEach(td => {
     sum += parseFloat(td.textContent.replace(/,/g,'')) || 0;
   });
-  const fmt = Math.round(sum).toLocaleString() + ' XAF';
-  document.getElementById('grandTotal').textContent = Math.round(sum).toLocaleString();
+  const fmt = Math.round(sum).toLocaleString();
+  document.getElementById('grandTotal').textContent = fmt;
   const gt2 = document.getElementById('grandTotal2');
-  if(gt2) gt2.textContent = fmt;
+  if (gt2) gt2.textContent = fmt + ' XAF';
 }
-document.addEventListener('DOMContentLoaded', initTsSelects);
-document.getElementById('opTypeSelect')?.addEventListener('change', function(){
-  var opt = this.options[this.selectedIndex];
-  var hint = document.getElementById('opGlHint');
-  if(opt.value){
-    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.dataset.dr + '</strong> / Cr <strong>' + opt.dataset.cr + '</strong>';
-    hint.className = 'text-success small fw-semibold';
-  } else {
-    hint.textContent = 'GL accounts auto-selected from operation type';
-    hint.className = 'text-muted';
-    hint.style.fontSize = '.7rem';
-  }
-});
 </script>
-{% include 'components/tom_select.html' %}
 {% endblock %}

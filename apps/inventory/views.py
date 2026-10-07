@@ -4192,3 +4192,84 @@ def three_way_match_resolve(request, match_id):
     match.save(update_fields=['status', 'resolved_by', 'resolved_at', 'discrepancy_notes'])
     messages.success(request, f'3-Way Match {match.match_number} resolved.')
     return redirect('inventory:three_way_match_detail', match_id=match.pk)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AJAX ENDPOINTS — Store-Filtered Items & Operation Types
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def items_by_store_ajax(request):
+    """
+    GET /inventory/ajax/items-by-store/?store_id=<uuid>
+    Returns JSON list of items belonging to the selected store, for cascading
+    dropdown population in stock entry / exit forms.
+    """
+    from django.http import JsonResponse
+    store_id = request.GET.get('store_id', '').strip()
+    if not store_id:
+        return JsonResponse({'items': [], 'store_type': ''})
+
+    store = StoreLocation.objects.filter(pk=store_id, is_deleted=False, is_active=True).first()
+    if not store:
+        return JsonResponse({'items': [], 'store_type': ''})
+
+    items = InventoryItem.objects.filter(
+        store_location=store, is_active=True, is_deleted=False
+    ).order_by('name').values('id', 'item_code', 'name', 'unit', 'unit_cost', 'current_stock')
+
+    return JsonResponse({
+        'store_type': store.location_type,
+        'gl_account': store.gl_account_code,
+        'items': [
+            {
+                'id': str(i['id']),
+                'item_code': i['item_code'],
+                'name': i['name'],
+                'unit': i['unit'],
+                'unit_cost': float(i['unit_cost'] or 0),
+                'current_stock': i['current_stock'],
+                'label': f"{i['item_code']} \u2014 {i['name']} ({i['unit']})",
+            }
+            for i in items
+        ],
+    })
+
+
+@login_required
+def op_types_by_store_ajax(request):
+    """
+    GET /inventory/ajax/op-types-by-store/?store_id=<uuid>&category=ENTRY
+    Returns JSON list of StockOperationType records applicable to the store's
+    location_type. Blank location_types on an op type means it applies to all.
+    """
+    from django.http import JsonResponse
+    from apps.billing.models import StockOperationType
+    store_id = request.GET.get('store_id', '').strip()
+    category = request.GET.get('category', 'ENTRY').upper()
+
+    store_type = ''
+    if store_id:
+        store = StoreLocation.objects.filter(pk=store_id, is_deleted=False, is_active=True).first()
+        if store:
+            store_type = store.location_type
+
+    qs = StockOperationType.objects.filter(
+        category=category, is_active=True, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('code')
+
+    result = []
+    for op in qs:
+        # If location_types blank → all stores; otherwise only if store_type matches
+        if not op.location_types or (store_type and op.applies_to_store_type(store_type)):
+            result.append({
+                'id': str(op.id),
+                'code': op.code,
+                'name': op.name,
+                'dr_code': op.debit_account.code if op.debit_account else '',
+                'cr_code': op.credit_account.code if op.credit_account else '',
+                'label': f"{op.code} \u2014 {op.name}",
+            })
+
+    return JsonResponse({'op_types': result, 'store_type': store_type})
