@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db.models import Q, Sum, F, Value, Max, Count, IntegerField
+from django.db.models import Q, Sum, F, Value, Max, Count, IntegerField, Prefetch
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.http import HttpResponse, JsonResponse
@@ -3831,7 +3831,7 @@ def dispatch_to_store(request):
     ).filter(
         Q(stock_items__expiry_date__gte=timezone.localdate()) | Q(stock_items__expiry_date__isnull=True)
     ).distinct().prefetch_related(
-        models.Prefetch(
+        Prefetch(
             'stock_items',
             queryset=DrugStock.objects.filter(
                 quantity_remaining__gt=0, is_deleted=False
