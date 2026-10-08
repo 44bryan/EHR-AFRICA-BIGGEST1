@@ -994,7 +994,7 @@ def enter_results_view(request, pk):
             _prev_map[tid] = pr
 
     for item in items:
-        item._prev_result = _prev_map.get(item.test_type_id)
+        item.prev_result = _prev_map.get(item.test_type_id)
 
     return render(request, 'laboratory/results_form.html', {
         'order': order,
@@ -1684,10 +1684,10 @@ def result_pdf_view(request, pk):
     for item in completed_items:
         tt = item.test_type
         # Technique from master catalogue
-        item._technique = tt.method or ''
+        item.technique = tt.method or ''
         # Reference range: prefer result-level, fall back to master catalogue
         if item.result.reference_range:
-            item._ref_range = item.result.reference_range
+            item.ref_range = item.result.reference_range
         elif tt.normal_range:
             nr = tt.normal_range
             if isinstance(nr, dict):
@@ -1698,15 +1698,15 @@ def result_pdf_view(request, pk):
                     lo = gen.get('min', '')
                     hi = gen.get('max', '')
                     unit = gen.get('unit', '')
-                    item._ref_range = f"{lo} – {hi} {unit}".strip()
+                    item.ref_range = f"{lo} – {hi} {unit}".strip()
                 elif isinstance(gen, str):
-                    item._ref_range = gen
+                    item.ref_range = gen
                 else:
-                    item._ref_range = ''
+                    item.ref_range = ''
             else:
-                item._ref_range = str(nr)
+                item.ref_range = str(nr)
         else:
-            item._ref_range = ''
+            item.ref_range = ''
 
     # Collect signers for the three signature columns
     from apps.reports.views import _sig_b64

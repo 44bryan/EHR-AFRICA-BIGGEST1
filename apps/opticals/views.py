@@ -1648,7 +1648,7 @@ def uncollected_orders(request):
         # Use expected_date if set, else ordered_date + 3 days as proxy
         ready_since = o.expected_date or (o.ordered_date + timedelta(days=3))
         days_waiting = (today - ready_since).days
-        o._days_waiting = max(0, days_waiting)
+        o.days_waiting = max(0, days_waiting)
         if days_waiting <= 7:
             buckets['0_7'].append(o)
         elif days_waiting <= 14:
