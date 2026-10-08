@@ -6816,16 +6816,35 @@ def trial_balance(request):
             parent_code_of[a.id] = ''
             parent_name_of[a.id] = ''
 
-    # ── Roll-up helper: merge leaf lines under their parent key ───────────────
     D0 = Decimal('0')
 
-    def _rollup(raw_map):
-        result = {}
-        for acct_id, (dr, cr) in raw_map.items():
-            key = parent_of.get(acct_id) or acct_id
-            pd, pc = result.get(key, (D0, D0))
-            result[key] = (pd + dr, pc + cr)
-        return result
+    # ── Build direct-children map and compute depth for each account ──────────
+    children_of = {}
+    for a in all_accounts:
+        if a.parent_id:
+            children_of.setdefault(a.parent_id, []).append(a.id)
+
+    depth_cache = {}
+    def _depth(aid):
+        if aid not in depth_cache:
+            pid = parent_of.get(aid)
+            depth_cache[aid] = (1 + _depth(pid)) if pid else 0
+        return depth_cache[aid]
+    for a in all_accounts:
+        _depth(a.id)
+
+    # ── Full recursive rollup: each account → total of ALL leaf descendants ───
+    def _full_rollup(raw_map):
+        """Propagate leaf journal-line totals up through every ancestor level."""
+        totals = {a.id: raw_map.get(a.id, (D0, D0)) for a in all_accounts}
+        # Process deepest accounts first so each account's accumulated total
+        # reaches its parent before the parent propagates further up.
+        for acct in sorted(all_accounts, key=lambda a: -depth_cache[a.id]):
+            if acct.parent_id and acct.parent_id in acct_by_id:
+                dr, cr = totals[acct.id]
+                p_dr, p_cr = totals[acct.parent_id]
+                totals[acct.parent_id] = (p_dr + dr, p_cr + cr)
+        return totals
 
     # Account range filter helper
     def _in_range(acct):
@@ -6842,14 +6861,20 @@ def trial_balance(request):
     tot_clos_dr = D0; tot_clos_cr = D0
 
     if balance_type == 'general':
-        # Roll leaf lines up to parent level (or keep standalone)
-        gen_open = _rollup(open_map)
-        gen_move = _rollup(move_map)
-        # Display: summary accounts + standalone leaf accounts (no parent, not summary)
+        gen_open = _full_rollup(open_map)
+        gen_move = _full_rollup(move_map)
+
+        # Show summary accounts + standalone leaves (leaves whose parent is None)
         display_accts = [
             a for a in all_accounts
             if (a.is_summary or (not a.parent_id and not a.is_summary)) and _in_range(a)
         ]
+        display_ids = {a.id for a in display_accts}
+        # Accounts that are parents of other displayed accounts — they are
+        # higher-level rollups. Only their TERMINAL children count toward totals
+        # to avoid double-counting across hierarchy levels.
+        parent_of_displayed = {a.parent_id for a in display_accts if a.parent_id in display_ids}
+
         for cls, label in classes_to_show:
             rows = []
             sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
@@ -6865,14 +6890,19 @@ def trial_balance(request):
                 rows.append({
                     'code': acct.code, 'name': acct.name, 'pk': acct.pk,
                     'is_summary': acct.is_summary,
+                    'level': depth_cache.get(acct.id, 0),
                     'open_dr': o_dr, 'open_cr': o_cr,
                     'move_dr': m_dr, 'move_cr': m_cr,
                     'clos_dr': c_dr, 'clos_cr': c_cr,
-                    'parent_code': '', 'parent_name': '',
+                    'parent_code': parent_code_of.get(acct.id, ''),
+                    'parent_name': parent_name_of.get(acct.id, ''),
                 })
-                for k, v in [('open_dr',o_dr),('open_cr',o_cr),('move_dr',m_dr),
-                              ('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
-                    sub[k] += v
+                # Only terminal displayed accounts (no displayed children) count
+                # toward section and grand totals — avoids double-counting.
+                if acct.id not in parent_of_displayed:
+                    for k, v in [('open_dr',o_dr),('open_cr',o_cr),('move_dr',m_dr),
+                                  ('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
+                        sub[k] += v
             if rows:
                 sections.append({'label': label, 'rows': rows, **sub})
             tot_open_dr += sub['open_dr']; tot_open_cr += sub['open_cr']
@@ -6880,7 +6910,12 @@ def trial_balance(request):
             tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
     else:  # auxiliaire — control account header + indented children + subtotal
-        # Build parent → children map (leaf accounts only)
+        # Map each summary to its DIRECT leaf children only.
+        # Multi-level summaries (705200 → 7052000 → 7052001) are handled by
+        # iterating ALL summaries; 705200 will have no direct leaf children
+        # (they're all summaries themselves) so it's naturally skipped when
+        # avec_mouvement='1'. Terminal summaries (7052000) correctly list their
+        # tier leaves and are the only ones that contribute to section totals.
         parent_children = {}
         standalone_leaves = []
         for acct in all_accounts:
@@ -6905,7 +6940,6 @@ def trial_balance(request):
                     [a for a in parent_children.get(parent_acct.id, []) if _in_range(a)],
                     key=lambda a: a.code,
                 )
-                # Compute each child and accumulate parent totals
                 p_o_dr = p_o_cr = p_m_dr = p_m_cr = D0
                 child_rows = []
                 for child in children:
@@ -6922,6 +6956,7 @@ def trial_balance(request):
                     child_rows.append({
                         'row_type': 'child',
                         'code': child.code, 'name': child.name, 'pk': child.pk,
+                        'level': depth_cache.get(child.id, 0),
                         'open_dr': o_dr, 'open_cr': o_cr,
                         'move_dr': m_dr, 'move_cr': m_cr,
                         'clos_dr': c_dr, 'clos_cr': c_cr,
@@ -6935,22 +6970,22 @@ def trial_balance(request):
                 p_clos_net = (p_o_dr - p_o_cr) + p_m_dr - p_m_cr
                 p_c_dr = max(D0, p_clos_net);  p_c_cr = max(D0, -p_clos_net)
 
-                # Parent header row (bold, with aggregated amounts)
                 rows.append({
                     'row_type': 'parent',
                     'code': parent_acct.code, 'name': parent_acct.name, 'pk': parent_acct.pk,
+                    'level': depth_cache.get(parent_acct.id, 0),
                     'open_dr': p_o_dr, 'open_cr': p_o_cr,
                     'move_dr': p_m_dr, 'move_cr': p_m_cr,
                     'clos_dr': p_c_dr, 'clos_cr': p_c_cr,
                 })
                 rows.extend(child_rows)
 
-                # Subtotal line when there are multiple children
                 if len(child_rows) > 1:
                     rows.append({
                         'row_type': 'subtotal',
                         'code': '', 'name': f'= Sous-total {parent_acct.code} — {parent_acct.name}',
                         'pk': parent_acct.pk,
+                        'level': 0,
                         'open_dr': p_o_dr, 'open_cr': p_o_cr,
                         'move_dr': p_m_dr, 'move_cr': p_m_cr,
                         'clos_dr': p_c_dr, 'clos_cr': p_c_cr,
@@ -6976,6 +7011,7 @@ def trial_balance(request):
                 rows.append({
                     'row_type': 'standalone',
                     'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                    'level': 0,
                     'open_dr': o_dr, 'open_cr': o_cr,
                     'move_dr': m_dr, 'move_cr': m_cr,
                     'clos_dr': c_dr, 'clos_cr': c_cr,
