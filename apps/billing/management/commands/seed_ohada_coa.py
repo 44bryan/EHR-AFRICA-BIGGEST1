@@ -573,8 +573,33 @@ class Command(BaseCommand):
                 except GLAccount.DoesNotExist:
                     pass
 
+        # Third pass: mark every account that has at least one child as is_summary=True
+        # and every leaf account (no children) as is_summary=False
+        summary_set = 0
+        leaf_set = 0
+        all_accounts = GLAccount.objects.filter(is_deleted=False)
+        # Get all parent IDs (accounts that are referenced as parent by at least one child)
+        parent_ids = set(
+            GLAccount.objects.filter(is_deleted=False, parent__isnull=False)
+            .values_list('parent_id', flat=True)
+        )
+        for acct in all_accounts:
+            if acct.pk in parent_ids:
+                if not acct.is_summary:
+                    acct.is_summary = True
+                    acct.allow_manual_posting = False
+                    acct.save(update_fields=['is_summary', 'allow_manual_posting'])
+                    summary_set += 1
+            else:
+                if acct.is_summary:
+                    acct.is_summary = False
+                    acct.allow_manual_posting = True
+                    acct.save(update_fields=['is_summary', 'allow_manual_posting'])
+                    leaf_set += 1
+
         self.stdout.write(self.style.SUCCESS(
             f'Done: {created} created, {updated} updated, {skipped} skipped, '
-            f'{parent_set} parent links set'
+            f'{parent_set} parent links set, '
+            f'{summary_set} marked summary, {leaf_set} marked leaf'
         ))
         self.stdout.write(f'Total accounts: {GLAccount.objects.filter(is_deleted=False).count()}')
