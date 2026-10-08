@@ -363,6 +363,21 @@ urlpatterns = [
     path('reports/cash-flow-forecast/', views.cash_flow_forecast, name='cash_flow_forecast'),
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # ENHANCED CASH MANAGEMENT (Retraits, Approvisionnement, Extourne)
+    # ═══════════════════════════════════════════════════════════════════════════
+    path('cash/operation-types/', views.cash_operation_type_list, name='cash_operation_type_list'),
+    path('cash/operation-types/create/', views.cash_operation_type_create, name='cash_operation_type_create'),
+    path('cash/operation-types/<uuid:type_id>/edit/', views.cash_operation_type_edit, name='cash_operation_type_edit'),
+    path('cash/withdrawals/', views.cash_withdrawal_list, name='cash_withdrawal_list'),
+    path('cash/withdrawals/create/', views.cash_withdrawal_create, name='cash_withdrawal_create'),
+    path('cash/withdrawals/multi/', views.cash_withdrawal_multi_create, name='cash_withdrawal_multi_create'),
+    path('cash/withdrawals/patient/', views.cash_withdrawal_patient, name='cash_withdrawal_patient'),
+    path('cash/withdrawals/reverse/', views.cash_withdrawal_reverse, name='cash_withdrawal_reverse'),
+    path('cash/supply/', views.cash_desk_supply_list, name='cash_desk_supply_list'),
+    path('cash/supply/create/', views.cash_desk_supply_create, name='cash_desk_supply_create'),
+    path('api/cash-desk-balance/', views.cash_desk_balance_ajax, name='cash_desk_balance_ajax'),
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # ASSET MAINTENANCE
     # ═══════════════════════════════════════════════════════════════════════════
     path('maintenance/', views.maintenance_list, name='maintenance_list'),

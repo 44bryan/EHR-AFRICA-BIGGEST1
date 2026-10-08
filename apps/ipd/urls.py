@@ -100,4 +100,7 @@ urlpatterns = [
     path('procedure-room/<uuid:record_id>/record/', views.procedure_room_record, name='procedure_room_record'),
     path('procedure-room/<uuid:record_id>/detail/', views.procedure_room_detail, name='procedure_room_detail'),
     path('procedure-room/stats/', views.procedure_room_stats, name='procedure_room_stats'),
+
+    # ── Pre-Op Counselling Checklist G001–G007 ────────────────────────────────
+    path('surgical-booking/<uuid:booking_id>/preop-checklist/', views.preop_checklist_view, name='preop_checklist'),
 ]

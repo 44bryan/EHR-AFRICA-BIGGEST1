@@ -1,0 +1,67 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Cash Operation Types{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Cash Operation Types</h4>
+    <p class="text-muted small mb-0">Configure withdrawal, supply and inter-desk operation categories</p>
+  </div>
+  <a href="{% url 'billing:cash_operation_type_create' %}" class="btn btn-sm btn-primary">
+    <i class="bi bi-plus-circle me-1"></i>New Type
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% regroup types by get_category_display as type_groups %}
+{% for group in type_groups %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small text-uppercase text-primary">{{ group.grouper }}</span>
+    <span class="badge bg-secondary">{{ group.list|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.83rem">
+      <thead class="table-light">
+        <tr>
+          <th style="width:100px">Code</th>
+          <th>Name</th>
+          <th>Auto Narration Template</th>
+          <th>Default GL Account</th>
+          <th class="text-center">Active</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in group.list %}
+        <tr {% if not t.is_active %}class="text-muted"{% endif %}>
+          <td><code class="small">{{ t.code }}</code></td>
+          <td class="fw-semibold">{{ t.name }}</td>
+          <td class="text-muted small">{{ t.auto_narration_template|default:"—" }}</td>
+          <td class="small">
+            {% if t.default_gl_account %}
+              <span class="font-monospace">{{ t.default_gl_account.code }}</span>
+              <span class="text-muted ms-1">{{ t.default_gl_account.name }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if t.is_active %}<i class="bi bi-check-circle-fill text-success"></i>
+            {% else %}<i class="bi bi-x-circle text-danger"></i>{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'billing:cash_operation_type_edit' t.pk %}" class="btn btn-xs btn-outline-secondary py-0 px-2">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% empty %}
+<div class="alert alert-info">No cash operation types defined. <a href="{% url 'billing:cash_operation_type_create' %}">Create one</a>.</div>
+{% endfor %}
+{% endblock %}

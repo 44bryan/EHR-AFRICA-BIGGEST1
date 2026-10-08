@@ -1203,3 +1203,133 @@ class ProcedureRecord(AuditModel):
             ).count() + 1
             self.record_number = f"PR-{today.strftime('%Y')}-{count:04d}"
         super().save(*args, **kwargs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRE-OPERATIVE COUNSELLING CHECKLIST (G001–G007)
+# Mirrors TurboClinic 'Conseil pré-opératoire' structured accordion form.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PreOpCounsellingChecklist(AuditModel):
+    """
+    Structured pre-operative counselling record with 7 sections (G001–G007).
+    One per SurgicalBooking, completed by the counselling nurse.
+    """
+    booking   = models.OneToOneField(
+        SurgicalBooking, on_delete=models.CASCADE, related_name='preop_checklist'
+    )
+    counsellor = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='preop_checklists'
+    )
+    date = models.DateField(default=timezone.localdate)
+
+    # ── G001 — Scheduling & Logistics ──────────────────────────────────────────
+    g001_surgery_date_confirmed = models.BooleanField(default=False,
+        verbose_name='Surgery date communicated to patient')
+    g001_transport_arranged     = models.BooleanField(default=False,
+        verbose_name='Transport arrangement discussed')
+    g001_companion_informed     = models.BooleanField(default=False,
+        verbose_name='Companion / escort informed')
+    g001_notes                  = models.TextField(blank=True)
+
+    # ── G002 — Pre-operative Preparation ───────────────────────────────────────
+    g002_fasting_instructions   = models.BooleanField(default=False,
+        verbose_name='Fasting instructions given (nil by mouth)')
+    g002_medications_reviewed   = models.BooleanField(default=False,
+        verbose_name='Current medications reviewed (stop/continue list)')
+    g002_blood_tests_ordered    = models.BooleanField(default=False,
+        verbose_name='Pre-op blood tests ordered (CBC, RBG, etc.)')
+    g002_bp_sugar_checked       = models.BooleanField(default=False,
+        verbose_name='BP and blood sugar targets explained')
+    g002_notes                  = models.TextField(blank=True)
+
+    # ── G003 — Consent & Surgical Information ──────────────────────────────────
+    g003_procedure_explained    = models.BooleanField(default=False,
+        verbose_name='Procedure steps explained to patient')
+    g003_risks_explained        = models.BooleanField(default=False,
+        verbose_name='Risks and complications explained')
+    g003_alternatives_discussed = models.BooleanField(default=False,
+        verbose_name='Alternative treatments discussed')
+    g003_consent_signed         = models.BooleanField(default=False,
+        verbose_name='Written informed consent obtained')
+    g003_notes                  = models.TextField(blank=True)
+
+    # ── G004 — Hospitalisation Conditions ──────────────────────────────────────
+    g004_ward_explained         = models.BooleanField(default=False,
+        verbose_name='Ward / admission process explained')
+    g004_stay_duration          = models.CharField(max_length=100, blank=True,
+        verbose_name='Expected length of stay',
+        help_text='e.g. Day case, Overnight, 2-3 days')
+    g004_items_to_bring         = models.BooleanField(default=False,
+        verbose_name='Items to bring list given (clothing, toiletries, ID)')
+    g004_notes                  = models.TextField(blank=True)
+
+    # ── G005 — Surgical Fees & Financial Counselling ────────────────────────────
+    g005_total_fees_quoted      = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name='Total fees quoted (FCFA)'
+    )
+    g005_deposit_amount         = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name='Deposit / advance payment (FCFA)'
+    )
+    g005_insurance_share        = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name='Insurance / 3rd-party share (FCFA)'
+    )
+    g005_patient_share          = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name='Patient out-of-pocket share (FCFA)'
+    )
+    g005_payment_plan_discussed = models.BooleanField(default=False,
+        verbose_name='Payment plan / financial assistance discussed')
+    g005_notes                  = models.TextField(blank=True)
+
+    # ── G006 — Post-operative Care & Follow-up ─────────────────────────────────
+    g006_post_op_instructions   = models.BooleanField(default=False,
+        verbose_name='Post-op care instructions given')
+    g006_eye_drop_schedule      = models.BooleanField(default=False,
+        verbose_name='Eye drop / medication schedule explained')
+    g006_followup_date          = models.DateField(null=True, blank=True,
+        verbose_name='First follow-up appointment date')
+    g006_activity_restrictions  = models.BooleanField(default=False,
+        verbose_name='Activity restrictions explained (no driving, swimming, etc.)')
+    g006_emergency_contact      = models.BooleanField(default=False,
+        verbose_name='Emergency contact / when to return to hospital given')
+    g006_notes                  = models.TextField(blank=True)
+
+    # ── G007 — Special Notes ────────────────────────────────────────────────────
+    g007_notes = models.TextField(blank=True,
+        verbose_name='Special notes / additional instructions')
+
+    # ── Signatures ──────────────────────────────────────────────────────────────
+    patient_understood         = models.BooleanField(default=False,
+        verbose_name='Patient / guardian confirms understanding')
+    patient_signature_obtained = models.BooleanField(default=False,
+        verbose_name='Patient / guardian signature obtained')
+    counsellor_signature       = models.BooleanField(default=False,
+        verbose_name='Counselling nurse signature')
+
+    class Meta:
+        verbose_name = 'Pre-Op Counselling Checklist'
+
+    def __str__(self):
+        return f'Pre-Op Checklist — {self.booking.patient.full_name} ({self.date})'
+
+    @property
+    def completion_pct(self):
+        checks = [
+            self.g001_surgery_date_confirmed, self.g001_transport_arranged,
+            self.g002_fasting_instructions, self.g002_medications_reviewed,
+            self.g002_blood_tests_ordered,
+            self.g003_procedure_explained, self.g003_risks_explained,
+            self.g003_consent_signed,
+            self.g004_ward_explained,
+            bool(self.g005_total_fees_quoted),
+            self.g006_post_op_instructions, self.g006_eye_drop_schedule,
+            self.g006_activity_restrictions,
+            self.patient_understood, self.patient_signature_obtained,
+        ]
+        done = sum(1 for c in checks if c)
+        return round(done / len(checks) * 100)

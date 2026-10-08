@@ -1,0 +1,145 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Cash Withdrawals{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0">Cash Withdrawals — Registre des Retraits</h4>
+    <p class="text-muted small mb-0">Retraits espèces, multi-lignes et patient</p>
+  </div>
+  <div class="d-flex gap-2">
+    <div class="dropdown">
+      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-plus-circle me-1"></i>New Withdrawal
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <a class="dropdown-item" href="{% url 'billing:cash_withdrawal_create' %}">
+            <i class="bi bi-cash me-2 text-primary"></i>Retrait Espèces (simple)
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{% url 'billing:cash_withdrawal_multi_create' %}">
+            <i class="bi bi-list-ul me-2 text-warning"></i>Retrait Multiple (multi-lignes)
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{% url 'billing:cash_withdrawal_patient' %}">
+            <i class="bi bi-person-fill me-2 text-info"></i>Retrait Patient
+          </a>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="{% url 'billing:cash_withdrawal_reverse' %}">
+            <i class="bi bi-arrow-counterclockwise me-2 text-danger"></i>Extourne (reversal)
+          </a>
+        </li>
+      </ul>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">All Withdrawals (last 200)</span>
+    <span class="badge bg-secondary">{{ withdrawals|length }} records</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Bordereau</th>
+          <th>Date</th>
+          <th>Desk</th>
+          <th>Type</th>
+          <th>Patient</th>
+          <th>Reason</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th class="text-center">Lines</th>
+          <th class="text-center">Reversed</th>
+          <th>Recorded By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in withdrawals %}
+        <tr {% if w.is_reversed %}class="text-muted text-decoration-line-through"{% endif %}>
+          <td>
+            <code class="small {% if w.is_reversed %}text-danger{% else %}text-primary{% endif %}">
+              {{ w.bordereau_number }}
+            </code>
+            {% if w.reversal_ref %}<br><span class="badge bg-danger" style="font-size:.65rem">Extourné</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ w.withdrawal_date|date:"d M Y" }}</td>
+          <td>{{ w.cash_desk.name|default:"—" }}</td>
+          <td>
+            {% if w.operation_type %}
+              <span class="badge bg-light text-dark border small">{{ w.operation_type.code }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="small">
+            {% if w.patient %}
+              <a href="#" class="text-decoration-none">{{ w.patient.full_name }}</a>
+              <div class="text-muted" style="font-size:.75rem">{{ w.patient.patient_id }}</div>
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td class="small text-truncate" style="max-width:180px" title="{{ w.reason }}">{{ w.reason|default:"—" }}</td>
+          <td class="text-end fw-semibold">{{ w.total_amount|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if w.is_multi_line %}
+              <span class="badge bg-warning text-dark" title="Multi-line">
+                {{ w.lines.count }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if w.is_reversed %}
+              <i class="bi bi-x-circle-fill text-danger" title="Reversed — {{ w.reversal_ref }}"></i>
+            {% else %}
+              <i class="bi bi-check-circle-fill text-success"></i>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ w.recorded_by.get_full_name|default:w.recorded_by.username }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="10" class="text-center py-4 text-muted">
+            No withdrawals recorded yet.
+            <a href="{% url 'billing:cash_withdrawal_create' %}">Record first withdrawal</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if withdrawals %}
+      <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+        <tr>
+          <td colspan="6" class="text-end text-muted small text-uppercase pe-3">Total (not reversed)</td>
+          <td class="text-end">
+            {% with total=0 %}
+            {% for w in withdrawals %}{% if not w.is_reversed %}{% endfor %}{% endwith %}
+            —
+          </td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  .card { box-shadow:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+}
+</style>
+{% endblock %}

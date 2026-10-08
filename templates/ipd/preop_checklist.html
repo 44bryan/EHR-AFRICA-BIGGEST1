@@ -1,0 +1,451 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Pre-Op Counselling Checklist — {{ patient.full_name }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=patient %}
+{% endblock %}
+
+{% block content %}
+
+<!-- Progress header -->
+<div class="card border-0 shadow-sm mb-3 bg-gradient" style="background:linear-gradient(135deg,#1e3a5f 0%,#2d5f8a 100%)!important">
+  <div class="card-body py-3 px-4">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="text-white fw-bold mb-0">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Pre-Operative Counselling Checklist
+        </h6>
+        <div class="text-white-50 small mt-1">
+          Booking: <strong class="text-white">{{ booking.booking_reference|default:booking.pk }}</strong>
+          &nbsp;&middot;&nbsp; Procedure: <strong class="text-white">{{ booking.get_surgery_type_display|default:"—" }}</strong>
+          &nbsp;&middot;&nbsp; Date: <strong class="text-white">{{ booking.surgery_date|date:"d M Y"|default:"TBD" }}</strong>
+        </div>
+      </div>
+      <div class="text-end">
+        <div class="display-6 fw-bold text-white">{{ completion_pct }}%</div>
+        <div class="text-white-50 small">Complete</div>
+      </div>
+    </div>
+    <div class="progress mt-2" style="height:6px">
+      <div class="progress-bar bg-success" style="width:{{ completion_pct }}%"></div>
+    </div>
+  </div>
+</div>
+
+<form method="post">
+{% csrf_token %}
+<input type="hidden" name="next" value="{{ request.GET.next }}">
+
+<!-- Accordion sections -->
+<div class="accordion shadow-sm mb-3" id="preOpAccordion">
+
+  <!-- G001 — Scheduling & Logistics -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button {% if checklist.g001_surgery_date_confirmed and checklist.g001_transport_arranged and checklist.g001_companion_informed %}collapsed{% endif %} fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g001">
+        <span class="badge bg-primary me-2">G001</span>
+        Scheduling &amp; Logistics
+        {% if checklist.g001_surgery_date_confirmed and checklist.g001_transport_arranged and checklist.g001_companion_informed %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g001" class="accordion-collapse collapse show">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g001_surgery_date_confirmed" id="g001a"
+                     {% if checklist.g001_surgery_date_confirmed %}checked{% endif %}>
+              <label class="form-check-label small" for="g001a">Surgery date communicated to patient</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g001_transport_arranged" id="g001b"
+                     {% if checklist.g001_transport_arranged %}checked{% endif %}>
+              <label class="form-check-label small" for="g001b">Transport arrangement discussed</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g001_companion_informed" id="g001c"
+                     {% if checklist.g001_companion_informed %}checked{% endif %}>
+              <label class="form-check-label small" for="g001c">Companion / escort informed</label>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g001_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Additional scheduling notes...">{{ checklist.g001_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G002 — Pre-operative Preparation -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g002">
+        <span class="badge bg-warning text-dark me-2">G002</span>
+        Pre-operative Preparation
+        {% if checklist.g002_fasting_instructions and checklist.g002_medications_reviewed and checklist.g002_blood_tests_ordered %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g002" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g002_fasting_instructions" id="g002a"
+                     {% if checklist.g002_fasting_instructions %}checked{% endif %}>
+              <label class="form-check-label small" for="g002a">Fasting instructions given (nil by mouth)</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g002_medications_reviewed" id="g002b"
+                     {% if checklist.g002_medications_reviewed %}checked{% endif %}>
+              <label class="form-check-label small" for="g002b">Current medications reviewed (stop/continue)</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g002_blood_tests_ordered" id="g002c"
+                     {% if checklist.g002_blood_tests_ordered %}checked{% endif %}>
+              <label class="form-check-label small" for="g002c">Pre-op blood tests ordered (CBC, RBG, etc.)</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g002_bp_sugar_checked" id="g002d"
+                     {% if checklist.g002_bp_sugar_checked %}checked{% endif %}>
+              <label class="form-check-label small" for="g002d">BP and blood sugar targets explained</label>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g002_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Pre-op prep notes...">{{ checklist.g002_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G003 — Consent & Surgical Information -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g003">
+        <span class="badge bg-danger me-2">G003</span>
+        Consent &amp; Surgical Information
+        {% if checklist.g003_procedure_explained and checklist.g003_risks_explained and checklist.g003_consent_signed %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g003" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g003_procedure_explained" id="g003a"
+                     {% if checklist.g003_procedure_explained %}checked{% endif %}>
+              <label class="form-check-label small" for="g003a">Procedure steps explained to patient</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g003_risks_explained" id="g003b"
+                     {% if checklist.g003_risks_explained %}checked{% endif %}>
+              <label class="form-check-label small" for="g003b">Risks and complications explained</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g003_alternatives_discussed" id="g003c"
+                     {% if checklist.g003_alternatives_discussed %}checked{% endif %}>
+              <label class="form-check-label small" for="g003c">Alternative treatments discussed</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g003_consent_signed" id="g003d"
+                     {% if checklist.g003_consent_signed %}checked{% endif %}>
+              <label class="form-check-label small fw-bold text-danger" for="g003d">
+                <i class="bi bi-pen-fill me-1"></i>Written informed consent obtained
+              </label>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g003_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Consent notes, questions raised by patient...">{{ checklist.g003_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G004 — Hospitalisation -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g004">
+        <span class="badge bg-info me-2">G004</span>
+        Hospitalisation Conditions
+        {% if checklist.g004_ward_explained and checklist.g004_items_to_bring %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g004" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g004_ward_explained" id="g004a"
+                     {% if checklist.g004_ward_explained %}checked{% endif %}>
+              <label class="form-check-label small" for="g004a">Ward / admission process explained</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g004_items_to_bring" id="g004b"
+                     {% if checklist.g004_items_to_bring %}checked{% endif %}>
+              <label class="form-check-label small" for="g004b">Items to bring list given</label>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small text-muted">Expected Length of Stay</label>
+            <input type="text" name="g004_stay_duration" class="form-control form-control-sm"
+                   value="{{ checklist.g004_stay_duration }}"
+                   placeholder="e.g. Day case, Overnight, 2-3 days">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g004_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Hospitalisation notes...">{{ checklist.g004_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G005 — Financial Counselling -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g005">
+        <span class="badge bg-success me-2">G005</span>
+        Surgical Fees &amp; Financial Counselling
+        {% if checklist.g005_total_fees_quoted %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g005" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small text-muted">Total Fees (FCFA)</label>
+            <input type="number" name="g005_total_fees_quoted" class="form-control form-control-sm"
+                   value="{{ checklist.g005_total_fees_quoted|floatformat:0 }}" min="0" step="1">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small text-muted">Deposit / Advance</label>
+            <input type="number" name="g005_deposit_amount" class="form-control form-control-sm"
+                   value="{{ checklist.g005_deposit_amount|floatformat:0 }}" min="0" step="1">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small text-muted">Insurance Share</label>
+            <input type="number" name="g005_insurance_share" class="form-control form-control-sm"
+                   value="{{ checklist.g005_insurance_share|floatformat:0 }}" min="0" step="1">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small text-muted">Patient Share</label>
+            <input type="number" name="g005_patient_share" class="form-control form-control-sm"
+                   value="{{ checklist.g005_patient_share|floatformat:0 }}" min="0" step="1">
+          </div>
+          <div class="col-md-6">
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="g005_payment_plan_discussed" id="g005a"
+                     {% if checklist.g005_payment_plan_discussed %}checked{% endif %}>
+              <label class="form-check-label small" for="g005a">Payment plan / financial assistance discussed</label>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g005_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Financial counselling notes...">{{ checklist.g005_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G006 — Post-operative Care -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g006">
+        <span class="badge bg-secondary me-2">G006</span>
+        Post-operative Care &amp; Follow-up
+        {% if checklist.g006_post_op_instructions and checklist.g006_eye_drop_schedule %}
+          <i class="bi bi-check-circle-fill text-success ms-2"></i>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="g006" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g006_post_op_instructions" id="g006a"
+                     {% if checklist.g006_post_op_instructions %}checked{% endif %}>
+              <label class="form-check-label small" for="g006a">Post-op care instructions given</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g006_eye_drop_schedule" id="g006b"
+                     {% if checklist.g006_eye_drop_schedule %}checked{% endif %}>
+              <label class="form-check-label small" for="g006b">Eye drop / medication schedule explained</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g006_activity_restrictions" id="g006c"
+                     {% if checklist.g006_activity_restrictions %}checked{% endif %}>
+              <label class="form-check-label small" for="g006c">Activity restrictions explained</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="g006_emergency_contact" id="g006d"
+                     {% if checklist.g006_emergency_contact %}checked{% endif %}>
+              <label class="form-check-label small" for="g006d">Emergency contact / when to return given</label>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small text-muted">First Follow-up Appointment</label>
+            <input type="date" name="g006_followup_date" class="form-control form-control-sm"
+                   value="{{ checklist.g006_followup_date|date:'Y-m-d'|default:'' }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold small text-muted">Notes</label>
+            <textarea name="g006_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Post-op notes...">{{ checklist.g006_notes }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G007 — Special Notes -->
+  <div class="accordion-item border-0 mb-2">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed fw-semibold small"
+              type="button" data-bs-toggle="collapse" data-bs-target="#g007">
+        <span class="badge bg-dark me-2">G007</span>
+        Special Notes &amp; Additional Instructions
+      </button>
+    </h2>
+    <div id="g007" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2">
+        <textarea name="g007_notes" class="form-control form-control-sm" rows="4"
+                  placeholder="Any special notes, patient language needs, religious considerations, additional instructions...">{{ checklist.g007_notes }}</textarea>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /accordion -->
+
+<!-- Signatures -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white border-bottom py-2">
+    <h6 class="mb-0 fw-bold small"><i class="bi bi-pen me-1 text-primary"></i>Signatures &amp; Confirmation</h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="patient_understood" id="sigA"
+                 {% if checklist.patient_understood %}checked{% endif %}>
+          <label class="form-check-label small fw-semibold" for="sigA">
+            Patient / guardian confirms understanding of all sections
+          </label>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="patient_signature_obtained" id="sigB"
+                 {% if checklist.patient_signature_obtained %}checked{% endif %}>
+          <label class="form-check-label small fw-semibold text-success" for="sigB">
+            <i class="bi bi-pen-fill me-1"></i>Patient / guardian signature obtained
+          </label>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="counsellor_signature" id="sigC"
+                 {% if checklist.counsellor_signature %}checked{% endif %}>
+          <label class="form-check-label small fw-semibold text-primary" for="sigC">
+            <i class="bi bi-person-badge-fill me-1"></i>Counselling nurse signature
+          </label>
+        </div>
+      </div>
+      {% if checklist.counsellor %}
+      <div class="col-12">
+        <div class="text-muted small">
+          Counsellor: <strong>{{ checklist.counsellor.get_full_name|default:checklist.counsellor.username }}</strong>
+          &nbsp;&middot;&nbsp; Last saved: {{ checklist.updated_at|date:"d M Y H:i" }}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Submit bar -->
+<div class="card border-0 shadow-sm">
+  <div class="card-footer bg-transparent border-top d-flex gap-2 justify-content-between align-items-center">
+    <a href="{% url 'ipd:surgical_booking_detail' booking.pk %}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Booking
+    </a>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i>Print
+      </button>
+      <button type="submit" class="btn btn-success btn-sm">
+        <i class="bi bi-check2-circle me-1"></i>Save Checklist
+      </button>
+    </div>
+  </div>
+</div>
+
+</form>
+
+<style>
+.accordion-button:not(.collapsed) { background:#f0f4ff; color:#1e3a5f; }
+.accordion-button { border-radius:8px !important; }
+.accordion-item { border-radius:8px !important; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-size: 9pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], .card-footer { display:none !important; }
+  .accordion-collapse { display:block !important; }
+  .accordion-button::after { display:none; }
+  .accordion-button { box-shadow:none !important; border-bottom:1px solid #ddd !important; }
+  .card { box-shadow:none !important; border:1px solid #ccc !important; }
+}
+</style>
+{% endblock %}

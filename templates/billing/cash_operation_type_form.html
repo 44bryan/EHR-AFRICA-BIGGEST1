@@ -1,0 +1,82 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}{% if obj %}Edit{% else %}New{% endif %} Cash Operation Type{% endblock %}
+
+{% block page_header %}
+<h4 class="fw-bold mb-0">{% if obj %}Edit{% else %}New{% endif %} Cash Operation Type</h4>
+<p class="text-muted small mb-0">{% if obj %}Update code <code>{{ obj.code }}</code>{% else %}Define a new withdrawal or supply category{% endif %}</p>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Code <span class="text-danger">*</span></label>
+              <input type="text" name="code" class="form-control form-control-sm font-monospace"
+                     value="{{ obj.code|default:'' }}" maxlength="10"
+                     placeholder="e.g. WD01" {% if obj %}readonly{% endif %} required>
+              <div class="form-text">Unique uppercase code</div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold small">Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control form-control-sm"
+                     value="{{ obj.name|default:'' }}" maxlength="100"
+                     placeholder="e.g. Retrait Espèces Standard" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Category</label>
+              <select name="category" class="form-select form-select-sm">
+                {% for val, label in categories %}
+                <option value="{{ val }}" {% if obj and obj.category == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Default GL Account</label>
+              <select name="default_gl_account" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for gl in gl_accounts %}
+                <option value="{{ gl.pk }}"
+                  {% if obj and obj.default_gl_account_id == gl.pk %}selected{% endif %}>
+                  {{ gl.code }} — {{ gl.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Auto Narration Template</label>
+              <input type="text" name="auto_narration_template" class="form-control form-control-sm"
+                     value="{{ obj.auto_narration_template|default:'' }}"
+                     placeholder="e.g. Retrait caisse {desk} — {date}">
+              <div class="form-text">Use <code>{desk}</code>, <code>{date}</code>, <code>{ref}</code> as placeholders.</div>
+            </div>
+            {% if obj %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
+                       {% if obj.is_active %}checked{% endif %}>
+                <label class="form-check-label small" for="is_active">Active</label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          <hr class="my-3">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check2-circle me-1"></i>Save
+            </button>
+            <a href="{% url 'billing:cash_operation_type_list' %}" class="btn btn-secondary btn-sm">
+              <i class="bi bi-arrow-left me-1"></i>Back
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -11584,3 +11584,402 @@ def surgical_cost_summary(request):
         'grand_outstanding': grand_billed - grand_collected,
         'today': today,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENHANCED CASH MANAGEMENT
+# CashOperationType / CashWithdrawal / CashDeskSupply
+# ══════════════════════════════════════════════════════════════════════════════
+
+from .models import (
+    CashOperationType, CashOperationCategory,
+    CashWithdrawal, CashWithdrawalLine, CashDeskSupply, CashDeskSupplyDirection,
+    CashDesk, GLAccount, BankAccount,
+)
+
+
+def _can_manage_cash(user):
+    return (user.is_super_admin or user.is_finance_director or
+            user.is_senior_accountant or user.is_accountant or
+            user.is_chief_cashier)
+
+
+# ── Cash Operation Types (Settings) ──────────────────────────────────────────
+
+@login_required
+def cash_operation_type_list(request):
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    types = CashOperationType.objects.select_related('default_gl_account').order_by('category', 'code')
+    return render(request, 'billing/cash_operation_type_list.html', {
+        'types': types,
+        'categories': CashOperationCategory.choices,
+    })
+
+
+@login_required
+def cash_operation_type_create(request):
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    gl_accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip().upper()
+        name = request.POST.get('name', '').strip()
+        category = request.POST.get('category', '')
+        gl_id = request.POST.get('default_gl_account') or None
+        narration = request.POST.get('auto_narration_template', '').strip()
+        if not code or not name:
+            messages.error(request, 'Code and Name are required.')
+        else:
+            obj, created = CashOperationType.objects.get_or_create(
+                code=code,
+                defaults=dict(
+                    name=name, category=category,
+                    default_gl_account_id=gl_id,
+                    auto_narration_template=narration,
+                )
+            )
+            if not created:
+                messages.error(request, f'Code {code} already exists.')
+            else:
+                messages.success(request, f'Type {code} — {name} created.')
+                return redirect('billing:cash_operation_type_list')
+    return render(request, 'billing/cash_operation_type_form.html', {
+        'gl_accounts': gl_accounts,
+        'categories': CashOperationCategory.choices,
+    })
+
+
+@login_required
+def cash_operation_type_edit(request, type_id):
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    obj = get_object_or_404(CashOperationType, pk=type_id)
+    gl_accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    if request.method == 'POST':
+        obj.name = request.POST.get('name', '').strip()
+        obj.category = request.POST.get('category', obj.category)
+        obj.default_gl_account_id = request.POST.get('default_gl_account') or None
+        obj.auto_narration_template = request.POST.get('auto_narration_template', '').strip()
+        obj.is_active = request.POST.get('is_active') == 'on'
+        obj.save()
+        messages.success(request, f'Type {obj.code} updated.')
+        return redirect('billing:cash_operation_type_list')
+    return render(request, 'billing/cash_operation_type_form.html', {
+        'obj': obj,
+        'gl_accounts': gl_accounts,
+        'categories': CashOperationCategory.choices,
+    })
+
+
+# ── Cash Withdrawals ──────────────────────────────────────────────────────────
+
+@login_required
+def cash_withdrawal_list(request):
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    qs = CashWithdrawal.objects.filter(is_deleted=False).select_related(
+        'cash_desk', 'operation_type', 'patient', 'recorded_by'
+    ).order_by('-withdrawal_date', '-created_at')[:200]
+    return render(request, 'billing/cash_withdrawal_list.html', {'withdrawals': qs})
+
+
+@login_required
+def cash_withdrawal_create(request):
+    """Single-line cash withdrawal (Retrait Espèces)."""
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    desks = CashDesk.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    types = CashOperationType.objects.filter(
+        is_active=True, is_deleted=False,
+        category=CashOperationCategory.WITHDRAWAL
+    ).select_related('default_gl_account')
+    gl_accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+
+    if request.method == 'POST':
+        desk_id = request.POST.get('cash_desk')
+        type_id = request.POST.get('operation_type') or None
+        gl_id   = request.POST.get('gl_account') or None
+        reason  = request.POST.get('reason', '').strip()
+        amount  = request.POST.get('amount', '0')
+        ref     = request.POST.get('reference', '').strip()
+        date_str = request.POST.get('withdrawal_date', '') or timezone.localdate().isoformat()
+        try:
+            amount = Decimal(amount)
+        except Exception:
+            amount = Decimal('0')
+        if amount <= 0:
+            messages.error(request, 'Amount must be greater than zero.')
+        else:
+            w = CashWithdrawal.objects.create(
+                cash_desk_id=desk_id,
+                operation_type_id=type_id,
+                gl_account_id=gl_id,
+                reason=reason,
+                total_amount=amount,
+                reference=ref,
+                withdrawal_date=date_str,
+                is_multi_line=False,
+                recorded_by=request.user,
+            )
+            messages.success(request, f'Withdrawal {w.bordereau_number} recorded — {amount:,.0f} FCFA.')
+            return redirect('billing:cash_withdrawal_list')
+
+    return render(request, 'billing/cash_withdrawal_form.html', {
+        'desks': desks, 'types': types, 'gl_accounts': gl_accounts,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def cash_withdrawal_multi_create(request):
+    """Multi-line cash withdrawal (Retrait Multiple)."""
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    desks = CashDesk.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    types = CashOperationType.objects.filter(
+        is_active=True, is_deleted=False
+    ).select_related('default_gl_account')
+    gl_accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+
+    if request.method == 'POST':
+        desk_id      = request.POST.get('cash_desk')
+        type_id      = request.POST.get('operation_type') or None
+        intitule     = request.POST.get('intitule_compte', '').strip()
+        libelle_ctp  = request.POST.get('libelle_ctp', '').strip()
+        date_str     = request.POST.get('withdrawal_date', '') or timezone.localdate().isoformat()
+
+        gl_ids      = request.POST.getlist('line_gl_account[]')
+        libelles    = request.POST.getlist('line_libelle[]')
+        refs        = request.POST.getlist('line_reference[]')
+        amounts_raw = request.POST.getlist('line_amount[]')
+
+        lines = []
+        total = Decimal('0')
+        for i in range(len(amounts_raw)):
+            try:
+                amt = Decimal(amounts_raw[i] or '0')
+            except Exception:
+                amt = Decimal('0')
+            if amt > 0:
+                lines.append({
+                    'gl_account_id': gl_ids[i] if i < len(gl_ids) else None,
+                    'libelle': libelles[i] if i < len(libelles) else '',
+                    'reference': refs[i] if i < len(refs) else '',
+                    'amount': amt,
+                })
+                total += amt
+
+        if not lines:
+            messages.error(request, 'Add at least one line with an amount.')
+        else:
+            w = CashWithdrawal.objects.create(
+                cash_desk_id=desk_id,
+                operation_type_id=type_id,
+                total_amount=total,
+                withdrawal_date=date_str,
+                is_multi_line=True,
+                intitule_compte=intitule,
+                libelle_ctp=libelle_ctp,
+                recorded_by=request.user,
+            )
+            for line in lines:
+                CashWithdrawalLine.objects.create(withdrawal=w, **line)
+            messages.success(request, f'Multi withdrawal {w.bordereau_number} — {total:,.0f} FCFA recorded.')
+            return redirect('billing:cash_withdrawal_list')
+
+    return render(request, 'billing/cash_withdrawal_multi_form.html', {
+        'desks': desks, 'types': types, 'gl_accounts': gl_accounts,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def cash_withdrawal_patient(request):
+    """Patient-linked cash withdrawal (Retrait Patient)."""
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    desks = CashDesk.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    types = CashOperationType.objects.filter(
+        is_active=True, is_deleted=False,
+        category=CashOperationCategory.PATIENT_REFUND
+    )
+    gl_accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+
+    if request.method == 'POST':
+        desk_id    = request.POST.get('cash_desk')
+        type_id    = request.POST.get('operation_type') or None
+        patient_id = request.POST.get('patient_id') or None
+        gl_id      = request.POST.get('gl_account') or None
+        reason     = request.POST.get('reason', '').strip()
+        amount     = request.POST.get('amount', '0')
+        ref        = request.POST.get('reference', '').strip()
+        try:
+            amount = Decimal(amount)
+        except Exception:
+            amount = Decimal('0')
+        if amount <= 0:
+            messages.error(request, 'Amount must be greater than zero.')
+        else:
+            w = CashWithdrawal.objects.create(
+                cash_desk_id=desk_id,
+                operation_type_id=type_id,
+                patient_id=patient_id,
+                gl_account_id=gl_id,
+                reason=reason,
+                total_amount=amount,
+                reference=ref,
+                withdrawal_date=timezone.localdate(),
+                is_multi_line=False,
+                recorded_by=request.user,
+            )
+            messages.success(request, f'Patient withdrawal {w.bordereau_number} recorded.')
+            return redirect('billing:cash_withdrawal_list')
+
+    from apps.patients.models import Patient as Pat
+    patients = Pat.objects.filter(is_deleted=False).order_by('last_name', 'first_name')[:500]
+    return render(request, 'billing/cash_withdrawal_patient_form.html', {
+        'desks': desks, 'types': types, 'gl_accounts': gl_accounts,
+        'patients': patients, 'today': timezone.localdate(),
+    })
+
+
+@login_required
+def cash_withdrawal_reverse(request):
+    """Reverse (extourne) a multi-line cash withdrawal."""
+    if not (request.user.is_finance_director or request.user.is_senior_accountant
+            or request.user.is_super_admin):
+        return HttpResponseForbidden()
+    desks = CashDesk.objects.filter(is_active=True, is_deleted=False).order_by('name')
+
+    if request.method == 'POST':
+        bordereau = request.POST.get('bordereau_number', '').strip().upper()
+        date_str  = request.POST.get('date', '') or timezone.localdate().isoformat()
+        libelle   = request.POST.get('libelle', '').strip()
+        desk_id   = request.POST.get('cash_desk') or None
+
+        try:
+            original = CashWithdrawal.objects.get(bordereau_number=bordereau, is_deleted=False)
+        except CashWithdrawal.DoesNotExist:
+            messages.error(request, f'No withdrawal found with bordereau {bordereau}.')
+            return redirect('billing:cash_withdrawal_reverse')
+
+        if original.is_reversed:
+            messages.error(request, f'{bordereau} has already been reversed.')
+            return redirect('billing:cash_withdrawal_list')
+
+        reversal = CashWithdrawal.objects.create(
+            cash_desk_id=desk_id or original.cash_desk_id,
+            operation_type=original.operation_type,
+            gl_account=original.gl_account,
+            reason=f'EXTOURNE — {libelle or bordereau}',
+            total_amount=original.total_amount,
+            withdrawal_date=date_str,
+            is_multi_line=original.is_multi_line,
+            is_reversed=False,
+            reversal_ref=original.bordereau_number,
+            recorded_by=request.user,
+        )
+        # Copy lines if multi
+        for line in original.lines.all():
+            CashWithdrawalLine.objects.create(
+                withdrawal=reversal,
+                gl_account=line.gl_account,
+                auto_libelle=line.auto_libelle,
+                libelle=line.libelle,
+                reference=line.reference,
+                amount=line.amount,
+            )
+        original.is_reversed = True
+        original.save(update_fields=['is_reversed', 'updated_at'])
+        messages.success(request, f'Reversal {reversal.bordereau_number} created for {bordereau}.')
+        return redirect('billing:cash_withdrawal_list')
+
+    return render(request, 'billing/cash_withdrawal_reverse.html', {
+        'desks': desks, 'today': timezone.localdate(),
+    })
+
+
+# ── Cash Desk Supply ──────────────────────────────────────────────────────────
+
+@login_required
+def cash_desk_supply_list(request):
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    qs = CashDeskSupply.objects.filter(is_deleted=False).select_related(
+        'cash_desk', 'bank_account', 'recorded_by'
+    ).order_by('-supply_date', '-created_at')[:200]
+    return render(request, 'billing/cash_desk_supply_list.html', {'supplies': qs})
+
+
+@login_required
+def cash_desk_supply_create(request):
+    """Saisie Approvisionnement Caisse — fund or drain a cash desk."""
+    if not _can_manage_cash(request.user):
+        return HttpResponseForbidden()
+    desks    = CashDesk.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    types    = CashOperationType.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    banks    = BankAccount.objects.filter(is_active=True, is_deleted=False).order_by('bank_name')
+
+    if request.method == 'POST':
+        desk_id   = request.POST.get('cash_desk')
+        type_id   = request.POST.get('operation_type') or None
+        bank_id   = request.POST.get('bank_account') or None
+        reason    = request.POST.get('reason', '').strip()
+        direction = request.POST.get('direction', CashDeskSupplyDirection.ENTREE)
+        amount    = request.POST.get('amount', '0')
+        ref       = request.POST.get('reference', '').strip()
+        date_str  = request.POST.get('supply_date', '') or timezone.localdate().isoformat()
+        try:
+            amount = Decimal(amount)
+        except Exception:
+            amount = Decimal('0')
+        if amount <= 0:
+            messages.error(request, 'Amount must be greater than zero.')
+        else:
+            s = CashDeskSupply.objects.create(
+                cash_desk_id=desk_id,
+                operation_type_id=type_id,
+                bank_account_id=bank_id,
+                reason=reason,
+                direction=direction,
+                amount=amount,
+                reference=ref,
+                supply_date=date_str,
+                recorded_by=request.user,
+            )
+            messages.success(request, f'Supply {s.supply_number} recorded — {amount:,.0f} FCFA ({direction}).')
+            return redirect('billing:cash_desk_supply_list')
+
+    return render(request, 'billing/cash_desk_supply_form.html', {
+        'desks': desks, 'types': types, 'banks': banks,
+        'directions': CashDeskSupplyDirection.choices,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def cash_desk_balance_ajax(request):
+    """AJAX: return current session cash balance for a desk."""
+    desk_id = request.GET.get('desk_id')
+    if not desk_id:
+        return JsonResponse({'balance': 0, 'label': '0 FCFA'})
+    from .models import CashierSession, SessionStatus
+    from django.db.models import Sum
+    session = CashierSession.objects.filter(
+        cash_desk_id=desk_id,
+        status=SessionStatus.OPEN,
+        is_deleted=False,
+    ).order_by('-opened_at').first()
+    if not session:
+        return JsonResponse({'balance': 0, 'label': '0 FCFA', 'session': None})
+    from .models import Payment, PaymentMethod
+    cash_in = session.payments.filter(
+        method=PaymentMethod.CASH, is_deleted=False
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    balance = session.opening_float + cash_in
+    return JsonResponse({
+        'balance': float(balance),
+        'label': f'{balance:,.0f} FCFA',
+        'session': str(session.pk),
+    })

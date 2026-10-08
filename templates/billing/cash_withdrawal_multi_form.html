@@ -1,0 +1,160 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Retrait Multiple{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-list-ul me-2 text-warning"></i>Retrait Multiple</h4>
+    <p class="text-muted small mb-0">Multi-line cash withdrawal — each line posts to a different GL account</p>
+  </div>
+  <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Register
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" id="multiForm">
+      {% csrf_token %}
+
+      <!-- Header fields -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small">Cash Desk <span class="text-danger">*</span></label>
+          <select name="cash_desk" id="cashDeskSelect" class="form-select form-select-sm" required>
+            <option value="">— Select Desk —</option>
+            {% for desk in desks %}
+            <option value="{{ desk.pk }}">{{ desk.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Current Desk Balance</label>
+          <div class="input-group input-group-sm">
+            <input type="text" id="deskBalanceDisplay" class="form-control bg-light" readonly value="—">
+            <span class="input-group-text">FCFA</span>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Date <span class="text-danger">*</span></label>
+          <input type="date" name="withdrawal_date" class="form-control form-control-sm"
+                 value="{{ today|date:'Y-m-d' }}" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold small">Reference</label>
+          <input type="text" name="reference" class="form-control form-control-sm" placeholder="Voucher #">
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold small">Motif général <span class="text-danger">*</span></label>
+          <input type="text" name="reason" class="form-control form-control-sm"
+                 placeholder="Overall reason for this multi-line withdrawal" required>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div class="card border-0 bg-light mb-3">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center bg-white border-bottom">
+          <span class="fw-semibold small">Withdrawal Lines</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
+            <i class="bi bi-plus me-1"></i>Add Line
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0 align-middle" id="linesTable" style="font-size:.83rem">
+            <thead class="table-light">
+              <tr>
+                <th style="width:220px">GL Account</th>
+                <th>Libellé</th>
+                <th style="width:120px">Reference</th>
+                <th style="width:120px" class="text-end">Amount (XAF)</th>
+                <th style="width:40px"></th>
+              </tr>
+            </thead>
+            <tbody id="linesBody">
+              <tr class="line-row">
+                <td>
+                  <select name="line_gl_account[]" class="form-select form-select-sm">
+                    <option value="">— GL —</option>
+                    {% for gl in gl_accounts %}
+                    <option value="{{ gl.pk }}">{{ gl.code }} — {{ gl.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input type="text" name="line_libelle[]" class="form-control form-control-sm" placeholder="Description"></td>
+                <td><input type="text" name="line_reference[]" class="form-control form-control-sm" placeholder="Ref"></td>
+                <td><input type="number" name="line_amount[]" class="form-control form-control-sm text-end line-amount"
+                           min="0" step="1" placeholder="0" oninput="updateTotal()"></td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-xs btn-outline-danger py-0 px-1" onclick="removeLine(this)">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot class="table-secondary">
+              <tr>
+                <td colspan="3" class="text-end fw-semibold small pe-3">TOTAL</td>
+                <td class="text-end fw-bold" id="totalDisplay">0 XAF</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-warning btn-sm text-dark">
+          <i class="bi bi-check2-circle me-1"></i>Record Multi-Line Withdrawal
+        </button>
+        <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-secondary btn-sm">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const glOptions = `{% for gl in gl_accounts %}<option value="{{ gl.pk }}">{{ gl.code }} — {{ gl.name }}</option>{% endfor %}`;
+
+function addLine() {
+  const tbody = document.getElementById('linesBody');
+  const tr = document.createElement('tr');
+  tr.className = 'line-row';
+  tr.innerHTML = `
+    <td><select name="line_gl_account[]" class="form-select form-select-sm"><option value="">— GL —</option>${glOptions}</select></td>
+    <td><input type="text" name="line_libelle[]" class="form-control form-control-sm" placeholder="Description"></td>
+    <td><input type="text" name="line_reference[]" class="form-control form-control-sm" placeholder="Ref"></td>
+    <td><input type="number" name="line_amount[]" class="form-control form-control-sm text-end line-amount" min="0" step="1" placeholder="0" oninput="updateTotal()"></td>
+    <td class="text-center">
+      <button type="button" class="btn btn-xs btn-outline-danger py-0 px-1" onclick="removeLine(this)">
+        <i class="bi bi-trash3"></i>
+      </button>
+    </td>`;
+  tbody.appendChild(tr);
+}
+
+function removeLine(btn) {
+  const rows = document.querySelectorAll('.line-row');
+  if (rows.length <= 1) { alert('At least one line is required.'); return; }
+  btn.closest('tr').remove();
+  updateTotal();
+}
+
+function updateTotal() {
+  let total = 0;
+  document.querySelectorAll('.line-amount').forEach(el => { total += parseFloat(el.value) || 0; });
+  document.getElementById('totalDisplay').textContent = total.toLocaleString('fr-CM') + ' XAF';
+}
+
+document.getElementById('cashDeskSelect').addEventListener('change', function() {
+  const deskId = this.value;
+  const display = document.getElementById('deskBalanceDisplay');
+  if (!deskId) { display.value = '—'; return; }
+  fetch(`{% url 'billing:cash_desk_balance_ajax' %}?desk_id=${deskId}`)
+    .then(r => r.json())
+    .then(d => { display.value = d.label || '0 FCFA'; });
+});
+</script>
+{% endblock %}

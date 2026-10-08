@@ -1,0 +1,127 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Extourne — Cash Withdrawal Reversal{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-counterclockwise me-2 text-danger"></i>Extourne Retrait</h4>
+    <p class="text-muted small mb-0">Reverse a previously recorded cash withdrawal (creates opposite entry)</p>
+  </div>
+  <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Register
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-6">
+
+    <!-- Step 1: Find withdrawal -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-warning bg-opacity-10 py-2">
+        <span class="fw-semibold small text-warning"><i class="bi bi-search me-1"></i>Step 1 — Find Withdrawal to Reverse</span>
+      </div>
+      <div class="card-body">
+        <form method="get" class="d-flex gap-2">
+          <input type="text" name="bordereau" class="form-control form-control-sm font-monospace"
+                 value="{{ bordereau_query|default:'' }}"
+                 placeholder="Enter bordereau number (e.g. RES-20261008-0001)">
+          <button type="submit" class="btn btn-warning btn-sm text-dark">
+            <i class="bi bi-search me-1"></i>Find
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% if original %}
+    <!-- Step 2: Confirm reversal -->
+    <div class="card shadow-sm border-danger mb-3">
+      <div class="card-header bg-danger bg-opacity-10 py-2">
+        <span class="fw-semibold small text-danger">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>Withdrawal Found — Confirm Extourne
+        </span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless small mb-3">
+          <tr><th style="width:160px" class="text-muted">Bordereau</th><td><code class="text-danger">{{ original.bordereau_number }}</code></td></tr>
+          <tr><th class="text-muted">Date</th><td>{{ original.withdrawal_date|date:"d M Y" }}</td></tr>
+          <tr><th class="text-muted">Cash Desk</th><td>{{ original.cash_desk.name|default:"—" }}</td></tr>
+          <tr><th class="text-muted">Reason</th><td>{{ original.reason }}</td></tr>
+          <tr><th class="text-muted">Amount</th><td class="fw-bold text-danger">{{ original.total_amount|floatformat:0|intcomma }} XAF</td></tr>
+          {% if original.patient %}<tr><th class="text-muted">Patient</th><td>{{ original.patient.full_name }}</td></tr>{% endif %}
+          <tr><th class="text-muted">Recorded By</th><td>{{ original.recorded_by.get_full_name }}</td></tr>
+        </table>
+
+        {% if original.is_reversed %}
+        <div class="alert alert-danger py-2 mb-0">
+          <i class="bi bi-x-circle-fill me-1"></i>
+          This withdrawal has already been reversed (ref: <code>{{ original.reversal_ref }}</code>).
+          Cannot reverse again.
+        </div>
+        {% else %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="bordereau" value="{{ original.bordereau_number }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Reason for Extourne <span class="text-danger">*</span></label>
+            <textarea name="reversal_reason" class="form-control form-control-sm" rows="2"
+                      placeholder="Explain why this withdrawal is being reversed..." required></textarea>
+          </div>
+          <div class="alert alert-warning py-2 small">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            This will create a new reversal entry and mark the original as <strong>Extourné</strong>.
+            This action cannot be undone.
+          </div>
+          <button type="submit" class="btn btn-danger btn-sm"
+                  onclick="return confirm('Confirm extourne of {{ original.bordereau_number }} — {{ original.total_amount|floatformat:0|intcomma }} XAF?')">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Confirm Extourne
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% elif bordereau_query %}
+    <div class="alert alert-warning">
+      <i class="bi bi-search me-1"></i>
+      No withdrawal found for bordereau <strong>{{ bordereau_query }}</strong>.
+      Check the number and try again.
+    </div>
+    {% endif %}
+
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header py-2">
+        <span class="fw-semibold small">Recent Reversals</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle" style="font-size:.82rem">
+          <thead class="table-light">
+            <tr>
+              <th>Original</th>
+              <th>Reversal Ref</th>
+              <th>Date</th>
+              <th class="text-end">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in recent_reversals %}
+            <tr>
+              <td><code class="text-muted small">{{ r.bordereau_number }}</code></td>
+              <td><code class="text-danger small">{{ r.reversal_ref }}</code></td>
+              <td class="text-muted">{{ r.withdrawal_date|date:"d M Y" }}</td>
+              <td class="text-end">{{ r.total_amount|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No reversals yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

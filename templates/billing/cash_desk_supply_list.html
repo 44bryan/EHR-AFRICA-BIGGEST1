@@ -1,0 +1,102 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Approvisionnement Caisse{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-safe2 me-2 text-success"></i>Approvisionnement Caisse</h4>
+    <p class="text-muted small mb-0">Cash desk funding (entrée) and collection (sortie) records</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:cash_desk_supply_create' %}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-circle me-1"></i>New Supply
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">Desk Supply Register (last 200)</span>
+    <div class="d-flex gap-2">
+      <span class="badge bg-success">Entrées</span>
+      <span class="badge bg-danger">Sorties</span>
+      <span class="badge bg-secondary">{{ supplies|length }} records</span>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr>
+          <th>Supply #</th>
+          <th>Date</th>
+          <th>Desk</th>
+          <th class="text-center">Direction</th>
+          <th>Bank Account</th>
+          <th>Reason</th>
+          <th>Reference</th>
+          <th class="text-end">Amount (XAF)</th>
+          <th>Recorded By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in supplies %}
+        <tr>
+          <td><code class="small text-primary">{{ s.supply_number }}</code></td>
+          <td class="text-muted">{{ s.supply_date|date:"d M Y" }}</td>
+          <td>{{ s.cash_desk.name|default:"—" }}</td>
+          <td class="text-center">
+            {% if s.direction == 'ENTREE' %}
+              <span class="badge bg-success"><i class="bi bi-arrow-down-circle me-1"></i>Entrée</span>
+            {% else %}
+              <span class="badge bg-danger"><i class="bi bi-arrow-up-circle me-1"></i>Sortie</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">
+            {% if s.bank_account %}{{ s.bank_account.bank_name }} — {{ s.bank_account.account_number }}{% else %}—{% endif %}
+          </td>
+          <td class="small text-truncate" style="max-width:160px" title="{{ s.reason }}">{{ s.reason|default:"—" }}</td>
+          <td class="small text-muted font-monospace">{{ s.reference|default:"—" }}</td>
+          <td class="text-end fw-semibold {% if s.direction == 'ENTREE' %}text-success{% else %}text-danger{% endif %}">
+            {% if s.direction == 'SORTIE' %}-{% endif %}{{ s.amount|floatformat:0|intcomma }}
+          </td>
+          <td class="small text-muted">{{ s.recorded_by.get_full_name|default:s.recorded_by.username }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-4 text-muted">
+            No supply records yet.
+            <a href="{% url 'billing:cash_desk_supply_create' %}">Record first supply</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if supplies %}
+      <tfoot class="table-secondary fw-bold" style="border-top:2px solid #aaa">
+        <tr>
+          <td colspan="7" class="text-end text-muted small pe-3">Net (Entrées - Sorties)</td>
+          <td class="text-end">— XAF</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<style>
+@media print {
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { font-size: 8pt !important; }
+  .btn, nav, header, .sidebar, [class*="topbar"], [class*="navbar"] { display:none !important; }
+  .card { box-shadow:none !important; }
+  .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { font-size:7.5pt !important; }
+}
+</style>
+{% endblock %}

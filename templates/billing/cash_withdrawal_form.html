@@ -1,0 +1,113 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Retrait Espèces{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-cash me-2 text-primary"></i>Retrait Espèces</h4>
+    <p class="text-muted small mb-0">Simple cash withdrawal from a cashier desk</p>
+  </div>
+  <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Register
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Cash Desk <span class="text-danger">*</span></label>
+              <select name="cash_desk" id="cashDeskSelect" class="form-select form-select-sm" required>
+                <option value="">— Select Desk —</option>
+                {% for desk in desks %}
+                <option value="{{ desk.pk }}">{{ desk.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Current Desk Balance</label>
+              <div class="input-group input-group-sm">
+                <input type="text" id="deskBalanceDisplay" class="form-control form-control-sm bg-light" readonly value="—">
+                <span class="input-group-text">FCFA</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Operation Type</label>
+              <select name="operation_type" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for t in types %}
+                <option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">GL Account (debit)</label>
+              <select name="gl_account" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for gl in gl_accounts %}
+                <option value="{{ gl.pk }}">{{ gl.code }} — {{ gl.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Reason / Motif <span class="text-danger">*</span></label>
+              <textarea name="reason" class="form-control form-control-sm" rows="2"
+                        placeholder="Describe the purpose of this withdrawal..." required></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Amount (XAF) <span class="text-danger">*</span></label>
+              <input type="number" name="total_amount" class="form-control form-control-sm"
+                     min="1" step="1" placeholder="0" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Reference</label>
+              <input type="text" name="reference" class="form-control form-control-sm"
+                     placeholder="Voucher / invoice number">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Date</label>
+              <input type="date" name="withdrawal_date" class="form-control form-control-sm"
+                     value="{{ today|date:'Y-m-d' }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Intitulé Compte</label>
+              <input type="text" name="intitule_compte" class="form-control form-control-sm"
+                     placeholder="Account title for ledger">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Libellé CTP</label>
+              <input type="text" name="libelle_ctp" class="form-control form-control-sm"
+                     placeholder="CTP journal label">
+            </div>
+          </div>
+          <hr class="my-3">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check2-circle me-1"></i>Record Withdrawal
+            </button>
+            <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-secondary btn-sm">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('cashDeskSelect').addEventListener('change', function() {
+  const deskId = this.value;
+  const display = document.getElementById('deskBalanceDisplay');
+  if (!deskId) { display.value = '—'; return; }
+  fetch(`{% url 'billing:cash_desk_balance_ajax' %}?desk_id=${deskId}`)
+    .then(r => r.json())
+    .then(d => { display.value = d.label || '0 FCFA'; });
+});
+</script>
+{% endblock %}

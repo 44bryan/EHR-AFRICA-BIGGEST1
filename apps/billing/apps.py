@@ -11,6 +11,7 @@ class BillingConfig(AppConfig):
         from apps.billing.models import (
             Invoice, Payment, Expense, APPayment, APBill,
             Refund, PettyCashEntry, PettyCashFund, WalletTransaction,
+            CashWithdrawal, CashDeskSupply,
         )
         from apps.billing import gl_service
 
@@ -66,6 +67,14 @@ class BillingConfig(AppConfig):
                 ):
                     gl_service.post_wallet_deduction(instance)
 
+        def on_cash_withdrawal_saved(sender, instance, created, **kwargs):
+            if created and not instance.is_reversed:
+                gl_service.post_cash_withdrawal(instance)
+
+        def on_desk_supply_saved(sender, instance, created, **kwargs):
+            if created:
+                gl_service.post_desk_supply(instance)
+
         post_save.connect(on_invoice_saved,     sender=Invoice)
         post_save.connect(on_payment_saved,    sender=Payment)
         post_save.connect(on_expense_approved, sender=Expense)
@@ -75,3 +84,5 @@ class BillingConfig(AppConfig):
         post_save.connect(on_petty_cash_entry_saved, sender=PettyCashEntry)
         post_save.connect(on_petty_cash_fund_saved,  sender=PettyCashFund)
         post_save.connect(on_wallet_txn_saved, sender=WalletTransaction)
+        post_save.connect(on_cash_withdrawal_saved, sender=CashWithdrawal)
+        post_save.connect(on_desk_supply_saved,     sender=CashDeskSupply)

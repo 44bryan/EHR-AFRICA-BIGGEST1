@@ -3245,6 +3245,104 @@ def procedure_room_stats(request):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PRE-OP COUNSELLING CHECKLIST  G001–G007
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def preop_checklist_view(request, booking_id):
+    """
+    Full structured pre-op counselling checklist (G001–G007).
+    Accessible from the counseling record and surgical booking detail.
+    """
+    from .models import PreOpCounsellingChecklist
+    from decimal import Decimal, InvalidOperation
+
+    booking = get_object_or_404(SurgicalBooking, pk=booking_id, is_deleted=False)
+    patient = booking.patient
+
+    # Get or create the checklist
+    checklist, created = PreOpCounsellingChecklist.objects.get_or_create(
+        booking=booking,
+        defaults={'counsellor': request.user},
+    )
+
+    if request.method == 'POST':
+        # G001
+        checklist.g001_surgery_date_confirmed = request.POST.get('g001_surgery_date_confirmed') == 'on'
+        checklist.g001_transport_arranged     = request.POST.get('g001_transport_arranged') == 'on'
+        checklist.g001_companion_informed     = request.POST.get('g001_companion_informed') == 'on'
+        checklist.g001_notes                  = request.POST.get('g001_notes', '').strip()
+
+        # G002
+        checklist.g002_fasting_instructions   = request.POST.get('g002_fasting_instructions') == 'on'
+        checklist.g002_medications_reviewed   = request.POST.get('g002_medications_reviewed') == 'on'
+        checklist.g002_blood_tests_ordered    = request.POST.get('g002_blood_tests_ordered') == 'on'
+        checklist.g002_bp_sugar_checked       = request.POST.get('g002_bp_sugar_checked') == 'on'
+        checklist.g002_notes                  = request.POST.get('g002_notes', '').strip()
+
+        # G003
+        checklist.g003_procedure_explained    = request.POST.get('g003_procedure_explained') == 'on'
+        checklist.g003_risks_explained        = request.POST.get('g003_risks_explained') == 'on'
+        checklist.g003_alternatives_discussed = request.POST.get('g003_alternatives_discussed') == 'on'
+        checklist.g003_consent_signed         = request.POST.get('g003_consent_signed') == 'on'
+        checklist.g003_notes                  = request.POST.get('g003_notes', '').strip()
+
+        # G004
+        checklist.g004_ward_explained         = request.POST.get('g004_ward_explained') == 'on'
+        checklist.g004_stay_duration          = request.POST.get('g004_stay_duration', '').strip()
+        checklist.g004_items_to_bring         = request.POST.get('g004_items_to_bring') == 'on'
+        checklist.g004_notes                  = request.POST.get('g004_notes', '').strip()
+
+        # G005 (financial)
+        def _dec(k):
+            try:
+                return Decimal(request.POST.get(k, '0') or '0')
+            except (InvalidOperation, ValueError):
+                return Decimal('0')
+
+        checklist.g005_total_fees_quoted      = _dec('g005_total_fees_quoted')
+        checklist.g005_deposit_amount         = _dec('g005_deposit_amount')
+        checklist.g005_insurance_share        = _dec('g005_insurance_share')
+        checklist.g005_patient_share          = _dec('g005_patient_share')
+        checklist.g005_payment_plan_discussed = request.POST.get('g005_payment_plan_discussed') == 'on'
+        checklist.g005_notes                  = request.POST.get('g005_notes', '').strip()
+
+        # G006
+        checklist.g006_post_op_instructions   = request.POST.get('g006_post_op_instructions') == 'on'
+        checklist.g006_eye_drop_schedule      = request.POST.get('g006_eye_drop_schedule') == 'on'
+        checklist.g006_activity_restrictions  = request.POST.get('g006_activity_restrictions') == 'on'
+        checklist.g006_emergency_contact      = request.POST.get('g006_emergency_contact') == 'on'
+        followup_str = request.POST.get('g006_followup_date', '').strip()
+        checklist.g006_followup_date = followup_str if followup_str else None
+        checklist.g006_notes = request.POST.get('g006_notes', '').strip()
+
+        # G007
+        checklist.g007_notes = request.POST.get('g007_notes', '').strip()
+
+        # Signatures
+        checklist.patient_understood          = request.POST.get('patient_understood') == 'on'
+        checklist.patient_signature_obtained  = request.POST.get('patient_signature_obtained') == 'on'
+        checklist.counsellor_signature        = request.POST.get('counsellor_signature') == 'on'
+        if not checklist.counsellor:
+            checklist.counsellor = request.user
+
+        checklist.save()
+        messages.success(request, f'Pre-op counselling checklist saved — {checklist.completion_pct}% complete.')
+
+        next_url = request.POST.get('next') or request.GET.get('next') or ''
+        if next_url:
+            return redirect(next_url)
+        return redirect('ipd:preop_checklist', booking_id=booking.pk)
+
+    return render(request, 'ipd/preop_checklist.html', {
+        'booking': booking,
+        'patient': patient,
+        'checklist': checklist,
+        'completion_pct': checklist.completion_pct,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # WARD BED CHARGES  —  Post daily bed/room charges to patient invoice
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -2873,3 +2873,193 @@ class WithholdingTax(AuditModel):
         self.net_paid = self.gross_amount - self.wht_amount
         super().save(*args, **kwargs)
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENHANCED CASH MANAGEMENT — Configurable Types, Withdrawals, Desk Supply
+# Mirrors TurboClinic: Retrait Espèces / Retrait Multiple / Retrait Patient /
+# Extourne Retrait Multiple / Saisie Approvisionnement Caisse
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CashOperationCategory(models.TextChoices):
+    WITHDRAWAL     = 'WITHDRAWAL', 'Cash Withdrawal (Retrait Espèces)'
+    PATIENT_REFUND = 'PATIENT_WD', 'Patient Refund / Withdrawal'
+    DESK_SUPPLY    = 'SUPPLY',     'Desk Supply (Approvisionnement Caisse)'
+    INTER_DESK     = 'INTER_DESK', 'Inter-Desk Transfer'
+
+
+class CashOperationType(AuditModel):
+    """
+    Configurable types of cash operations — created via Settings menu.
+    Mirrors TurboClinic: Create Types of Cash Withdrawal / Deposit.
+    """
+    code                    = models.CharField(max_length=20, unique=True)
+    name                    = models.CharField(max_length=200)
+    category                = models.CharField(
+        max_length=20, choices=CashOperationCategory.choices,
+        default=CashOperationCategory.WITHDRAWAL
+    )
+    default_gl_account      = models.ForeignKey(
+        'GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='default_cash_op_types'
+    )
+    auto_narration_template = models.CharField(
+        max_length=300, blank=True,
+        help_text='Optional narration template e.g. "Retrait caisse — {reason}"'
+    )
+    is_active               = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['category', 'code']
+        verbose_name = 'Cash Operation Type'
+
+    def __str__(self):
+        return f'{self.code} — {self.name}'
+
+
+class CashWithdrawal(AuditModel):
+    """
+    Cash withdrawal from a desk — single line (Retrait Espèces / Retrait Patient)
+    or multi-line (Retrait Multiple).
+    GL auto-posts Dr Expense / Cr Cash desk account.
+    """
+    bordereau_number = models.CharField(
+        max_length=30, unique=True, editable=False,
+        help_text='Auto-generated e.g. RES-20261008-0001'
+    )
+    cash_desk        = models.ForeignKey(
+        'CashDesk', on_delete=models.PROTECT, related_name='withdrawals'
+    )
+    operation_type   = models.ForeignKey(
+        CashOperationType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='withdrawals'
+    )
+    patient          = models.ForeignKey(
+        'patients.Patient', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_withdrawals',
+        help_text='Set for Retrait Patient'
+    )
+    gl_account       = models.ForeignKey(
+        'GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_withdrawals',
+        help_text='Debit account for single-line withdrawals'
+    )
+    reason           = models.CharField(max_length=300, blank=True)
+    total_amount     = models.DecimalField(max_digits=14, decimal_places=2)
+    reference        = models.CharField(max_length=100, blank=True)
+    withdrawal_date  = models.DateField(default=timezone.localdate)
+    is_multi_line    = models.BooleanField(default=False,
+                       help_text='True = Retrait Multiple with line items')
+    intitule_compte  = models.CharField(max_length=200, blank=True)
+    libelle_ctp      = models.CharField(max_length=200, blank=True)
+    recorded_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_withdrawals_recorded'
+    )
+    is_reversed      = models.BooleanField(default=False)
+    reversal_ref     = models.CharField(max_length=30, blank=True,
+                       help_text='Bordereau number of original document')
+    gl_entry         = models.ForeignKey(
+        'JournalEntry', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cash_withdrawals'
+    )
+
+    class Meta:
+        ordering = ['-withdrawal_date', '-created_at']
+        verbose_name = 'Cash Withdrawal'
+
+    def __str__(self):
+        return f'{self.bordereau_number} — {self.total_amount} FCFA'
+
+    def save(self, *args, **kwargs):
+        if not self.bordereau_number:
+            today = timezone.localdate()
+            count = CashWithdrawal.objects.filter(
+                withdrawal_date__year=today.year
+            ).count() + 1
+            if self.is_multi_line:
+                prefix = 'RMP'
+            elif self.patient_id:
+                prefix = 'RPA'
+            else:
+                prefix = 'RES'
+            self.bordereau_number = f'{prefix}-{today.strftime("%Y%m%d")}-{count:04d}'
+        super().save(*args, **kwargs)
+
+
+class CashWithdrawalLine(models.Model):
+    """Line items for a Retrait Multiple."""
+    withdrawal   = models.ForeignKey(
+        CashWithdrawal, on_delete=models.CASCADE, related_name='lines'
+    )
+    gl_account   = models.ForeignKey(
+        'GLAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='withdrawal_lines'
+    )
+    auto_libelle = models.CharField(max_length=200, blank=True)
+    libelle      = models.CharField(max_length=300, blank=True)
+    reference    = models.CharField(max_length=100, blank=True)
+    amount       = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.withdrawal.bordereau_number} line — {self.amount} FCFA'
+
+
+class CashDeskSupplyDirection(models.TextChoices):
+    ENTREE = 'ENTREE', 'Entrée (Cash In — from Bank)'
+    SORTIE = 'SORTIE', 'Sortie (Cash Out — Return to Bank)'
+
+
+class CashDeskSupply(AuditModel):
+    """
+    Saisie Approvisionnement Caisse — fund or drain a cash desk.
+    Entrée: bank → desk.  Sortie: desk → bank.
+    """
+    supply_number  = models.CharField(max_length=30, unique=True, editable=False)
+    cash_desk      = models.ForeignKey(
+        'CashDesk', on_delete=models.PROTECT, related_name='supplies'
+    )
+    operation_type = models.ForeignKey(
+        CashOperationType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='desk_supplies'
+    )
+    bank_account   = models.ForeignKey(
+        'BankAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='desk_supplies'
+    )
+    reason         = models.CharField(max_length=300, blank=True)
+    direction      = models.CharField(
+        max_length=10, choices=CashDeskSupplyDirection.choices,
+        default=CashDeskSupplyDirection.ENTREE
+    )
+    amount         = models.DecimalField(max_digits=14, decimal_places=2)
+    reference      = models.CharField(max_length=100, blank=True)
+    supply_date    = models.DateField(default=timezone.localdate)
+    recorded_by    = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='desk_supplies_recorded'
+    )
+    gl_entry       = models.ForeignKey(
+        'JournalEntry', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='desk_supplies'
+    )
+
+    class Meta:
+        ordering = ['-supply_date', '-created_at']
+        verbose_name = 'Cash Desk Supply'
+
+    def __str__(self):
+        return f'{self.supply_number} — {self.direction} {self.amount} FCFA'
+
+    def save(self, *args, **kwargs):
+        if not self.supply_number:
+            today = timezone.localdate()
+            count = CashDeskSupply.objects.filter(
+                supply_date__year=today.year
+            ).count() + 1
+            self.supply_number = f'APC-{today.strftime("%Y%m%d")}-{count:04d}'
+        super().save(*args, **kwargs)
+

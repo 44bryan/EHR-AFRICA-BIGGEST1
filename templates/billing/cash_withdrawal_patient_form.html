@@ -1,0 +1,145 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Retrait Patient{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-person-fill me-2 text-info"></i>Retrait Patient</h4>
+    <p class="text-muted small mb-0">Cash withdrawal or refund linked to a patient account</p>
+  </div>
+  <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Register
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="row g-3">
+            <!-- Patient search -->
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Patient <span class="text-danger">*</span></label>
+              <div class="input-group input-group-sm">
+                <input type="text" id="patientSearch" class="form-control form-control-sm"
+                       placeholder="Type patient name or ID to search…" autocomplete="off">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+              </div>
+              <input type="hidden" name="patient_id" id="patientIdHidden" required>
+              <div id="patientResults" class="list-group mt-1 shadow-sm" style="display:none;position:absolute;z-index:9999;min-width:300px"></div>
+              <div id="patientSelected" class="mt-1 small text-success fw-semibold"></div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Cash Desk <span class="text-danger">*</span></label>
+              <select name="cash_desk" id="cashDeskSelect" class="form-select form-select-sm" required>
+                <option value="">— Select Desk —</option>
+                {% for desk in desks %}
+                <option value="{{ desk.pk }}">{{ desk.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Desk Balance</label>
+              <div class="input-group input-group-sm">
+                <input type="text" id="deskBalanceDisplay" class="form-control bg-light" readonly value="—">
+                <span class="input-group-text">FCFA</span>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Reason / Motif <span class="text-danger">*</span></label>
+              <textarea name="reason" class="form-control form-control-sm" rows="2"
+                        placeholder="Reason for this patient withdrawal / refund" required></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Amount (XAF) <span class="text-danger">*</span></label>
+              <input type="number" name="total_amount" class="form-control form-control-sm"
+                     min="1" step="1" placeholder="0" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Reference</label>
+              <input type="text" name="reference" class="form-control form-control-sm" placeholder="Invoice / receipt">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold small">Date <span class="text-danger">*</span></label>
+              <input type="date" name="withdrawal_date" class="form-control form-control-sm"
+                     value="{{ today|date:'Y-m-d' }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">GL Account</label>
+              <select name="gl_account" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for gl in gl_accounts %}
+                <option value="{{ gl.pk }}">{{ gl.code }} — {{ gl.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <hr class="my-3">
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-info btn-sm text-white">
+              <i class="bi bi-check2-circle me-1"></i>Record Patient Withdrawal
+            </button>
+            <a href="{% url 'billing:cash_withdrawal_list' %}" class="btn btn-secondary btn-sm">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Desk balance
+document.getElementById('cashDeskSelect').addEventListener('change', function() {
+  const deskId = this.value;
+  const display = document.getElementById('deskBalanceDisplay');
+  if (!deskId) { display.value = '—'; return; }
+  fetch(`{% url 'billing:cash_desk_balance_ajax' %}?desk_id=${deskId}`)
+    .then(r => r.json())
+    .then(d => { display.value = d.label || '0 FCFA'; });
+});
+
+// Patient search autocomplete
+let searchTimer;
+document.getElementById('patientSearch').addEventListener('input', function() {
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  const results = document.getElementById('patientResults');
+  if (q.length < 2) { results.style.display = 'none'; return; }
+  searchTimer = setTimeout(() => {
+    fetch(`{% url 'billing:wallet_search_ajax' %}?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        results.innerHTML = '';
+        if (!data.length) { results.style.display = 'none'; return; }
+        data.forEach(p => {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'list-group-item list-group-item-action py-1 small';
+          a.textContent = `${p.name} (${p.patient_id})`;
+          a.addEventListener('click', e => {
+            e.preventDefault();
+            document.getElementById('patientIdHidden').value = p.patient_id;
+            document.getElementById('patientSearch').value = `${p.name} — ${p.patient_id}`;
+            document.getElementById('patientSelected').textContent = `Selected: ${p.name}`;
+            results.style.display = 'none';
+          });
+          results.appendChild(a);
+        });
+        results.style.display = 'block';
+      });
+  }, 300);
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#patientResults') && !e.target.closest('#patientSearch')) {
+    document.getElementById('patientResults').style.display = 'none';
+  }
+});
+</script>
+{% endblock %}

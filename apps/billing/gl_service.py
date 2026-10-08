@@ -1448,3 +1448,215 @@ def post_stock_adjustment(adjustment, user=None):
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock adjustment {adjustment.pk}: {e}")
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OPTICAL STORE — COGS & STOCK RECEIPT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# OHADA accounts for optical merchandise:
+#   371000 — Optical stock (Marchandises — Optique)
+#   607000 — COGS optical (Achats de marchandises optiques)
+OPTICAL_STOCK = '371000'
+OPTICAL_COGS  = '607000'
+
+
+def post_optical_cogs(order, user=None):
+    """
+    COGS recognition when an optical order is DELIVERED.
+    Records the cost of frames and lenses leaving inventory:
+
+        Dr  607000 (COGS — Achats marchandises optiques)
+        Cr  371000 (Optical Stock — Marchandises)
+
+    Uses Frame.cost_price and Lens.cost_price (purchase cost).
+    Silently skips if cost prices are zero (not yet set in catalogue).
+    """
+    try:
+        from django.utils import timezone as _tz
+        total_cost = Decimal('0')
+        lines_debit = []
+        lines_credit = []
+
+        if order.frame and getattr(order.frame, 'cost_price', 0):
+            fc = Decimal(str(order.frame.cost_price))
+            if fc > 0:
+                total_cost += fc
+                lines_debit.append((OPTICAL_COGS, fc, 0,
+                    f"COGS Frame — {order.frame.brand} {order.frame.model}"))
+                lines_credit.append((OPTICAL_STOCK, 0, fc,
+                    f"Stock out — Frame {order.frame.brand} {order.frame.model}"))
+
+        if order.lens and getattr(order.lens, 'cost_price', 0):
+            lc = Decimal(str(order.lens.cost_price))
+            if lc > 0:
+                total_cost += lc
+                lines_debit.append((OPTICAL_COGS, lc, 0,
+                    f"COGS Lens — {order.lens.lens_type} {order.lens.brand}"))
+                lines_credit.append((OPTICAL_STOCK, 0, lc,
+                    f"Stock out — Lens {order.lens.lens_type}"))
+
+        if total_cost <= 0:
+            return None   # No cost prices set — skip silently
+
+        return _create_entry(
+            date=order.delivered_date or _tz.localdate(),
+            description=f"COGS Optical — {order.order_number} — {order.patient.full_name}",
+            reference=order.order_number,
+            source_type='optical_cogs',
+            source_id=order.pk,
+            lines=lines_debit + lines_credit,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for optical COGS order {order.pk}: {e}")
+        return None
+
+
+def post_optical_stock_receipt(frame, quantity, unit_cost, supplier_ref='', user=None):
+    """
+    GL posting when optical frame/lens stock is received from supplier.
+
+        Dr  371000 (Optical Stock)   — inventory increases
+        Cr  401100 (AP Vendors)      — payable to supplier
+
+    Called from opticals.views.frame_receive_stock / lens_receive_stock
+    when unit_cost is provided.
+    """
+    try:
+        from django.utils import timezone as _tz
+        if not unit_cost or unit_cost <= 0 or quantity <= 0:
+            return None
+        amount = Decimal(str(unit_cost)) * Decimal(str(quantity))
+        ap_code = get_system_account('AP_VENDORS')
+        return _create_entry(
+            date=_tz.localdate(),
+            description=f"Stock receipt — {frame} x{quantity} units",
+            reference=supplier_ref or f"RCV-{str(frame.pk)[:8]}",
+            source_type='optical_stock_receipt',
+            source_id=frame.pk,
+            lines=[
+                (OPTICAL_STOCK, amount, 0,
+                 f"Stock in — {frame} x{quantity} @ {unit_cost} FCFA"),
+                (ap_code, 0, amount,
+                 f"Payable to supplier — {supplier_ref or 'N/A'}"),
+            ],
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for optical stock receipt {frame.pk}: {e}")
+        return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CASH WITHDRAWAL & DESK SUPPLY GL POSTINGS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def post_cash_withdrawal(withdrawal, user=None):
+    """
+    GL posting for Retrait Espèces / Retrait Multiple / Retrait Patient.
+
+    Single-line:  Dr  gl_account (expense/advance)  |  Cr  Cash 572000
+    Multi-line:   Dr  each line's gl_account         |  Cr  Cash 572000 (sum)
+    Reversal:     Creates inverse entry (Cr expense / Dr Cash).
+    """
+    try:
+        if withdrawal.is_reversed and not withdrawal.reversal_ref:
+            # Skip — already reversed, avoid double-posting
+            return None
+        from apps.billing.models import JournalEntry
+        if JournalEntry.objects.filter(
+            source_type='cash_withdrawal', source_id=str(withdrawal.pk)
+        ).exists():
+            return None
+
+        amount = Decimal(str(withdrawal.total_amount))
+        if amount <= 0:
+            return None
+
+        cash_code = _PAYMENT_DEFAULTS['CASH']   # 572000
+        exp_default = _EXPENSE_DEFAULTS['EXP_OTHER']  # 658000
+
+        if withdrawal.is_multi_line:
+            lines_qs = withdrawal.lines.all()
+            dr_lines = []
+            for line in lines_qs:
+                acc = line.gl_account.code if line.gl_account else exp_default
+                desc = line.libelle or line.auto_libelle or withdrawal.reason or 'Retrait Multiple'
+                dr_lines.append((acc, Decimal(str(line.amount)), 0, desc))
+            dr_lines.append((cash_code, 0, amount, f"Sortie caisse — {withdrawal.bordereau_number}"))
+            lines = dr_lines
+        else:
+            dr_code = withdrawal.gl_account.code if withdrawal.gl_account else exp_default
+            desc = withdrawal.reason or f"Retrait — {withdrawal.bordereau_number}"
+            lines = [
+                (dr_code, amount, 0, desc),
+                (cash_code, 0, amount, f"Sortie caisse — {withdrawal.cash_desk}"),
+            ]
+
+        if withdrawal.is_reversed:
+            # Extourne: swap Dr / Cr
+            lines = [(acc, cr, dr, d) for (acc, dr, cr, d) in lines]
+
+        return _create_entry(
+            date=withdrawal.withdrawal_date,
+            description=f"Retrait caisse {withdrawal.bordereau_number} — {withdrawal.reason or ''}",
+            reference=withdrawal.bordereau_number,
+            source_type='cash_withdrawal',
+            source_id=withdrawal.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for cash withdrawal {withdrawal.pk}: {e}")
+        return None
+
+
+def post_desk_supply(supply, user=None):
+    """
+    GL posting for Approvisionnement Caisse (desk fund/drain).
+
+    ENTREE (bank → desk):  Dr  Cash 572000  |  Cr  Bank 521100
+    SORTIE (desk → bank):  Dr  Bank 521100  |  Cr  Cash 572000
+    """
+    try:
+        from apps.billing.models import JournalEntry, CashDeskSupplyDirection
+        if JournalEntry.objects.filter(
+            source_type='desk_supply', source_id=str(supply.pk)
+        ).exists():
+            return None
+
+        amount = Decimal(str(supply.amount))
+        if amount <= 0:
+            return None
+
+        cash_code = _PAYMENT_DEFAULTS['CASH']   # 572000
+        bank_code = supply.bank_account.gl_account.code if (
+            supply.bank_account and supply.bank_account.gl_account
+        ) else get_system_account('BANK_ACCOUNT')
+
+        if supply.direction == CashDeskSupplyDirection.ENTREE:
+            # Bank → Desk
+            lines = [
+                (cash_code, amount, 0, f"Approvisionnement caisse — {supply.cash_desk}"),
+                (bank_code, 0, amount, f"Sortie banque — {supply.bank_account or 'Banque'}"),
+            ]
+        else:
+            # Desk → Bank (SORTIE)
+            lines = [
+                (bank_code, amount, 0, f"Versement banque — {supply.bank_account or 'Banque'}"),
+                (cash_code, 0, amount, f"Sortie caisse — {supply.cash_desk}"),
+            ]
+
+        return _create_entry(
+            date=supply.supply_date,
+            description=f"Approvisionnement caisse {supply.supply_number} — {supply.get_direction_display()}",
+            reference=supply.supply_number,
+            source_type='desk_supply',
+            source_id=supply.pk,
+            lines=lines,
+            user=user,
+        )
+    except Exception as e:
+        logger.exception(f"GL auto-post failed for desk supply {supply.pk}: {e}")
+        return None

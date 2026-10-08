@@ -127,6 +127,231 @@ def dashboard(request):
 
 
 @login_required
+def frame_export_csv(request):
+    """Download current frame catalogue as CSV — fill prices in Excel, then re-import."""
+    if not _can_manage_optical_stock(request.user):
+        return HttpResponseForbidden()
+    import csv
+    from django.http import HttpResponse
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="frames_catalogue.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['brand', 'model', 'color', 'shape', 'material', 'sku',
+                     'cost_price', 'selling_price', 'quantity_in_stock', 'is_active'])
+    for f in Frame.objects.filter(is_deleted=False).order_by('brand', 'model'):
+        writer.writerow([
+            f.brand, f.model, f.color, f.shape, f.material, f.sku or '',
+            f.cost_price, f.selling_price, f.quantity_in_stock,
+            '1' if f.is_active else '0',
+        ])
+    return response
+
+
+@login_required
+def frame_import_csv(request):
+    """
+    CSV bulk import/update for frames.
+    Matches existing frames by SKU (if present) or brand+model.
+    Creates new frames for rows that don't match.
+    Updates cost_price, selling_price, quantity_in_stock on existing records.
+    """
+    if not _can_manage_optical_stock(request.user):
+        return HttpResponseForbidden()
+
+    if request.method != 'POST':
+        return render(request, 'opticals/frame_import.html')
+
+    import csv, io
+    from decimal import Decimal, InvalidOperation
+
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        messages.error(request, 'Please select a CSV file to upload.')
+        return render(request, 'opticals/frame_import.html')
+
+    if not csv_file.name.endswith('.csv'):
+        messages.error(request, 'File must be a .csv file.')
+        return render(request, 'opticals/frame_import.html')
+
+    try:
+        decoded = csv_file.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        try:
+            csv_file.seek(0)
+            decoded = csv_file.read().decode('latin-1')
+        except Exception:
+            messages.error(request, 'Cannot decode file. Save as UTF-8 CSV.')
+            return render(request, 'opticals/frame_import.html')
+
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    def _dec(row, key, default=0):
+        try:
+            v = str(row.get(key, '') or '').strip().replace(',', '').replace(' ', '')
+            return Decimal(v) if v else Decimal(str(default))
+        except InvalidOperation:
+            return Decimal(str(default))
+
+    created = updated = skipped = errors = 0
+    error_rows = []
+
+    for i, row in enumerate(reader, start=2):
+        brand = str(row.get('brand', '') or '').strip()
+        model = str(row.get('model', '') or '').strip()
+        if not brand or not model:
+            skipped += 1
+            continue
+        try:
+            sku = str(row.get('sku', '') or '').strip() or None
+            color = str(row.get('color', '') or '').strip()
+            shape = str(row.get('shape', '') or '').strip()
+            material = str(row.get('material', '') or '').strip()
+            cost_price = _dec(row, 'cost_price')
+            selling_price = _dec(row, 'selling_price')
+            qty = int(str(row.get('quantity_in_stock', '0') or '0').strip() or '0')
+            is_active = str(row.get('is_active', '1')).strip() not in ('0', 'false', 'False', 'no', 'No')
+
+            # Match by SKU first, then brand+model
+            frame = None
+            if sku:
+                frame = Frame.objects.filter(sku=sku, is_deleted=False).first()
+            if not frame:
+                frame = Frame.objects.filter(brand__iexact=brand, model__iexact=model, is_deleted=False).first()
+
+            if frame:
+                frame.cost_price = cost_price
+                frame.selling_price = selling_price
+                frame.quantity_in_stock = qty
+                frame.is_active = is_active
+                if color: frame.color = color
+                if shape: frame.shape = shape
+                if material: frame.material = material
+                if sku: frame.sku = sku
+                frame.save(update_fields=['cost_price', 'selling_price', 'quantity_in_stock',
+                                          'is_active', 'color', 'shape', 'material', 'sku', 'updated_at'])
+                updated += 1
+            else:
+                Frame.objects.create(
+                    brand=brand, model=model, color=color, shape=shape,
+                    material=material, sku=sku,
+                    cost_price=cost_price, selling_price=selling_price,
+                    quantity_in_stock=qty, is_active=is_active,
+                    created_by=request.user,
+                )
+                created += 1
+        except Exception as e:
+            errors += 1
+            error_rows.append(f'Row {i}: {brand} {model} — {e}')
+
+    msg = f'Import complete: {updated} updated, {created} created, {skipped} skipped'
+    if errors:
+        msg += f', {errors} errors'
+        messages.warning(request, msg)
+        for err in error_rows[:10]:
+            messages.error(request, err)
+    else:
+        messages.success(request, msg + '.')
+
+    return redirect('opticals:frame_list')
+
+
+@login_required
+def lens_export_csv(request):
+    """Download current lens catalogue as CSV."""
+    if not _can_manage_optical_stock(request.user):
+        return HttpResponseForbidden()
+    import csv
+    from django.http import HttpResponse
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="lens_catalogue.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['name', 'lens_type', 'material', 'coating', 'index', 'cost_price', 'selling_price', 'is_active'])
+    for l in Lens.objects.filter(is_deleted=False).order_by('name'):
+        writer.writerow([l.name, l.lens_type, l.material, l.coating,
+                         l.index or '', l.cost_price, l.selling_price,
+                         '1' if l.is_active else '0'])
+    return response
+
+
+@login_required
+def lens_import_csv(request):
+    """CSV bulk import/update for lenses."""
+    if not _can_manage_optical_stock(request.user):
+        return HttpResponseForbidden()
+
+    if request.method != 'POST':
+        return render(request, 'opticals/lens_import.html', {
+            'lens_types': LensType.choices,
+        })
+
+    import csv, io
+    from decimal import Decimal, InvalidOperation
+
+    csv_file = request.FILES.get('csv_file')
+    if not csv_file:
+        messages.error(request, 'Please select a CSV file.')
+        return render(request, 'opticals/lens_import.html', {'lens_types': LensType.choices})
+
+    try:
+        decoded = csv_file.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        csv_file.seek(0)
+        decoded = csv_file.read().decode('latin-1')
+
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    def _dec(row, key, default=0):
+        try:
+            v = str(row.get(key, '') or '').strip().replace(',', '')
+            return Decimal(v) if v else Decimal(str(default))
+        except InvalidOperation:
+            return Decimal(str(default))
+
+    created = updated = skipped = 0
+
+    for row in reader:
+        name = str(row.get('name', '') or '').strip()
+        lens_type = str(row.get('lens_type', '') or '').strip()
+        if not name:
+            skipped += 1
+            continue
+        lens = Lens.objects.filter(name__iexact=name, is_deleted=False).first()
+        cost = _dec(row, 'cost_price')
+        sell = _dec(row, 'selling_price')
+        material = str(row.get('material', '') or '').strip()
+        coating = str(row.get('coating', '') or '').strip()
+        is_active = str(row.get('is_active', '1')).strip() not in ('0', 'false', 'False', 'no')
+        idx_str = str(row.get('index', '') or '').strip()
+        try:
+            idx = Decimal(idx_str) if idx_str else None
+        except InvalidOperation:
+            idx = None
+
+        if lens:
+            lens.cost_price = cost
+            lens.selling_price = sell
+            if material: lens.material = material
+            if coating: lens.coating = coating
+            if idx: lens.index = idx
+            lens.is_active = is_active
+            if lens_type: lens.lens_type = lens_type
+            lens.save(update_fields=['cost_price', 'selling_price', 'material', 'coating',
+                                     'index', 'is_active', 'lens_type', 'updated_at'])
+            updated += 1
+        else:
+            Lens.objects.create(
+                name=name, lens_type=lens_type or LensType.SINGLE_VISION,
+                material=material, coating=coating, index=idx,
+                cost_price=cost, selling_price=sell,
+                is_active=is_active, created_by=request.user,
+            )
+            created += 1
+
+    messages.success(request, f'Lens import complete: {updated} updated, {created} created, {skipped} skipped.')
+    return redirect('opticals:lens_list')
+
+
+@login_required
 def frame_list(request):
     if not _can_access_optical(request.user):
         from django.http import HttpResponseForbidden
@@ -456,6 +681,12 @@ def create_order(request):
                     visit.save(update_fields=['status', 'updated_at'])
             except Exception:
                 pass
+            # GL: post COGS on immediate delivery
+            try:
+                from apps.billing.gl_service import post_optical_cogs
+                post_optical_cogs(order, user=request.user)
+            except Exception:
+                pass
             messages.success(
                 request,
                 f'Optical order {order.order_number} — payment collected and glasses handed over to {patient.full_name}.'
@@ -717,7 +948,26 @@ def frame_receive_stock(request, frame_id):
         messages.error(request, 'Quantity received must be a positive number.')
         return redirect('opticals:frame_list')
     frame.quantity_in_stock += qty
-    frame.save(update_fields=['quantity_in_stock'])
+    # Also update cost_price if provided
+    unit_cost_str = request.POST.get('unit_cost', '').strip()
+    supplier_ref  = request.POST.get('supplier_ref', '').strip()
+    unit_cost = None
+    if unit_cost_str:
+        from decimal import Decimal, InvalidOperation
+        try:
+            unit_cost = Decimal(unit_cost_str)
+            if unit_cost > 0:
+                frame.cost_price = unit_cost
+        except InvalidOperation:
+            pass
+    frame.save(update_fields=['quantity_in_stock', 'cost_price'])
+    # GL: Dr Optical Stock (371000) / Cr AP Vendors (401100)
+    if unit_cost and unit_cost > 0:
+        try:
+            from apps.billing.gl_service import post_optical_stock_receipt
+            post_optical_stock_receipt(frame, qty, unit_cost, supplier_ref=supplier_ref, user=request.user)
+        except Exception:
+            pass
     messages.success(request, f'+{qty} units of "{frame}" added to stock. New stock: {frame.quantity_in_stock}.')
     return redirect('opticals:frame_list')
 
@@ -776,6 +1026,12 @@ def quick_update_status(request, order_id):
         if order.optical_prescription:
             order.optical_prescription.is_dispensed = True
             order.optical_prescription.save(update_fields=['is_dispensed'])
+        # GL: post COGS (Dr 607000 / Cr 371000) on delivery
+        try:
+            from apps.billing.gl_service import post_optical_cogs
+            post_optical_cogs(order, user=request.user)
+        except Exception:
+            pass
     return JsonResponse({'success': True, 'status': order.get_status_display()})
 
 
