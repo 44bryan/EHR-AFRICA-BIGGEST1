@@ -51,11 +51,12 @@ def _can_access_store(user):
 
 def _can_manage_store(user):
     """Store Keeper write ops: items CRUD, stock entry/exit, GRN receiving, issues, counts, transfers, disposal.
+    HEAD_PHARMACIST can manage the pharmacy store (stock in/out, counts).
     Finance Director has read-only access via _can_access_store — not write access."""
     from apps.accounts.models import UserRole
     return user.role in (
         UserRole.STORE_KEEPER, UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR,
-        UserRole.ADMIN,
+        UserRole.ADMIN, UserRole.HEAD_PHARMACIST,
     )
 
 
