@@ -6323,6 +6323,7 @@ def journal_entry_create(request):
         description = request.POST.get('description', '').strip()
         reference = request.POST.get('reference', '').strip()
         cost_center_id = request.POST.get('cost_center') or None
+        operation_code = request.POST.get('operation') or None
         acct_ids = request.POST.getlist('account_id')
         debits = request.POST.getlist('debit')
         credits = request.POST.getlist('credit')
@@ -6343,11 +6344,14 @@ def journal_entry_create(request):
             })
 
         cc = CostCenter.objects.filter(pk=cost_center_id).first() if cost_center_id else None
+        from apps.billing.models import BillingOperationCC as _BOpCC
+        op_obj = _BOpCC.objects.filter(operation_code=operation_code, is_deleted=False).first() if operation_code else None
         entry = JournalEntry.objects.create(
             entry_date=entry_date,
             description=description,
             reference=reference,
             cost_center=cc,
+            operation=op_obj,
             source_type='manual',
             source_id='',
             is_posted=False,  # NOT posted yet — goes through approval
