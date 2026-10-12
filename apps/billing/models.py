@@ -3070,3 +3070,49 @@ class CashDeskSupply(AuditModel):
             ).count() + 1
             self.supply_number = f'APC-{today.strftime("%Y%m%d")}-{count:04d}'
         super().save(*args, **kwargs)
+
+
+# ── Billing Operation → Cost Center Configurable Mapping ─────────────────────
+
+class BillingOperationCC(AuditModel):
+    """
+    DB-backed, user-configurable mapping of each billing operation type to a
+    cost center.  Finance Director can reassign cost centers at any time via
+    the Operations → Cost Center setup page.
+
+    Revenue operations use codes 101-199.
+    Expense operations use codes 201-299.
+    """
+
+    class Group(models.TextChoices):
+        REVENUE = 'REVENUE', 'Revenue Operation'
+        EXPENSE = 'EXPENSE', 'Expense Operation'
+
+    operation_code = models.CharField(
+        max_length=20, unique=True,
+        help_text='Short code shown in the UI, e.g. "101", "205"',
+    )
+    operation_name = models.CharField(max_length=120)
+    category_key   = models.CharField(
+        max_length=30,
+        help_text='Internal category code matched by gl_service, e.g. "CONSULT", "DRUGS"',
+    )
+    group          = models.CharField(
+        max_length=10, choices=Group.choices, default=Group.REVENUE,
+    )
+    cost_center    = models.ForeignKey(
+        'CostCenter',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='operation_mappings',
+    )
+    sort_order     = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['group', 'sort_order', 'operation_code']
+        verbose_name        = 'Billing Operation CC Mapping'
+        verbose_name_plural = 'Billing Operation CC Mappings'
+
+    def __str__(self):
+        cc = self.cost_center.code if self.cost_center else 'unassigned'
+        return f'{self.operation_code} — {self.operation_name} → {cc}'

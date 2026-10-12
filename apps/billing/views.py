@@ -6608,6 +6608,53 @@ def item_category_gl_edit(request, category):
     })
 
 
+# ── Operation → Cost Center Mapping (Configurable) ───────────────────────────
+
+@login_required
+def operation_cc_mapping(request):
+    """
+    Setup page where the Finance Director can assign each billing operation type
+    to a cost center via a dropdown.  Changes are saved immediately to the
+    BillingOperationCC table and are picked up by gl_service on the next posting.
+    """
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+
+    from apps.billing.models import BillingOperationCC, CostCenter
+
+    cost_centers = list(CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code'))
+    operations   = list(BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'sort_order'))
+
+    saved = False
+    if request.method == 'POST':
+        for op in operations:
+            field_name = f'cc_{op.pk}'
+            val = request.POST.get(field_name, '')
+            if val == '':
+                new_cc = None
+            else:
+                try:
+                    new_cc = CostCenter.objects.get(pk=int(val), is_active=True, is_deleted=False)
+                except (CostCenter.DoesNotExist, ValueError):
+                    new_cc = op.cost_center  # keep existing if invalid
+            if op.cost_center != new_cc:
+                op.cost_center = new_cc
+                op.save(update_fields=['cost_center', 'updated_at'])
+        saved = True
+        # Refresh after save
+        operations = list(BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'sort_order'))
+
+    revenue_ops = [o for o in operations if o.group == 'REVENUE']
+    expense_ops = [o for o in operations if o.group == 'EXPENSE']
+
+    return render(request, 'billing/operation_cc_mapping.html', {
+        'revenue_ops':  revenue_ops,
+        'expense_ops':  expense_ops,
+        'cost_centers': cost_centers,
+        'saved':        saved,
+    })
+
+
 # ── Stock Operation Types ─────────────────────────────────────────────────────
 
 @login_required
@@ -6834,6 +6881,7 @@ def trial_balance(request):
     code_from     = request.GET.get('code_from', '').strip()
     code_to       = request.GET.get('code_to', '').strip()
     avec_mouvement = request.GET.get('avec_mouvement', '1')       # '1' = only with movement (default)
+    cc_filter     = request.GET.get('cost_center', '')            # '' = all cost centers
 
     # ── OHADA SYCEBNL classes 1–8 ─────────────────────────────────────────────
     OHADA_CLASSES = [
@@ -6850,24 +6898,26 @@ def trial_balance(request):
                        if not classe_filter or c == classe_filter]
 
     # ── Two DB queries: raw per-leaf-account aggregates ───────────────────────
-    open_bulk = (
-        JournalLine.objects.filter(
-            entry__is_deleted=False, entry__entry_date__lt=date_from,
-        ).values('account_id').annotate(
-            total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
-        )
+    open_base = JournalLine.objects.filter(
+        entry__is_deleted=False, entry__entry_date__lt=date_from,
+    )
+    move_base = JournalLine.objects.filter(
+        entry__is_deleted=False,
+        entry__entry_date__gte=date_from,
+        entry__entry_date__lte=date_to,
+    )
+    if cc_filter:
+        open_base = open_base.filter(entry__cost_center_id=cc_filter)
+        move_base = move_base.filter(entry__cost_center_id=cc_filter)
+
+    open_bulk = open_base.values('account_id').annotate(
+        total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
     )
     open_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0'))
                 for r in open_bulk}
 
-    move_bulk = (
-        JournalLine.objects.filter(
-            entry__is_deleted=False,
-            entry__entry_date__gte=date_from,
-            entry__entry_date__lte=date_to,
-        ).values('account_id').annotate(
-            total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
-        )
+    move_bulk = move_base.values('account_id').annotate(
+        total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
     )
     move_map = {r['account_id']: (r['total_dr'] or Decimal('0'), r['total_cr'] or Decimal('0'))
                 for r in move_bulk}
@@ -7246,6 +7296,9 @@ def trial_balance(request):
     from apps.accounts.models import HospitalConfig
     hconfig = HospitalConfig.get()
 
+    cost_centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    selected_cc  = CostCenter.objects.filter(pk=cc_filter).first() if cc_filter else None
+
     return render(request, 'billing/trial_balance.html', {
         'sections':       sections,
         'date_from':      date_from,
@@ -7263,6 +7316,9 @@ def trial_balance(request):
         'move_diff':      move_diff,
         'clos_diff':      clos_diff,
         'hconfig':        hconfig,
+        'cost_centers':   cost_centers,
+        'cc_filter':      cc_filter,
+        'selected_cc':    selected_cc,
     })
 
 

@@ -82,6 +82,99 @@ def _load_mapping_cache():
 _mapping_cache = None
 
 
+# ── Cost center auto-tagging for billing operations ───────────────────────────
+
+# ServiceCategory → CostCenter code
+_SERVICE_CAT_TO_CC = {
+    'CONSULT':   'CC-003',   # OPD consultations
+    'CLINICAL':  'CC-003',   # Clinical procedures (OPD)
+    'INVEST':    'CC-004',   # Investigations / Lab
+    'LAB':       'CC-004',   # Laboratory
+    'PHARMACY':  'CC-001',   # Pharmacy dispensary
+    'OPTICAL':   'CC-005',   # Optical dispensary
+    'SURGICAL':  'CC-002',   # Theatre / Surgery
+    'ADMISSION': 'CC-006',   # IPD / Ward
+    'REG':       'CC-008',   # Registration / Administration
+    'OTHER':     'CC-008',   # Default → Administration
+}
+
+# ExpenseCategory → CostCenter code
+_EXPENSE_CAT_TO_CC = {
+    'SUPPLIES':   'CC-008',  # Administration
+    'UTILITIES':  'CC-008',
+    'SALARY':     'CC-008',
+    'RENT':       'CC-008',
+    'EQUIPMENT':  'CC-012',  # Maintenance
+    'DRUGS':      'CC-001',  # Pharmacy
+    'TRANSPORT':  'CC-008',
+    'ADMIN':      'CC-008',
+    'MARKETING':  'CC-008',
+    'EXP_OTHER':  'CC-008',
+}
+
+
+def _billing_cc(cc_code):
+    """Return active CostCenter for the given code, or None."""
+    if not cc_code:
+        return None
+    try:
+        from apps.billing.models import CostCenter
+        return CostCenter.objects.filter(code=cc_code, is_active=True, is_deleted=False).first()
+    except Exception:
+        return None
+
+
+def _cc_for_service_category(category_code):
+    """
+    Resolve CostCenter from a ServiceCategory code string.
+    Checks the DB-backed BillingOperationCC table first so Finance Directors
+    can reconfigure mappings via the UI without touching code.
+    Falls back to the hardcoded dict if no DB row exists.
+    """
+    try:
+        from apps.billing.models import BillingOperationCC
+        row = BillingOperationCC.objects.filter(
+            category_key=category_code, group='REVENUE', is_deleted=False,
+        ).select_related('cost_center').first()
+        if row and row.cost_center and row.cost_center.is_active:
+            return row.cost_center
+    except Exception:
+        pass
+    return _billing_cc(_SERVICE_CAT_TO_CC.get(category_code, 'CC-008'))
+
+
+def _cc_for_expense_category(category_code):
+    """
+    Resolve CostCenter from an ExpenseCategory code string.
+    DB-backed lookup with hardcoded-dict fallback.
+    """
+    try:
+        from apps.billing.models import BillingOperationCC
+        row = BillingOperationCC.objects.filter(
+            category_key=category_code, group='EXPENSE', is_deleted=False,
+        ).select_related('cost_center').first()
+        if row and row.cost_center and row.cost_center.is_active:
+            return row.cost_center
+    except Exception:
+        pass
+    return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, 'CC-008'))
+
+
+def _dominant_category(items):
+    """
+    Return the ServiceCategory that accounts for the most revenue in a list of
+    invoice items. Used to tag the journal entry with a single cost center.
+    """
+    from decimal import Decimal as _D
+    totals = {}
+    for item in items:
+        cat = getattr(item, 'category', 'OTHER') or 'OTHER'
+        totals[cat] = totals.get(cat, _D('0')) + (getattr(item, 'line_total', None) or _D('0'))
+    if not totals:
+        return 'OTHER'
+    return max(totals, key=totals.get)
+
+
 def _get_mapping(category, key, fallback=None):
     """Look up GL code from DB cache, fall back to hardcoded default."""
     global _mapping_cache
@@ -305,6 +398,7 @@ def post_invoice_issued(invoice, user=None):
             lines.append((get_revenue_code('OTHER'), 0, amount,
                            f"Invoice {invoice.invoice_number}"))
 
+        dominant_cat = _dominant_category(item_list) if item_list else 'OTHER'
         return _create_entry(
             date=invoice.issue_date,
             description=f"Invoice issued — {invoice.invoice_number} — {invoice.patient.full_name}",
@@ -313,6 +407,7 @@ def post_invoice_issued(invoice, user=None):
             source_id=invoice.pk,
             lines=lines,
             user=user or getattr(invoice, 'created_by', None),
+            cost_center=_cc_for_service_category(dominant_cat),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for invoice {invoice.pk}: {e}")
@@ -351,6 +446,9 @@ def post_payment(payment):
              f"Settlement — Inv {invoice.invoice_number} — {invoice.patient.full_name}"),
         ]
 
+        # Inherit cost center from invoice's dominant service category
+        item_list = list(invoice.items.filter(is_deleted=False))
+        dominant_cat = _dominant_category(item_list) if item_list else 'OTHER'
         _create_entry(
             date=payment.payment_date.date() if hasattr(payment.payment_date, 'date') else payment.payment_date,
             description=f"Patient payment — {invoice.invoice_number} — {invoice.patient.full_name}",
@@ -359,6 +457,7 @@ def post_payment(payment):
             source_id=payment.pk,
             lines=lines,
             user=payment.received_by,
+            cost_center=_cc_for_service_category(dominant_cat),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for payment {payment.pk}: {e}")
@@ -386,6 +485,7 @@ def post_expense(expense):
             source_id=expense.pk,
             lines=lines,
             user=expense.approved_by,
+            cost_center=_cc_for_expense_category(expense.category),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for expense {expense.pk}: {e}")
@@ -446,6 +546,12 @@ def post_ap_bill(bill):
                 f"AP Bill (GRN match) — {bill.vendor.name} — {bill.bill_number} "
                 f"— GRN {bill.grn.grn_number}"
             )
+            # Inherit CC from the GRN's store location
+            bill_cc = None
+            try:
+                bill_cc = getattr(bill.grn.store_location, 'cost_center', None)
+            except Exception:
+                pass
         else:
             # Case B — Direct service/expense: hit expense account immediately
             debit_code = get_expense_code(bill.category)
@@ -456,6 +562,7 @@ def post_ap_bill(bill):
                 (ap_vendors, 0,      amount, f"Bill from {bill.vendor.name}"),
             ]
             description = f"AP Bill — {bill.vendor.name} — {bill.bill_number}"
+            bill_cc = _cc_for_expense_category(getattr(bill, 'category', 'EXP_OTHER') or 'EXP_OTHER')
 
         _create_entry(
             date=bill.bill_date,
@@ -465,6 +572,7 @@ def post_ap_bill(bill):
             source_id=bill.pk,
             lines=lines,
             user=bill.approved_by,
+            cost_center=bill_cc,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for AP bill {bill.pk}: {e}")
@@ -751,6 +859,7 @@ def post_refund(refund, user=None):
         # Credit side: cash/bank out
         lines.append((credit_code, 0, amount, f"Refund issued via {refund.payment_method}"))
 
+        dominant_cat = _dominant_category(item_list) if item_list else 'OTHER'
         _create_entry(
             date=refund.refund_date.date() if hasattr(refund.refund_date, 'date') else refund.refund_date,
             description=f"Refund — {invoice.invoice_number} — {invoice.patient.full_name}",
@@ -759,6 +868,7 @@ def post_refund(refund, user=None):
             source_id=refund.pk,
             lines=lines,
             user=user or refund.processed_by,
+            cost_center=_cc_for_service_category(dominant_cat),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for refund {refund.pk}: {e}")
