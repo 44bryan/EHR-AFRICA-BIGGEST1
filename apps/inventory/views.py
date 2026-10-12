@@ -3609,27 +3609,56 @@ def stock_validation_approve(request, validation_id):
             ret = DepartmentReturn.objects.get(pk=sv.source_id)
             journal_entry = post_department_return(ret, user=request.user)
 
+        elif sv.validation_type == StockValidationType.ADJUSTMENT:
+            # Stock manual adjustment — look up the movement by source_id
+            m = StockMovement.objects.filter(pk=sv.source_id).select_related('item').first()
+            if m:
+                journal_entry = post_stock_adjustment(
+                    m.item, m.quantity, m.item.unit_cost,
+                    m.created_at.date(), sv.reference,
+                    reason=sv.description, user=request.user,
+                )
+
         elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT):
-            # For direct entries/exits, the stock is already adjusted.
-            # GL posting uses the movement data from StockMovement records.
-            # If an operation type is linked, its GL accounts override defaults.
-            movements = StockMovement.objects.filter(pk=sv.source_id).select_related('item')
-            if movements.exists():
-                m = movements.first()
-                items_data = [(m.item, abs(m.quantity), m.item.unit_cost)]
-                op_type = sv.operation_type  # StockOperationType or None
-                if sv.validation_type == StockValidationType.ENTRY:
-                    journal_entry = post_stock_entry(
-                        sv.reference, items_data,
-                        m.created_at.date(), user=request.user,
-                        operation_type=op_type,
-                    )
-                else:
-                    journal_entry = post_stock_exit(
-                        sv.reference, items_data,
-                        m.created_at.date(), reason=sv.description, user=request.user,
-                        operation_type=op_type,
-                    )
+            op_type = sv.operation_type  # StockOperationType or None
+            if op_type and op_type.debit_account and op_type.credit_account and sv.total_value > 0:
+                # Fast path: operation type has explicit GL accounts + total_value already computed.
+                # This correctly handles multi-item entries (total_value = sum of all items at save time).
+                from apps.inventory.gl_service import _create_entry, _op_for_code
+                lines_direct = [
+                    (op_type.debit_account.code, sv.total_value, 0,
+                     f"{sv.get_validation_type_display()} — {sv.reference}"),
+                    (op_type.credit_account.code, 0, sv.total_value,
+                     f"{sv.get_validation_type_display()} — {sv.reference}"),
+                ]
+                journal_entry = _create_entry(
+                    date=timezone.localdate(),
+                    description=sv.description or f"Stock {sv.validation_type} — {sv.reference}",
+                    reference=sv.reference,
+                    source_type=f'stock_{sv.validation_type.lower()}',
+                    source_id=sv.pk,
+                    lines=lines_direct,
+                    user=request.user,
+                    operation=_op_for_code(op_type.code),
+                )
+            else:
+                # Fallback: look up first movement and post at item level
+                movements = StockMovement.objects.filter(pk=sv.source_id).select_related('item')
+                if movements.exists():
+                    m = movements.first()
+                    items_data = [(m.item, abs(m.quantity), m.item.unit_cost)]
+                    if sv.validation_type == StockValidationType.ENTRY:
+                        journal_entry = post_stock_entry(
+                            sv.reference, items_data,
+                            m.created_at.date(), user=request.user,
+                            operation_type=op_type,
+                        )
+                    else:
+                        journal_entry = post_stock_exit(
+                            sv.reference, items_data,
+                            m.created_at.date(), reason=sv.description, user=request.user,
+                            operation_type=op_type,
+                        )
 
     except Exception as e:
         messages.error(request, f'GL posting failed: {e}')
