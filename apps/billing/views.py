@@ -6239,7 +6239,7 @@ def journal_entry_list(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
     qs = JournalEntry.objects.filter(is_deleted=False).select_related(
-        'cost_center', 'recorded_by', 'reviewed_by', 'posted_by'
+        'cost_center', 'operation', 'recorded_by', 'reviewed_by', 'posted_by'
     ).order_by('-entry_date', '-created_at')
     # Filters
     source = request.GET.get('source', '')
@@ -6247,6 +6247,7 @@ def journal_entry_list(request):
     date_to = request.GET.get('date_to', '')
     q = request.GET.get('q', '')
     status = request.GET.get('status', '')
+    op_code = request.GET.get('op_code', '')
     if source:
         qs = qs.filter(source_type=source)
     if date_from:
@@ -6257,12 +6258,16 @@ def journal_entry_list(request):
         qs = qs.filter(Q(entry_number__icontains=q) | Q(description__icontains=q) | Q(reference__icontains=q))
     if status:
         qs = qs.filter(status=status)
+    if op_code:
+        qs = qs.filter(operation__operation_code=op_code)
     # Pending counts for workflow badges
     draft_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.DRAFT).count()
     reviewed_count = JournalEntry.objects.filter(is_deleted=False, status=JournalEntryStatus.REVIEWED).count()
     totals = JournalLine.objects.filter(entry__in=qs, entry__is_deleted=False).aggregate(
         grand_dr=Sum('debit_amount'), grand_cr=Sum('credit_amount')
     )
+    from apps.billing.models import BillingOperationCC
+    all_operations = BillingOperationCC.objects.filter(is_deleted=False).order_by('group', 'sort_order')
     return render(request, 'billing/journal_entry_list.html', {
         'entries': qs[:200],
         'total': qs.count(),
@@ -6271,6 +6276,8 @@ def journal_entry_list(request):
         'date_to': date_to,
         'q': q,
         'status': status,
+        'op_code': op_code,
+        'all_operations': all_operations,
         'status_choices': JournalEntryStatus.choices,
         'draft_count': draft_count,
         'reviewed_count': reviewed_count,
