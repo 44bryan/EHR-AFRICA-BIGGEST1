@@ -20,21 +20,32 @@
 <form method="post" id="jnlForm">
   {% csrf_token %}
   <div class="row g-3 mb-4">
-    <div class="col-md-3">
+    <div class="col-md-2">
       <label class="form-label fw-semibold">Entry Date <span class="text-danger">*</span></label>
       <input type="date" name="entry_date" class="form-control" value="{% now 'Y-m-d' %}" required>
     </div>
-    <div class="col-md-5">
+    <div class="col-md-2">
+      <label class="form-label fw-semibold">Operation</label>
+      <select id="operationSelect" class="form-select" onchange="onOperationChange(this)">
+        <option value="">— Select operation —</option>
+        {% for op in operations %}
+        <option value="{{ op.operation_code }}" data-cc="{{ op.cost_center_id|default:'' }}">
+          {{ op.operation_code }}: {{ op.operation_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
       <label class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
-      <input type="text" name="description" class="form-control" placeholder="e.g. Correction — rent payment double-posted" required>
+      <input type="text" name="description" id="descField" class="form-control" placeholder="e.g. Correction — rent payment double-posted" required>
     </div>
     <div class="col-md-2">
       <label class="form-label fw-semibold">Reference</label>
       <input type="text" name="reference" class="form-control" placeholder="Receipt #, memo">
     </div>
-    <div class="col-md-2">
-      <label class="form-label fw-semibold">Cost Center</label>
-      <select name="cost_center" class="form-select">
+    <div class="col-md-3">
+      <label class="form-label fw-semibold">Cost Center <small class="text-muted">(auto-filled from operation)</small></label>
+      <select name="cost_center" id="costCenterSelect" class="form-select">
         <option value="">— None —</option>
         {% for cc in cost_centers %}
         <option value="{{ cc.pk }}">{{ cc.code }} — {{ cc.name }}</option>
@@ -42,6 +53,34 @@
       </select>
     </div>
   </div>
+
+  <script>
+  var OP_CC_MAP = {{ op_cc_map_json|safe }};
+  // pk lookup: build map from cc_pk (UUID string) to option value
+  function onOperationChange(sel) {
+    var opCode = sel.value;
+    if (!opCode) return;
+    // Auto-fill description if empty
+    var descEl = document.getElementById('descField');
+    if (!descEl.value.trim()) {
+      var txt = sel.options[sel.selectedIndex].text;
+      descEl.value = txt.substring(txt.indexOf(':')+2);
+    }
+    // Auto-select cost center
+    var ccId = OP_CC_MAP[opCode] || '';
+    if (!ccId) return;
+    var ccSel = document.getElementById('costCenterSelect');
+    for (var i = 0; i < ccSel.options.length; i++) {
+      if (ccSel.options[i].value === ccId) {
+        ccSel.selectedIndex = i;
+        // Flash yellow highlight
+        ccSel.style.background = '#fef9c3';
+        setTimeout(function(){ ccSel.style.background = ''; }, 1200);
+        break;
+      }
+    }
+  }
+  </script>
 
   <div class="card shadow-sm mb-3">
     <div class="card-header d-flex justify-content-between align-items-center py-2">

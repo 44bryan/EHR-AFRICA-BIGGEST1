@@ -6366,8 +6366,23 @@ def journal_entry_create(request):
                 )
         messages.success(request, f'Journal entry {entry.entry_number} recorded as DRAFT — awaiting Senior Accountant review.')
         return redirect('billing:journal_entry_detail', entry_id=entry.pk)
+    from apps.billing.models import BillingOperationCC
+    operations = list(
+        BillingOperationCC.objects.filter(is_deleted=False)
+        .select_related('cost_center')
+        .order_by('group', 'sort_order')
+        .values('operation_code', 'operation_name', 'group', 'cost_center_id')
+    )
+    # Build operation→cost_center lookup for JS
+    import json as _json
+    op_cc_map = {
+        op['operation_code']: str(op['cost_center_id']) if op['cost_center_id'] else ''
+        for op in operations
+    }
     return render(request, 'billing/journal_entry_form.html', {
         'accounts': accounts, 'cost_centers': cost_centers,
+        'operations': operations,
+        'op_cc_map_json': _json.dumps(op_cc_map),
     })
 
 

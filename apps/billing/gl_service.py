@@ -84,32 +84,32 @@ _mapping_cache = None
 
 # ── Cost center auto-tagging for billing operations ───────────────────────────
 
-# ServiceCategory → CostCenter code
+# ServiceCategory → CostCenter code (codes are now 0001-0012 format)
 _SERVICE_CAT_TO_CC = {
-    'CONSULT':   'CC-003',   # OPD consultations
-    'CLINICAL':  'CC-003',   # Clinical procedures (OPD)
-    'INVEST':    'CC-004',   # Investigations / Lab
-    'LAB':       'CC-004',   # Laboratory
-    'PHARMACY':  'CC-001',   # Pharmacy dispensary
-    'OPTICAL':   'CC-005',   # Optical dispensary
-    'SURGICAL':  'CC-002',   # Theatre / Surgery
-    'ADMISSION': 'CC-006',   # IPD / Ward
-    'REG':       'CC-008',   # Registration / Administration
-    'OTHER':     'CC-008',   # Default → Administration
+    'CONSULT':   '0003',   # OPD consultations
+    'CLINICAL':  '0003',   # Clinical procedures (OPD)
+    'INVEST':    '0004',   # Investigations / Lab
+    'LAB':       '0004',   # Laboratory
+    'PHARMACY':  '0001',   # Pharmacy dispensary
+    'OPTICAL':   '0005',   # Optical dispensary
+    'SURGICAL':  '0002',   # Theatre / Surgery
+    'ADMISSION': '0006',   # IPD / Ward
+    'REG':       '0008',   # Registration / Administration
+    'OTHER':     '0008',   # Default → Administration
 }
 
 # ExpenseCategory → CostCenter code
 _EXPENSE_CAT_TO_CC = {
-    'SUPPLIES':   'CC-008',  # Administration
-    'UTILITIES':  'CC-008',
-    'SALARY':     'CC-008',
-    'RENT':       'CC-008',
-    'EQUIPMENT':  'CC-012',  # Maintenance
-    'DRUGS':      'CC-001',  # Pharmacy
-    'TRANSPORT':  'CC-008',
-    'ADMIN':      'CC-008',
-    'MARKETING':  'CC-008',
-    'EXP_OTHER':  'CC-008',
+    'SUPPLIES':   '0008',  # Administration
+    'UTILITIES':  '0008',
+    'SALARY':     '0008',
+    'RENT':       '0008',
+    'EQUIPMENT':  '0012',  # Maintenance
+    'DRUGS':      '0001',  # Pharmacy
+    'TRANSPORT':  '0008',
+    'ADMIN':      '0008',
+    'MARKETING':  '0008',
+    'EXP_OTHER':  '0008',
 }
 
 
