@@ -6537,6 +6537,77 @@ def journal_type_edit(request, jt_id):
     return render(request, 'billing/journal_type_form.html', {'jtype': jt, 'action': 'Edit Journal Type'})
 
 
+# ── Item Category GL Routing ──────────────────────────────────────────────────
+
+@login_required
+def item_category_gl_list(request):
+    """
+    Finance Director: view and configure automatic GL account routing per item category.
+    Set once — all stock movements auto-post to the correct accounts forever.
+    """
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    from apps.inventory.models import ItemCategoryGL, ItemCategory
+    mappings = {m.category: m for m in ItemCategoryGL.objects.select_related(
+        'inventory_account', 'cogs_account', 'loss_account'
+    ).all()}
+    expense_accounts = GLAccount.objects.filter(
+        is_active=True, is_deleted=False, code__startswith='6'
+    ).order_by('code')
+    stock_accounts = GLAccount.objects.filter(
+        is_active=True, is_deleted=False, code__startswith='3'
+    ).order_by('code')
+    rows = []
+    for value, label in ItemCategory.choices:
+        rows.append({
+            'category': value,
+            'label': label,
+            'mapping': mappings.get(value),
+        })
+    return render(request, 'billing/item_category_gl_list.html', {
+        'rows': rows,
+        'expense_accounts': expense_accounts,
+        'stock_accounts': stock_accounts,
+    })
+
+
+@login_required
+def item_category_gl_edit(request, category):
+    """Edit the GL routing for a single item category."""
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    from apps.inventory.models import ItemCategoryGL, ItemCategory
+    # Validate category value
+    valid = dict(ItemCategory.choices)
+    if category not in valid:
+        from django.http import Http404
+        raise Http404
+    mapping, _ = ItemCategoryGL.objects.get_or_create(category=category)
+    if request.method == 'POST':
+        inv_id = request.POST.get('inventory_account')
+        cogs_id = request.POST.get('cogs_account')
+        loss_id = request.POST.get('loss_account')
+        mapping.inventory_account = GLAccount.objects.filter(pk=inv_id).first() if inv_id else None
+        mapping.cogs_account = GLAccount.objects.filter(pk=cogs_id).first() if cogs_id else None
+        mapping.loss_account = GLAccount.objects.filter(pk=loss_id).first() if loss_id else None
+        mapping.save()
+        messages.success(request, f'GL routing updated for {valid[category]}.')
+        return redirect('billing:item_category_gl_list')
+    stock_accounts = GLAccount.objects.filter(
+        is_active=True, is_deleted=False, code__startswith='3'
+    ).order_by('code')
+    expense_accounts = GLAccount.objects.filter(
+        is_active=True, is_deleted=False, code__startswith='6'
+    ).order_by('code')
+    return render(request, 'billing/item_category_gl_edit.html', {
+        'mapping': mapping,
+        'category': category,
+        'label': valid[category],
+        'stock_accounts': stock_accounts,
+        'expense_accounts': expense_accounts,
+    })
+
+
 # ── Stock Operation Types ─────────────────────────────────────────────────────
 
 @login_required
@@ -7789,8 +7860,14 @@ def ap_bill_create(request):
     if not _can_access_ap(request.user):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
+    from apps.inventory.models import GoodsReceivedNote, GRNStatus
     vendors = APVendor.objects.filter(is_deleted=False, is_active=True).order_by('name')
     gl_accounts = GLAccount.objects.filter(is_deleted=False, is_active=True, account_type='EXPENSE').order_by('code')
+    # Only GRNs that are ACCEPTED and not already fully billed
+    open_grns = GoodsReceivedNote.objects.filter(
+        status=GRNStatus.ACCEPTED, is_deleted=False
+    ).select_related('purchase_order__vendor').order_by('-received_date')
+
     if request.method == 'POST':
         vendor_pk = request.POST.get('vendor') or request.POST.get('vendor_id')
         if not vendor_pk:
@@ -7802,6 +7879,8 @@ def ap_bill_create(request):
                 messages.error(request, 'Amount must be greater than zero.')
             else:
                 from apps.billing.models import ExpenseCategory
+                grn_pk = request.POST.get('grn') or None
+                grn_obj = GoodsReceivedNote.objects.filter(pk=grn_pk, is_deleted=False).first() if grn_pk else None
                 bill = APBill.objects.create(
                     vendor=vendor,
                     vendor_ref=request.POST.get('vendor_invoice_number') or request.POST.get('vendor_ref', ''),
@@ -7814,12 +7893,16 @@ def ap_bill_create(request):
                     gl_account=GLAccount.objects.filter(
                         pk=request.POST.get('expense_account') or request.POST.get('gl_account_id')
                     ).first(),
+                    grn=grn_obj,
                     attachment_ref=request.POST.get('attachment_ref', ''),
                     notes=request.POST.get('notes', ''),
                     approved_by=request.user,
                     created_by=request.user,
                 )
-                messages.success(request, f'Bill {bill.bill_number} created.')
+                if grn_obj:
+                    messages.success(request, f'Bill {bill.bill_number} created and matched to GRN {grn_obj.grn_number}. GL: 408100 cleared → AP Vendors.')
+                else:
+                    messages.success(request, f'Bill {bill.bill_number} created. GL: Expense account debited → AP Vendors.')
                 return redirect('billing:ap_bill_list')
     from apps.billing.models import ExpenseCategory
     return render(request, 'billing/ap_bill_form.html', {
@@ -7827,6 +7910,7 @@ def ap_bill_create(request):
         'expense_accounts': gl_accounts,
         'gl_accounts': gl_accounts,
         'expense_categories': ExpenseCategory.choices,
+        'open_grns': open_grns,
         'action': 'Record Vendor Bill',
     })
 

@@ -1,0 +1,125 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}GL Routing by Item Category{% endblock %}
+{% block page_header %}
+<div class="mb-2">
+  <h4 class="fw-bold mb-0"><i class="bi bi-diagram-3 me-2 text-primary"></i>Automatic GL Routing — By Item Category</h4>
+  <p class="text-muted small mb-0">
+    Set the GL accounts for each item category <strong>once</strong>.
+    Every stock movement (purchase, issue, disposal) posts automatically — no user ever selects an account.
+  </p>
+</div>
+{% endblock %}
+{% block content %}
+
+{% if messages %}
+  {% for m in messages %}
+  <div class="alert alert-{{ m.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+    {{ m }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<!-- Explanation banner -->
+<div class="alert alert-primary border-0 d-flex align-items-start gap-3 mb-4" style="background:#e8f0fe;">
+  <i class="bi bi-info-circle-fill fs-4 text-primary mt-1"></i>
+  <div class="small">
+    <strong class="d-block mb-1">How automatic GL routing works</strong>
+    When the Finance Director buys pharmaceuticals, the system automatically posts:
+    <code>Dr 321000 (Pharmaceutical Stock)</code> and <code>Cr 408100 (Supplier Awaiting Invoice)</code>.
+    When those drugs are issued to a ward: <code>Dr 601000 (COGS)</code> and <code>Cr 321000 (Stock)</code>.
+    <strong>No clerk ever picks an account.</strong> Change the mapping here and all future postings update instantly.
+  </div>
+</div>
+
+<!-- 3-column header legend -->
+<div class="row g-2 mb-3">
+  <div class="col-md-4">
+    <div class="card border-0 bg-success bg-opacity-10 text-center py-2">
+      <div class="fw-semibold small"><i class="bi bi-box-seam me-1"></i>Inventory Account (Class 3)</div>
+      <div class="text-muted" style="font-size:.78rem;">Debited on stock receipt — the asset sitting in the store</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 bg-warning bg-opacity-10 text-center py-2">
+      <div class="fw-semibold small"><i class="bi bi-cart-dash me-1"></i>COGS / Variation Account (Class 6)</div>
+      <div class="text-muted" style="font-size:.78rem;">Debited when stock leaves the store (issue, sale)</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card border-0 bg-danger bg-opacity-10 text-center py-2">
+      <div class="fw-semibold small"><i class="bi bi-trash me-1"></i>Loss / Write-off Account (Class 6)</div>
+      <div class="text-muted" style="font-size:.78rem;">Debited on disposal, expiry, or unexplained variance</div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width:22%">Item Category</th>
+          <th class="text-success" style="width:25%"><i class="bi bi-box-seam me-1"></i>Inventory (Class 3)</th>
+          <th class="text-warning" style="width:25%"><i class="bi bi-cart-dash me-1"></i>COGS / Variation (Class 6)</th>
+          <th class="text-danger" style="width:22%"><i class="bi bi-trash me-1"></i>Loss / Write-off (Class 6)</th>
+          <th style="width:6%"></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>
+            <span class="fw-semibold">{{ row.label }}</span>
+            <br><span class="text-muted" style="font-size:.75rem;">{{ row.category }}</span>
+          </td>
+          <td>
+            {% if row.mapping and row.mapping.inventory_account %}
+              <span class="badge bg-success bg-opacity-75 text-white">{{ row.mapping.inventory_account.code }}</span>
+              <span class="text-muted small">{{ row.mapping.inventory_account.name|truncatewords:4 }}</span>
+            {% else %}
+              <span class="badge bg-secondary">Not set</span>
+              <span class="text-danger small">Uses hardcoded fallback</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.mapping and row.mapping.cogs_account %}
+              <span class="badge bg-warning text-dark">{{ row.mapping.cogs_account.code }}</span>
+              <span class="text-muted small">{{ row.mapping.cogs_account.name|truncatewords:4 }}</span>
+            {% else %}
+              <span class="badge bg-secondary">Not set</span>
+              <span class="text-muted small">Default: 603</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.mapping and row.mapping.loss_account %}
+              <span class="badge bg-danger bg-opacity-75 text-white">{{ row.mapping.loss_account.code }}</span>
+              <span class="text-muted small">{{ row.mapping.loss_account.name|truncatewords:4 }}</span>
+            {% else %}
+              <span class="badge bg-secondary">Not set</span>
+              <span class="text-muted small">Default: 658</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'billing:item_category_gl_edit' category=row.category %}"
+               class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Footer note about exception operations -->
+<div class="mt-4 p-3 rounded border border-warning-subtle bg-warning bg-opacity-10 small">
+  <i class="bi bi-exclamation-triangle me-2 text-warning"></i>
+  <strong>Exception Operations (donations, grants, write-offs):</strong>
+  For non-standard stock movements that use <em>different</em> GL accounts than the above,
+  configure them in
+  <a href="{% url 'billing:stock_operation_type_list' %}" class="fw-semibold">Stock Exception Types</a>.
+  Those override the automatic routing above on a per-operation basis.
+</div>
+{% endblock %}

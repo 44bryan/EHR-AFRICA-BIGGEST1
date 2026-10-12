@@ -160,7 +160,10 @@ urlpatterns = [
     path('gl/journal-types/', views.journal_type_list, name='journal_type_list'),
     path('gl/journal-types/create/', views.journal_type_create, name='journal_type_create'),
     path('gl/journal-types/<uuid:jt_id>/edit/', views.journal_type_edit, name='journal_type_edit'),
-    # Stock Operation Types
+    # Item Category GL Routing (automatic account resolution — Finance Director sets once)
+    path('gl/item-category-gl/', views.item_category_gl_list, name='item_category_gl_list'),
+    path('gl/item-category-gl/<str:category>/edit/', views.item_category_gl_edit, name='item_category_gl_edit'),
+    # Stock Operation Types (exception/special operations only)
     path('gl/stock-operation-types/', views.stock_operation_type_list, name='stock_operation_type_list'),
     path('gl/stock-operation-types/create/', views.stock_operation_type_create, name='stock_operation_type_create'),
     path('gl/stock-operation-types/<uuid:sot_id>/edit/', views.stock_operation_type_edit, name='stock_operation_type_edit'),

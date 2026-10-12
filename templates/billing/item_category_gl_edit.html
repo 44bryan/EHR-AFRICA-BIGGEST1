@@ -1,0 +1,118 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Edit GL Routing — {{ label }}{% endblock %}
+{% block page_header %}
+<div class="mb-2">
+  <a href="{% url 'billing:item_category_gl_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to GL Routing
+  </a>
+  <h4 class="fw-bold mb-0">GL Routing — {{ label }}</h4>
+  <p class="text-muted small">Set the three GL accounts for <strong>{{ label }}</strong> items. Applied automatically to all future transactions.</p>
+</div>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <form method="post">
+      {% csrf_token %}
+      <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+
+          <!-- Inventory Account -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold text-success">
+              <i class="bi bi-box-seam me-1"></i>Inventory Account (Class 3) <span class="text-danger">*</span>
+            </label>
+            <select name="inventory_account" class="form-select" required>
+              <option value="">— Select stock account —</option>
+              {% for a in stock_accounts %}
+              <option value="{{ a.pk }}"
+                {% if mapping.inventory_account_id == a.pk %}selected{% endif %}>
+                {{ a.code }} — {{ a.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              <strong>Debited when stock is received.</strong>
+              This is the asset account (Class 3). E.g. 321000 for Pharmaceuticals, 322000 for Optical, 323000 for Theatre.
+            </div>
+          </div>
+
+          <!-- COGS Account -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold text-warning">
+              <i class="bi bi-cart-dash me-1"></i>COGS / Variation Account (Class 6)
+            </label>
+            <select name="cogs_account" class="form-select">
+              <option value="">— Default (603 Variation de stocks) —</option>
+              {% for a in expense_accounts %}
+              <option value="{{ a.pk }}"
+                {% if mapping.cogs_account_id == a.pk %}selected{% endif %}>
+                {{ a.code }} — {{ a.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              <strong>Debited when stock is issued or sold.</strong>
+              Typically 601xxx (Cost of Goods Sold) for items that generate revenue, or 603xxx (Variation de stocks) for internal consumption.
+              Leave blank to use the default 603.
+            </div>
+          </div>
+
+          <!-- Loss Account -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold text-danger">
+              <i class="bi bi-trash me-1"></i>Loss / Write-off Account (Class 6)
+            </label>
+            <select name="loss_account" class="form-select">
+              <option value="">— Default (658 Other Losses) —</option>
+              {% for a in expense_accounts %}
+              <option value="{{ a.pk }}"
+                {% if mapping.loss_account_id == a.pk %}selected{% endif %}>
+                {{ a.code }} — {{ a.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              <strong>Debited on disposal, expiry, or stock variance.</strong>
+              Typically 658xxx (Other charges / Perte sur stock). Leave blank to use the default 658.
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>Save GL Routing
+      </button>
+      <a href="{% url 'billing:item_category_gl_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+    </form>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm bg-light border-0">
+      <div class="card-header py-2 fw-semibold">How This Category Posts</div>
+      <div class="card-body small text-muted">
+        <p class="fw-semibold text-dark mb-1">1. Stock Receipt (GRN validated)</p>
+        <ul class="mb-2">
+          <li><strong>Dr</strong> Inventory Account (Class 3) — asset enters store</li>
+          <li><strong>Cr</strong> 408100 Supplier Awaiting Invoice — accrued liability</li>
+        </ul>
+        <p class="fw-semibold text-dark mb-1">2. AP Bill matched to GRN</p>
+        <ul class="mb-2">
+          <li><strong>Dr</strong> 408100 — clears the accrual</li>
+          <li><strong>Cr</strong> 401xxx AP Vendors — formal payable</li>
+        </ul>
+        <p class="fw-semibold text-dark mb-1">3. Stock Issued to Department</p>
+        <ul class="mb-2">
+          <li><strong>Dr</strong> COGS / Variation Account — cost recognised</li>
+          <li><strong>Cr</strong> Inventory Account — stock leaves balance sheet</li>
+        </ul>
+        <p class="fw-semibold text-dark mb-1">4. Disposal / Expiry / Write-off</p>
+        <ul class="mb-0">
+          <li><strong>Dr</strong> Loss / Write-off Account — loss recognised</li>
+          <li><strong>Cr</strong> Inventory Account — stock removed</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
