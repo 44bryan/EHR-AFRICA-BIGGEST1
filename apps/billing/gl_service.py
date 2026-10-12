@@ -160,6 +160,24 @@ def _cc_for_expense_category(category_code):
     return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, 'CC-008'))
 
 
+def _op_for_key(category_key, group=None):
+    """
+    Resolve a BillingOperationCC row from category_key (and optional group).
+    Returns the model instance so it can be FK-stored on JournalEntry.operation.
+    Used to stamp TurboClinic operation codes on every auto-generated GL entry.
+    """
+    try:
+        from apps.billing.models import BillingOperationCC
+        qs = BillingOperationCC.objects.filter(
+            category_key=category_key, is_deleted=False,
+        )
+        if group:
+            qs = qs.filter(group=group)
+        return qs.first()
+    except Exception:
+        return None
+
+
 def _dominant_category(items):
     """
     Return the ServiceCategory that accounts for the most revenue in a list of
@@ -293,11 +311,12 @@ def _get_account(code):
 
 
 def _create_entry(date, description, reference, source_type, source_id, lines,
-                  user=None, cost_center=None):
+                  user=None, cost_center=None, operation=None):
     """
     Create a balanced JournalEntry with the given lines.
     lines = list of (account_code, debit, credit, description)
     cost_center: billing.CostCenter instance — auto-tagged from store location.
+    operation: BillingOperationCC instance — TurboClinic operation code.
     Returns the JournalEntry or None if accounts not found / not balanced.
     """
     from apps.billing.models import JournalEntry, JournalLine
@@ -329,6 +348,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
         is_posted=True,
         created_by=user,
         cost_center=cost_center,
+        operation=operation,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
         JournalLine.objects.create(
@@ -408,6 +428,7 @@ def post_invoice_issued(invoice, user=None):
             lines=lines,
             user=user or getattr(invoice, 'created_by', None),
             cost_center=_cc_for_service_category(dominant_cat),
+            operation=_op_for_key(dominant_cat, 'REVENUE'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for invoice {invoice.pk}: {e}")
@@ -458,6 +479,7 @@ def post_payment(payment):
             lines=lines,
             user=payment.received_by,
             cost_center=_cc_for_service_category(dominant_cat),
+            operation=_op_for_key('PATIENT_RECEIPT', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for payment {payment.pk}: {e}")
@@ -486,6 +508,7 @@ def post_expense(expense):
             lines=lines,
             user=expense.approved_by,
             cost_center=_cc_for_expense_category(expense.category),
+            operation=_op_for_key(expense.category, 'EXPENSE'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for expense {expense.pk}: {e}")
@@ -548,10 +571,25 @@ def post_ap_bill(bill):
             )
             # Inherit CC from the GRN's store location
             bill_cc = None
+            bill_op = None
             try:
                 bill_cc = getattr(bill.grn.store_location, 'cost_center', None)
+                # Map store CC code → STOCK_IN category key
+                _CC_TO_STOCK_IN = {
+                    '0001': 'STOCK_IN_PHARMACY',
+                    '0002': 'STOCK_IN_OT',
+                    '0003': 'STOCK_IN_MAIN',
+                    '0004': 'STOCK_IN_LAB',
+                    '0005': 'STOCK_IN_OPTICAL',
+                }
+                if bill_cc:
+                    bill_op = _op_for_key(
+                        _CC_TO_STOCK_IN.get(bill_cc.code, 'STOCK_IN_GRN'), 'STOCK'
+                    )
+                else:
+                    bill_op = _op_for_key('STOCK_IN_GRN', 'STOCK')
             except Exception:
-                pass
+                bill_op = _op_for_key('STOCK_IN_GRN', 'STOCK')
         else:
             # Case B — Direct service/expense: hit expense account immediately
             debit_code = get_expense_code(bill.category)
@@ -562,7 +600,9 @@ def post_ap_bill(bill):
                 (ap_vendors, 0,      amount, f"Bill from {bill.vendor.name}"),
             ]
             description = f"AP Bill — {bill.vendor.name} — {bill.bill_number}"
-            bill_cc = _cc_for_expense_category(getattr(bill, 'category', 'EXP_OTHER') or 'EXP_OTHER')
+            bill_cat = getattr(bill, 'category', 'EXP_OTHER') or 'EXP_OTHER'
+            bill_cc = _cc_for_expense_category(bill_cat)
+            bill_op = _op_for_key(bill_cat, 'EXPENSE')
 
         _create_entry(
             date=bill.bill_date,
@@ -573,6 +613,7 @@ def post_ap_bill(bill):
             lines=lines,
             user=bill.approved_by,
             cost_center=bill_cc,
+            operation=bill_op,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for AP bill {bill.pk}: {e}")
@@ -629,6 +670,7 @@ def post_cash_to_bank(deposit, user=None):
                 (get_system_account('CASH_SAFE'), 0, deposit.amount, "Cash withdrawn from safe"),
             ],
             user=user,
+            operation=_op_for_key('CASH_DEPOSIT', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash-to-bank {deposit.pk}: {e}")
@@ -802,6 +844,7 @@ def post_asset_disposal(disposal, user=None):
             source_id=disposal.pk,
             lines=lines,
             user=user,
+            operation=_op_for_key('ASSET_DISPOSAL', 'ASSET'),
         )
         if entry:
             disposal.journal_entry = entry
@@ -869,6 +912,7 @@ def post_refund(refund, user=None):
             lines=lines,
             user=user or refund.processed_by,
             cost_center=_cc_for_service_category(dominant_cat),
+            operation=_op_for_key('PATIENT_REFUND', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for refund {refund.pk}: {e}")
@@ -1067,6 +1111,8 @@ def post_petty_cash_entry(entry, user=None):
             source_id=entry.pk,
             lines=lines,
             user=user or entry.created_by,
+            operation=_op_for_key(entry.category, 'EXPENSE') if entry.entry_type == 'DEBIT'
+                      else _op_for_key('CASH_FLOAT', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for petty cash entry {entry.pk}: {e}")
@@ -1138,6 +1184,7 @@ def post_cash_transfer(transfer, user=None):
             source_id=transfer.pk,
             lines=lines,
             user=user or transfer.confirmed_by,
+            operation=_op_for_key('CASH_TRANSFER', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash transfer {transfer.pk}: {e}")
@@ -1205,6 +1252,7 @@ def post_insurance_invoice_split(invoice, user=None):
             lines.append((get_revenue_code('OTHER'), 0, amount,
                           f"Invoice {invoice.invoice_number}"))
 
+        dominant_cat_ins = _dominant_category(item_list) if item_list else 'OTHER'
         return _create_entry(
             date=invoice.issue_date,
             description=f"Invoice issued (insurance split) — {invoice.invoice_number} — {invoice.patient.full_name}",
@@ -1213,6 +1261,8 @@ def post_insurance_invoice_split(invoice, user=None):
             source_id=invoice.pk,
             lines=lines,
             user=user or getattr(invoice, 'created_by', None),
+            cost_center=_cc_for_service_category(dominant_cat_ins),
+            operation=_op_for_key(dominant_cat_ins, 'REVENUE'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for insurance invoice split {invoice.pk}: {e}")
@@ -1360,6 +1410,7 @@ def post_cash_variance(variance, user=None):
             source_id=variance.pk,
             lines=lines,
             user=user or variance.resolved_by,
+            operation=_op_for_key('ADJUSTMENT', 'YEAR_END'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash variance {variance.pk}: {e}")
@@ -1414,6 +1465,13 @@ def post_pharmacy_cogs(dispensing_item, user=None):
         if amount <= 0:
             return None
 
+        # Determine if dispensed from theatre location (OT) or regular pharmacy
+        _loc_type = None
+        try:
+            _loc_type = dispensing_item.dispensing.location.location_type
+        except Exception:
+            pass
+        _pharma_stock_op_key = 'STOCK_OUT_OT' if _loc_type == 'THEATRE' else 'STOCK_OUT_PHARMA'
         return _create_entry(
             date=dispensing_item.dispensing.dispensed_at.date()
                 if hasattr(dispensing_item.dispensing, 'dispensed_at') and dispensing_item.dispensing.dispensed_at
@@ -1429,6 +1487,7 @@ def post_pharmacy_cogs(dispensing_item, user=None):
                  f"Stock reduction — {drug.name} x{qty}"),
             ],
             user=user,
+            operation=_op_for_key(_pharma_stock_op_key, 'STOCK'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for pharmacy COGS {dispensing_item.pk}: {e}")
@@ -1482,6 +1541,7 @@ def post_pharmacy_transfer(transfer, user=None):
                  f"Transfer OUT to {transfer.to_location.name}"),
             ],
             user=user,
+            operation=_op_for_key('STOCK_TRANSFER', 'STOCK'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for pharmacy transfer {transfer.pk}: {e}")
@@ -1518,6 +1578,7 @@ def post_otc_sale(dispensing, user=None):
                  f"Pharmacy revenue — {dispensing.customer_name or 'Walk-in'}"),
             ],
             user=user,
+            operation=_op_for_key('PHARMACY', 'REVENUE'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for OTC sale {dispensing.pk}: {e}")
@@ -1580,6 +1641,8 @@ def post_stock_adjustment(adjustment, user=None):
             source_id=adjustment.pk,
             lines=lines,
             user=user or adjustment.created_by,
+            operation=_op_for_key('EXPIRED_STOCK', 'STOCK') if adjustment.quantity_change < 0
+                      else _op_for_key('STOCK_IN_PHARMACY', 'STOCK'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock adjustment {adjustment.pk}: {e}")
@@ -1643,6 +1706,7 @@ def post_optical_cogs(order, user=None):
             source_id=order.pk,
             lines=lines_debit + lines_credit,
             user=user,
+            operation=_op_for_key('STOCK_OUT_OPTICAL', 'STOCK'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for optical COGS order {order.pk}: {e}")
@@ -1678,6 +1742,7 @@ def post_optical_stock_receipt(frame, quantity, unit_cost, supplier_ref='', user
                  f"Payable to supplier — {supplier_ref or 'N/A'}"),
             ],
             user=user,
+            operation=_op_for_key('STOCK_IN_OPTICAL', 'STOCK'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for optical stock receipt {frame.pk}: {e}")
@@ -1742,6 +1807,7 @@ def post_cash_withdrawal(withdrawal, user=None):
             source_id=withdrawal.pk,
             lines=lines,
             user=user,
+            operation=_op_for_key('CASH_WITHDRAW', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash withdrawal {withdrawal.pk}: {e}")
@@ -1792,6 +1858,7 @@ def post_desk_supply(supply, user=None):
             source_id=supply.pk,
             lines=lines,
             user=user,
+            operation=_op_for_key('CASH_FLOAT', 'CASH'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for desk supply {supply.pk}: {e}")

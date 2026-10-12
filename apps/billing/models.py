@@ -1439,6 +1439,10 @@ class JournalEntry(AuditModel):
     cost_center  = models.ForeignKey(CostCenter, on_delete=models.SET_NULL, null=True, blank=True,
                     related_name='journal_entries',
                     help_text='Cost center for departmental cost allocation')
+    # Operation type (TurboClinic-style: 112 Encaissements Patient, 122 Ventes Pharmacie, etc.)
+    operation    = models.ForeignKey('BillingOperationCC', on_delete=models.SET_NULL, null=True, blank=True,
+                    related_name='journal_entries',
+                    help_text='TurboClinic operation code auto-tagged on every GL entry')
     # 3-Tier Approval Workflow
     status       = models.CharField(max_length=10, choices=JournalEntryStatus.choices,
                     default=JournalEntryStatus.POSTED,
