@@ -3080,13 +3080,25 @@ class BillingOperationCC(AuditModel):
     cost center.  Finance Director can reassign cost centers at any time via
     the Operations → Cost Center setup page.
 
-    Revenue operations use codes 101-199.
-    Expense operations use codes 201-299.
+    Operation codes follow the same convention as TurboClinic (the previous
+    hospital system), making migration and staff training easier:
+      100-118: Cash desk operations
+      119-130: Revenue / sales operations
+      133-156: Stock movements (entries, exits, transfers, inventory)
+      160-166: Asset operations (depreciation, disposal)
+      170-999: Proforma, misc, year-end closing
+      T001-T00x: Per-bank-account operations
     """
 
     class Group(models.TextChoices):
-        REVENUE = 'REVENUE', 'Revenue Operation'
-        EXPENSE = 'EXPENSE', 'Expense Operation'
+        CASH      = 'CASH',      'Cash Desk Operations'
+        REVENUE   = 'REVENUE',   'Revenue Sales'
+        EXPENSE   = 'EXPENSE',   'Expense / Purchases'
+        STOCK     = 'STOCK',     'Stock Movements'
+        INVENTORY = 'INVENTORY', 'Inventory Count'
+        ASSET     = 'ASSET',     'Asset Operations'
+        BANK      = 'BANK',      'Bank Operations'
+        YEAR_END  = 'YEAR_END',  'Year-End & Special'
 
     operation_code = models.CharField(
         max_length=20, unique=True,
@@ -3098,7 +3110,7 @@ class BillingOperationCC(AuditModel):
         help_text='Internal category code matched by gl_service, e.g. "CONSULT", "DRUGS"',
     )
     group          = models.CharField(
-        max_length=10, choices=Group.choices, default=Group.REVENUE,
+        max_length=12, choices=Group.choices, default=Group.REVENUE,
     )
     cost_center    = models.ForeignKey(
         'CostCenter',

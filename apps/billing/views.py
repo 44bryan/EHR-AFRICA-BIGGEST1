@@ -6636,22 +6636,39 @@ def operation_cc_mapping(request):
                 try:
                     new_cc = CostCenter.objects.get(pk=int(val), is_active=True, is_deleted=False)
                 except (CostCenter.DoesNotExist, ValueError):
-                    new_cc = op.cost_center  # keep existing if invalid
+                    new_cc = op.cost_center
             if op.cost_center != new_cc:
                 op.cost_center = new_cc
                 op.save(update_fields=['cost_center', 'updated_at'])
         saved = True
-        # Refresh after save
         operations = list(BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'sort_order'))
 
-    revenue_ops = [o for o in operations if o.group == 'REVENUE']
-    expense_ops = [o for o in operations if o.group == 'EXPENSE']
+    # Ordered group display config: (group_key, label, badge_class, description)
+    GROUP_META = [
+        ('CASH',      'Cash Desk Operations',   'bg-secondary',        '100-series — Opening/closing, float, deposits, withdrawals, inter-desk transfers, patient receipts'),
+        ('REVENUE',   'Revenue Sales',          'bg-success',          '119-130 — Sales per store: OPD, Pharmacy, Optique, OT, Lab, IPD, Registration'),
+        ('EXPENSE',   'Expense / Purchases',    'bg-danger',           '201-210 — Drug purchases, supplies, utilities, salaries, equipment, admin costs'),
+        ('STOCK',     'Stock Movements',        'bg-warning text-dark','133-300 — Stock entries, exits, transfers per department/store'),
+        ('INVENTORY', 'Inventory Count',        'bg-purple',           '150-155 — Physical inventory counts per store'),
+        ('ASSET',     'Asset Operations',       'bg-dark',             '160-166 — Depreciation, asset disposal, asset transfer'),
+        ('BANK',      'Bank Operations',        'bg-info text-dark',   'T001-T007 — Per-bank operations: SIB, CBM, LCIF, OPIC, ORBIS, LCIF-DR, GIZ Solar'),
+        ('YEAR_END',  'Year-End & Special',     'bg-primary',          '170-999 — Proforma advance, misc operations, year-end closing, adjustments'),
+    ]
+
+    grouped_ops = {}
+    for op in operations:
+        grouped_ops.setdefault(op.group, []).append(op)
+
+    groups = [
+        (key, label, badge, desc, grouped_ops.get(key, []))
+        for key, label, badge, desc in GROUP_META
+    ]
 
     return render(request, 'billing/operation_cc_mapping.html', {
-        'revenue_ops':  revenue_ops,
-        'expense_ops':  expense_ops,
+        'groups':       groups,
         'cost_centers': cost_centers,
         'saved':        saved,
+        'total_ops':    len(operations),
     })
 
 
