@@ -62,12 +62,26 @@ def _get_account(code):
         return None
 
 
+def _op_for_code(op_code):
+    """Look up BillingOperationCC by operation_code. Returns instance or None."""
+    if not op_code:
+        return None
+    try:
+        from apps.billing.models import BillingOperationCC
+        return BillingOperationCC.objects.filter(
+            operation_code=str(op_code), is_deleted=False
+        ).first()
+    except Exception:
+        return None
+
+
 def _create_entry(date, description, reference, source_type, source_id, lines,
-                  user=None, cost_center=None):
+                  user=None, cost_center=None, operation=None):
     """
     Create a balanced JournalEntry with the given lines.
     lines = list of (account_code, debit, credit, description)
     cost_center: CostCenter instance — auto-resolved from store location.
+    operation: BillingOperationCC instance — TurboClinic operation code tag.
     """
     from apps.billing.models import JournalEntry, JournalLine
     resolved = []
@@ -95,6 +109,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
         is_posted=True,
         created_by=user,
         cost_center=cost_center,
+        operation=operation,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
         JournalLine.objects.create(
@@ -244,6 +259,7 @@ def post_stock_receipt(grn, user=None):
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=_op_for_code('141'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for GRN {grn.pk}: {e}")
@@ -302,6 +318,7 @@ def post_stock_issue(requisition, user=None):
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=_op_for_code('142'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for requisition {requisition.pk}: {e}")
@@ -354,6 +371,7 @@ def post_stock_disposal(disposal, user=None):
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=_op_for_code('144'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for disposal {disposal.pk}: {e}")
@@ -407,6 +425,7 @@ def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_typ
             if first_item_obj:
                 cost_center = _cost_center_for_item(first_item_obj)
 
+        op_billing = _op_for_code(operation_type.code) if operation_type else None
         return _create_entry(
             date=entry_date,
             description=f"Stock entry — {entry_ref}",
@@ -416,6 +435,7 @@ def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_typ
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=op_billing,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock entry {entry_ref}: {e}")
@@ -469,6 +489,7 @@ def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, opera
             if first_item_obj:
                 cost_center = _cost_center_for_item(first_item_obj)
 
+        op_billing = _op_for_code(operation_type.code) if operation_type else None
         return _create_entry(
             date=exit_date,
             description=f"Stock exit — {exit_ref} — {reason}",
@@ -478,6 +499,7 @@ def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, opera
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=op_billing,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock exit {exit_ref}: {e}")
@@ -508,6 +530,7 @@ def post_stock_adjustment(item, quantity, unit_cost, adj_date, reference, reason
                 (stock_code, 0, amount, f"Adjustment (-): {item.name} x{abs(quantity)}"),
             ]
 
+        adj_op_code = '133' if quantity > 0 else '142'
         return _create_entry(
             date=adj_date,
             description=f"Stock adjustment — {item.name} — {reason or reference}",
@@ -517,6 +540,7 @@ def post_stock_adjustment(item, quantity, unit_cost, adj_date, reference, reason
             lines=lines,
             user=user,
             cost_center=_cost_center_for_item(item),
+            operation=_op_for_code(adj_op_code),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock adjustment {reference}: {e}")
@@ -575,6 +599,7 @@ def post_stock_count_variance(stock_count, user=None):
             lines=lines,
             user=user,
             cost_center=store_cc,
+            operation=_op_for_code('144'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock count {stock_count.pk}: {e}")
@@ -631,6 +656,7 @@ def post_inter_store_transfer(transfer, user=None):
             lines=lines,
             user=user,
             cost_center=_cost_center_for_store(transfer.from_location),
+            operation=_op_for_code('156'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for transfer {transfer.pk}: {e}")
@@ -689,6 +715,7 @@ def post_department_return(dept_return, user=None):
             lines=lines,
             user=user,
             cost_center=cost_center,
+            operation=_op_for_code('133'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for return {dept_return.pk}: {e}")
