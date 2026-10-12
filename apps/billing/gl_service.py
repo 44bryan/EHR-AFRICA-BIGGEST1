@@ -199,10 +199,12 @@ def _get_account(code):
         return None
 
 
-def _create_entry(date, description, reference, source_type, source_id, lines, user=None):
+def _create_entry(date, description, reference, source_type, source_id, lines,
+                  user=None, cost_center=None):
     """
     Create a balanced JournalEntry with the given lines.
     lines = list of (account_code, debit, credit, description)
+    cost_center: billing.CostCenter instance — auto-tagged from store location.
     Returns the JournalEntry or None if accounts not found / not balanced.
     """
     from apps.billing.models import JournalEntry, JournalLine
@@ -233,6 +235,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
         source_id=str(source_id),
         is_posted=True,
         created_by=user,
+        cost_center=cost_center,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
         JournalLine.objects.create(
@@ -417,23 +420,46 @@ def post_ap_payment(ap_payment):
 
 def post_ap_bill(bill):
     """
-    Post a vendor bill receipt to the GL.
-        Dr  Expense Account  |  Cr  AP Vendors (401000)
+    Post a vendor bill to the GL — OHADA 3-way match compliant.
+
+    A) Bill linked to a GRN (goods purchase) → clears 408100 accrual:
+          Dr  408100 (Supplier Awaiting Invoice)   ← clears GRN accrual
+          Cr  401xxx (AP Vendors)                  ← formal payable recorded
+
+    B) Bill NOT linked to a GRN (services, utilities, consultancy) → direct expense:
+          Dr  Expense Account (Class 6)
+          Cr  401xxx (AP Vendors)
     """
     try:
-        debit_code = get_expense_code(bill.category)
-        if bill.gl_account:
-            debit_code = bill.gl_account.code
         amount = Decimal(str(bill.amount_due))
-
         ap_vendors = get_system_account('AP_SUPPLIER') or get_system_account('AP_VENDORS') or AP_VENDORS
-        lines = [
-            (debit_code, amount, 0,      bill.description),
-            (ap_vendors, 0,      amount, f"Bill from {bill.vendor.name}"),
-        ]
+
+        if bill.grn_id:
+            # Case A — GRN-linked: clear the 408100 accrual posted at stock receipt
+            lines = [
+                ('408100', amount, 0,
+                 f"GRN match — {bill.grn.grn_number} — {bill.description}"),
+                (ap_vendors, 0, amount,
+                 f"Bill from {bill.vendor.name} — {bill.bill_number}"),
+            ]
+            description = (
+                f"AP Bill (GRN match) — {bill.vendor.name} — {bill.bill_number} "
+                f"— GRN {bill.grn.grn_number}"
+            )
+        else:
+            # Case B — Direct service/expense: hit expense account immediately
+            debit_code = get_expense_code(bill.category)
+            if bill.gl_account:
+                debit_code = bill.gl_account.code
+            lines = [
+                (debit_code, amount, 0,  bill.description),
+                (ap_vendors, 0,      amount, f"Bill from {bill.vendor.name}"),
+            ]
+            description = f"AP Bill — {bill.vendor.name} — {bill.bill_number}"
+
         _create_entry(
             date=bill.bill_date,
-            description=f"AP Bill received — {bill.vendor.name} — {bill.bill_number}",
+            description=description,
             reference=bill.vendor_ref or bill.bill_number,
             source_type='ap_bill',
             source_id=bill.pk,

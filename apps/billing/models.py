@@ -1588,6 +1588,14 @@ class APBill(AuditModel):
         GLAccount, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='ap_bills', help_text='Expense GL account to debit'
     )
+    # 3-way match link: when set, GL posting clears 408100 (GRN accrual) instead
+    # of hitting the expense account directly.
+    grn          = models.ForeignKey(
+        'inventory.GoodsReceivedNote', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ap_bills',
+        help_text='Link to GRN for 3-way match. When set, GL posts Dr 408100 / Cr 401 '
+                  'to clear the GRN accrual instead of hitting the expense account.',
+    )
     attachment_ref = models.CharField(max_length=200, blank=True,
                       help_text='Physical receipt / invoice filing reference')
     approved_by  = models.ForeignKey(
@@ -3062,4 +3070,3 @@ class CashDeskSupply(AuditModel):
             ).count() + 1
             self.supply_number = f'APC-{today.strftime("%Y%m%d")}-{count:04d}'
         super().save(*args, **kwargs)
-

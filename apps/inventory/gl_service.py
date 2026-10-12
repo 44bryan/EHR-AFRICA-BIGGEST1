@@ -62,10 +62,12 @@ def _get_account(code):
         return None
 
 
-def _create_entry(date, description, reference, source_type, source_id, lines, user=None):
+def _create_entry(date, description, reference, source_type, source_id, lines,
+                  user=None, cost_center=None):
     """
     Create a balanced JournalEntry with the given lines.
     lines = list of (account_code, debit, credit, description)
+    cost_center: CostCenter instance — auto-resolved from store location.
     """
     from apps.billing.models import JournalEntry, JournalLine
     resolved = []
@@ -92,6 +94,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
         source_id=str(source_id),
         is_posted=True,
         created_by=user,
+        cost_center=cost_center,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
         JournalLine.objects.create(
@@ -105,18 +108,77 @@ def _create_entry(date, description, reference, source_type, source_id, lines, u
     return entry
 
 
+def _category_gl(item):
+    """Return the ItemCategoryGL mapping for this item's category, or None."""
+    try:
+        from apps.inventory.models import ItemCategoryGL
+        return ItemCategoryGL.objects.filter(category=item.category).select_related(
+            'inventory_account', 'cogs_account', 'loss_account'
+        ).first()
+    except Exception:
+        return None
+
+
 def _stock_code_for_item(item):
     """
     Get the OHADA Class 3 stock account code for an inventory item.
     Priority:
-      1. If item is assigned to a StoreLocation with gl_account_code → use that
-      2. Fall back to category-based mapping (STOCK_ACCOUNT_MAP)
-    This ensures each store (Pharmacy 321, Optical 322, Theatre 323, General 311)
-    posts to its own sub-account under Class 3.
+      1. ItemCategoryGL.inventory_account (set by Finance Director — highest authority)
+      2. StoreLocation.gl_account_code (store-level override)
+      3. STOCK_ACCOUNT_MAP fallback (hardcoded defaults)
     """
+    mapping = _category_gl(item)
+    if mapping and mapping.inventory_account:
+        return mapping.inventory_account.code
     if hasattr(item, 'store_location') and item.store_location and item.store_location.gl_account_code:
         return item.store_location.gl_account_code
     return STOCK_ACCOUNT_MAP.get(item.category, '33')
+
+
+def _cogs_code_for_item(item):
+    """
+    Get the COGS / variation-in-stock account code for an item.
+    Priority:
+      1. ItemCategoryGL.cogs_account
+      2. Default VARIATION_IN_STOCK (603)
+    """
+    mapping = _category_gl(item)
+    if mapping and mapping.cogs_account:
+        return mapping.cogs_account.code
+    return VARIATION_IN_STOCK
+
+
+def _loss_code_for_item(item):
+    """
+    Get the loss/write-off account code for an item (disposal, expiry, variance).
+    Priority:
+      1. ItemCategoryGL.loss_account
+      2. Default STOCK_LOSS_ACCOUNT (658)
+    """
+    mapping = _category_gl(item)
+    if mapping and mapping.loss_account:
+        return mapping.loss_account.code
+    return STOCK_LOSS_ACCOUNT
+
+
+def _cost_center_for_item(item):
+    """Return the CostCenter linked to this item's store location, or None."""
+    try:
+        if item and hasattr(item, 'store_location') and item.store_location:
+            return item.store_location.cost_center
+    except Exception:
+        pass
+    return None
+
+
+def _cost_center_for_store(store):
+    """Return the CostCenter linked to a StoreLocation instance, or None."""
+    try:
+        if store:
+            return store.cost_center
+    except Exception:
+        pass
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -126,9 +188,15 @@ def _stock_code_for_item(item):
 def post_stock_receipt(grn, user=None):
     """
     GL posting when stock is received (GRN accepted + validated by Finance Director).
-    For each accepted GRN item:
-        Dr  Class 3 (Stock account)      →  cost of goods received
-        Cr  603 (Variation in Stock)      →  counterpart
+
+    OHADA 3-way match — goods arrive before supplier invoice:
+        Dr  Class 3 (Stock account)      →  asset in warehouse
+        Cr  408100 (Supplier Awaiting Invoice)  →  accrued liability, invoice pending
+
+    When the supplier invoice (APBill) is later matched to this GRN,
+    post_ap_bill() clears 408100 and records the formal AP creditor:
+        Dr  408100  →  clears the accrual
+        Cr  401xxx  →  AP Vendors (formal payable)
     """
     try:
         from apps.inventory.models import GRNItem
@@ -154,11 +222,18 @@ def post_stock_receipt(grn, user=None):
         if total <= 0 or not lines:
             return None
 
-        # Single credit line for variation in stock
+        # Credit 408100 (Supplier Awaiting Invoice) — accrued liability until
+        # the supplier invoice arrives and is matched to this GRN.
         lines.append((
-            VARIATION_IN_STOCK, 0, total,
-            f"Variation in stock — GRN {grn.grn_number}"
+            '408100', 0, total,
+            f"Supplier awaiting invoice — GRN {grn.grn_number} — PO {grn.purchase_order.po_number}"
         ))
+
+        # Cost center: from the receiving store of the first item
+        cost_center = None
+        first_item = items.first()
+        if first_item and first_item.po_item:
+            cost_center = _cost_center_for_item(first_item.po_item.item)
 
         return _create_entry(
             date=grn.received_date,
@@ -168,6 +243,7 @@ def post_stock_receipt(grn, user=None):
             source_id=grn.pk,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for GRN {grn.pk}: {e}")
@@ -188,6 +264,7 @@ def post_stock_issue(requisition, user=None):
         lines = []
         total = Decimal('0')
 
+        cost_center = None
         for ri in items:
             qty = ri.quantity_issued or 0
             if qty <= 0:
@@ -198,6 +275,8 @@ def post_stock_issue(requisition, user=None):
                 continue
             total += amount
             stock_code = _stock_code_for_item(ri.item)
+            if cost_center is None:
+                cost_center = _cost_center_for_item(ri.item)
             lines.append((
                 stock_code, 0, amount,
                 f"Issued: {ri.item.name} x{qty} to {requisition.department}"
@@ -206,8 +285,11 @@ def post_stock_issue(requisition, user=None):
         if total <= 0 or not lines:
             return None
 
+        # Use item-specific COGS code for first item; fall back to default 603
+        first_item_obj = next((ri.item for ri in items if (ri.quantity_issued or 0) > 0), None)
+        cogs_code = _cogs_code_for_item(first_item_obj) if first_item_obj else VARIATION_IN_STOCK
         lines.insert(0, (
-            VARIATION_IN_STOCK, total, 0,
+            cogs_code, total, 0,
             f"Stock issued — REQ {requisition.req_number}"
         ))
 
@@ -219,6 +301,7 @@ def post_stock_issue(requisition, user=None):
             source_id=requisition.pk,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for requisition {requisition.pk}: {e}")
@@ -237,12 +320,17 @@ def post_stock_disposal(disposal, user=None):
         lines = []
         total = Decimal('0')
 
+        cost_center = None
+        first_item_obj = None
         for di in items:
             amount = Decimal(str(di.quantity)) * Decimal(str(di.unit_cost or 0))
             if amount <= 0:
                 continue
             total += amount
             stock_code = _stock_code_for_item(di.item)
+            if cost_center is None:
+                cost_center = _cost_center_for_item(di.item)
+                first_item_obj = di.item
             lines.append((
                 stock_code, 0, amount,
                 f"Disposed: {di.item.name} x{di.quantity} ({disposal.get_reason_display()})"
@@ -251,8 +339,9 @@ def post_stock_disposal(disposal, user=None):
         if total <= 0 or not lines:
             return None
 
+        loss_code = _loss_code_for_item(first_item_obj) if first_item_obj else STOCK_LOSS_ACCOUNT
         lines.insert(0, (
-            VARIATION_IN_STOCK, total, 0,
+            loss_code, total, 0,
             f"Stock disposal — {disposal.disposal_number}"
         ))
 
@@ -264,13 +353,14 @@ def post_stock_disposal(disposal, user=None):
             source_id=disposal.pk,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for disposal {disposal.pk}: {e}")
         return None
 
 
-def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_type=None):
+def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_type=None, cost_center=None):
     """
     GL posting for direct stock entry (walk-in delivery, donation, etc.).
     items_data = list of (item, quantity, unit_cost) tuples.
@@ -311,6 +401,12 @@ def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_typ
             f"Variation in stock — Entry {entry_ref}"
         ))
 
+        # Auto-resolve cost_center from first item if not supplied
+        if cost_center is None:
+            first_item_obj = next((item for item, _, _ in items_data), None)
+            if first_item_obj:
+                cost_center = _cost_center_for_item(first_item_obj)
+
         return _create_entry(
             date=entry_date,
             description=f"Stock entry — {entry_ref}",
@@ -319,13 +415,14 @@ def post_stock_entry(entry_ref, items_data, entry_date, user=None, operation_typ
             source_id=entry_ref,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock entry {entry_ref}: {e}")
         return None
 
 
-def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, operation_type=None):
+def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, operation_type=None, cost_center=None):
     """
     GL posting for direct stock exit (patient use, maintenance, etc.).
     items_data = list of (item, quantity, unit_cost) tuples.
@@ -366,6 +463,12 @@ def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, opera
             f"Variation in stock — Exit {exit_ref}"
         ))
 
+        # Auto-resolve cost_center from first item if not supplied
+        if cost_center is None:
+            first_item_obj = next((item for item, _, _ in items_data), None)
+            if first_item_obj:
+                cost_center = _cost_center_for_item(first_item_obj)
+
         return _create_entry(
             date=exit_date,
             description=f"Stock exit — {exit_ref} — {reason}",
@@ -374,6 +477,7 @@ def post_stock_exit(exit_ref, items_data, exit_date, reason='', user=None, opera
             source_id=exit_ref,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock exit {exit_ref}: {e}")
@@ -412,6 +516,7 @@ def post_stock_adjustment(item, quantity, unit_cost, adj_date, reference, reason
             source_id=reference,
             lines=lines,
             user=user,
+            cost_center=_cost_center_for_item(item),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock adjustment {reference}: {e}")
@@ -454,6 +559,13 @@ def post_stock_count_variance(stock_count, user=None):
         if not lines:
             return None
 
+        # Cost center from stock count's store location (if stock_count has one)
+        store_cc = None
+        if hasattr(stock_count, 'store_location') and stock_count.store_location:
+            store_cc = _cost_center_for_store(stock_count.store_location)
+        elif items.exists():
+            store_cc = _cost_center_for_item(items.first().item)
+
         return _create_entry(
             date=stock_count.count_date,
             description=f"Stock count variance — {stock_count.count_number}",
@@ -462,6 +574,7 @@ def post_stock_count_variance(stock_count, user=None):
             source_id=stock_count.pk,
             lines=lines,
             user=user,
+            cost_center=store_cc,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for stock count {stock_count.pk}: {e}")
@@ -517,6 +630,7 @@ def post_inter_store_transfer(transfer, user=None):
             source_id=transfer.pk,
             lines=lines,
             user=user,
+            cost_center=_cost_center_for_store(transfer.from_location),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for transfer {transfer.pk}: {e}")
@@ -537,6 +651,8 @@ def post_department_return(dept_return, user=None):
         lines = []
         total = Decimal('0')
 
+        cost_center = None
+        first_item_obj = None
         for dri in items:
             qty = dri.quantity or 0
             if qty <= 0:
@@ -547,6 +663,9 @@ def post_department_return(dept_return, user=None):
                 continue
             total += amount
             stock_code = _stock_code_for_item(dri.item)
+            if cost_center is None:
+                cost_center = _cost_center_for_item(dri.item)
+                first_item_obj = dri.item
             lines.append((
                 stock_code, amount, 0,
                 f"Returned: {dri.item.name} x{qty} (good condition)"
@@ -555,8 +674,9 @@ def post_department_return(dept_return, user=None):
         if total <= 0 or not lines:
             return None
 
+        cogs_code = _cogs_code_for_item(first_item_obj) if first_item_obj else VARIATION_IN_STOCK
         lines.append((
-            VARIATION_IN_STOCK, 0, total,
+            cogs_code, 0, total,
             f"Stock return — {dept_return.return_number}"
         ))
 
@@ -568,6 +688,7 @@ def post_department_return(dept_return, user=None):
             source_id=dept_return.pk,
             lines=lines,
             user=user,
+            cost_center=cost_center,
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for return {dept_return.pk}: {e}")
