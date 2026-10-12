@@ -3208,20 +3208,19 @@ def stock_exit_create(request):
             except StoreLocation.DoesNotExist:
                 _exit_store_code = 'GEN'
             exit_ref = _next_doc_number('EXIT', _exit_store_code)
-            if total_value > 0:
-                op_label = ''
-                if op_type_id:
-                    op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
-                    if op_obj:
-                        op_label = f' [OP:{op_obj.code}]'
-                _create_stock_validation(
-                    validation_type=StockValidationType.EXIT,
-                    source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
-                    reference=exit_ref,
-                    description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s){op_label}',
-                    total_value=total_value, user=request.user,
-                    operation_type_id=op_type_id or None,
-                )
+            op_label = ''
+            if op_type_id:
+                op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
+                if op_obj:
+                    op_label = f' [OP:{op_obj.code}]'
+            _create_stock_validation(
+                validation_type=StockValidationType.EXIT,
+                source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
+                reference=exit_ref,
+                description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s){op_label}',
+                total_value=total_value, user=request.user,
+                operation_type_id=op_type_id or None,
+            )
             messages.success(request, f'{issued_count} item(s) issued — awaiting GL validation.')
         else:
             messages.warning(request, 'No items were issued — check stock availability.')
@@ -3386,20 +3385,19 @@ def stock_entry_create(request):
             except StoreLocation.DoesNotExist:
                 _entry_store_code = 'GEN'
             entry_ref = _next_doc_number('ENTRY', _entry_store_code)
-            if total_value > 0:
-                op_label = ''
-                if op_type_id:
-                    op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
-                    if op_obj:
-                        op_label = f' [OP:{op_obj.code}]'
-                _create_stock_validation(
-                    validation_type=StockValidationType.ENTRY,
-                    source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
-                    reference=entry_ref,
-                    description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s){op_label}',
-                    total_value=total_value, user=request.user,
-                    operation_type_id=op_type_id or None,
-                )
+            op_label = ''
+            if op_type_id:
+                op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
+                if op_obj:
+                    op_label = f' [OP:{op_obj.code}]'
+            _create_stock_validation(
+                validation_type=StockValidationType.ENTRY,
+                source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
+                reference=entry_ref,
+                description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s){op_label}',
+                total_value=total_value, user=request.user,
+                operation_type_id=op_type_id or None,
+            )
             messages.success(request, f'{received_count} item(s) received — awaiting GL validation.')
         return redirect('inventory:stock_entry_list')
 
@@ -3621,14 +3619,22 @@ def stock_validation_approve(request, validation_id):
 
         elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT):
             op_type = sv.operation_type  # StockOperationType or None
-            if op_type and op_type.debit_account and op_type.credit_account and sv.total_value > 0:
-                # Fast path: operation type has explicit GL accounts + total_value already computed.
-                # This correctly handles multi-item entries (total_value = sum of all items at save time).
+            # Recalculate amount from movement's CURRENT unit_cost.
+            # Handles the case where price was 0 at entry time but set before validation.
+            m_ref = StockMovement.objects.filter(pk=sv.source_id).select_related('item').first()
+            live_total = sv.total_value
+            if m_ref and (live_total == 0):
+                live_total = abs(m_ref.quantity or 0) * (m_ref.item.unit_cost or 0)
+
+            if op_type and op_type.debit_account and op_type.credit_account and live_total > 0:
+                # Fast path: operation type has explicit GL accounts + computed total.
                 from apps.inventory.gl_service import _create_entry, _op_for_code
+                from decimal import Decimal as _D
+                amt = _D(str(live_total))
                 lines_direct = [
-                    (op_type.debit_account.code, sv.total_value, 0,
+                    (op_type.debit_account.code, amt, 0,
                      f"{sv.get_validation_type_display()} — {sv.reference}"),
-                    (op_type.credit_account.code, 0, sv.total_value,
+                    (op_type.credit_account.code, 0, amt,
                      f"{sv.get_validation_type_display()} — {sv.reference}"),
                 ]
                 journal_entry = _create_entry(
@@ -3641,24 +3647,21 @@ def stock_validation_approve(request, validation_id):
                     user=request.user,
                     operation=_op_for_code(op_type.code),
                 )
-            else:
-                # Fallback: look up first movement and post at item level
-                movements = StockMovement.objects.filter(pk=sv.source_id).select_related('item')
-                if movements.exists():
-                    m = movements.first()
-                    items_data = [(m.item, abs(m.quantity), m.item.unit_cost)]
-                    if sv.validation_type == StockValidationType.ENTRY:
-                        journal_entry = post_stock_entry(
-                            sv.reference, items_data,
-                            m.created_at.date(), user=request.user,
-                            operation_type=op_type,
-                        )
-                    else:
-                        journal_entry = post_stock_exit(
-                            sv.reference, items_data,
-                            m.created_at.date(), reason=sv.description, user=request.user,
-                            operation_type=op_type,
-                        )
+            elif m_ref and live_total > 0:
+                # Fallback: no operation type — use item-level GL mapping
+                items_data = [(m_ref.item, abs(m_ref.quantity), m_ref.item.unit_cost)]
+                if sv.validation_type == StockValidationType.ENTRY:
+                    journal_entry = post_stock_entry(
+                        sv.reference, items_data,
+                        m_ref.created_at.date(), user=request.user,
+                        operation_type=op_type,
+                    )
+                else:
+                    journal_entry = post_stock_exit(
+                        sv.reference, items_data,
+                        m_ref.created_at.date(), reason=sv.description, user=request.user,
+                        operation_type=op_type,
+                    )
 
     except Exception as e:
         messages.error(request, f'GL posting failed: {e}')
