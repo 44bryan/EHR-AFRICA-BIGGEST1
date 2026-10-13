@@ -1312,6 +1312,14 @@ def cashier_pos(request, token_id):
     # Corporate accounts for "Change Billing Type" modal
     _corporate_accounts = _CA.objects.filter(is_deleted=False, is_active=True).order_by('name')
 
+    # Tier enforcement: only accounting/admin roles can transfer a patient to a different tier
+    from apps.accounts.models import UserRole as _UR
+    _tier_change_roles = (
+        _UR.ACCOUNTANT, _UR.SENIOR_ACCOUNTANT, _UR.FINANCE_DIRECTOR,
+        _UR.ADMIN_DIRECTOR, _UR.SUPER_ADMIN, _UR.ADMIN, _UR.MEDICAL_DIRECTOR,
+    )
+    _can_change_tier = request.user.role in _tier_change_roles
+
     return render(request, 'billing/cashier_pos.html', {
         'token': token,
         'patient': patient,
@@ -1346,6 +1354,7 @@ def cashier_pos(request, token_id):
         'insurance_schemes': _insurance_schemes,
         'corporate_accounts': _corporate_accounts,
         'routing_choices': InvoiceRoutingType.choices,
+        'can_change_tier': _can_change_tier,
     })  # end cashier_pos
 
 

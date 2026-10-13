@@ -65,6 +65,7 @@ class InvoiceRoutingType(models.TextChoices):
     PHARMACY  = 'PHARMACY',  'Pharmacy'
     OPTICAL   = 'OPTICAL',   'Optical'
     INSURANCE = 'INSURANCE', 'Insurance / HMO'
+    WALK_IN   = 'WALK_IN',   'Walk-in Client (no QMS token)'
 
 
 class SessionStatus(models.TextChoices):
@@ -318,9 +319,10 @@ class Invoice(AuditModel):
         if not self.invoice_number:
             from django.db import IntegrityError, transaction as _tx
             year = timezone.now().year
+            prefix = 'WI' if self.routing_type == InvoiceRoutingType.WALK_IN else 'INV'
             for _retry in range(20):
                 count = Invoice.objects.filter(created_at__year=year).count() + 1 + _retry
-                self.invoice_number = f"INV-{year}-{count:05d}"
+                self.invoice_number = f"{prefix}-{year}-{count:05d}"
                 try:
                     with _tx.atomic():
                         super().save(*args, **kwargs)

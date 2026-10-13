@@ -427,6 +427,12 @@ class StoreLocation(AuditModel):
         max_length=10, blank=True,
         help_text='OHADA Class 3 GL account code for this store (e.g. 311000, 321000)'
     )
+    cost_center = models.ForeignKey(
+        'billing.CostCenter', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='store_locations',
+        help_text='Cost center for departmental cost allocation. '
+                  'All stock movements at this store are tagged with this CC automatically.',
+    )
     address = models.TextField(blank=True, help_text='Physical location within facility')
     manager = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
@@ -475,6 +481,49 @@ class StoreLocation(AuditModel):
 
     def __str__(self):
         return f"{self.store_code}: {self.name}"
+
+
+# ── Item Category GL Mapping ─────────────────────────────────────────────────
+
+class ItemCategoryGL(AuditModel):
+    """
+    GL account mapping per item category — set ONCE by Finance Director.
+
+    Every stock movement resolves its GL accounts from here automatically:
+      - Inventory account  → Class 3 (Dr on receipt, Cr on issue/COGS)
+      - COGS account       → Class 6 (Dr on dispensing, patient sale, issue to dept)
+      - Loss account       → Class 6 (Dr on disposal, expiry, write-off)
+
+    Users NEVER pick GL accounts during daily operations.
+    Item → inherits category → category has accounts → auto-post.
+    """
+    category = models.CharField(
+        max_length=20, choices=ItemCategory.choices, unique=True,
+        help_text='Item category this mapping applies to.',
+    )
+    inventory_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='category_inventory',
+        help_text='Class 3 stock account — debited on receipt, credited on issue/COGS.',
+    )
+    cogs_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='category_cogs',
+        help_text='Class 6 expense/COGS account — debited when goods leave stock.',
+    )
+    loss_account = models.ForeignKey(
+        'billing.GLAccount', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='category_loss',
+        help_text='Class 6 loss account — debited on disposal, expiry, write-off.',
+    )
+
+    class Meta:
+        ordering = ['category']
+        verbose_name = 'Item Category GL Mapping'
+        verbose_name_plural = 'Item Category GL Mappings'
+
+    def __str__(self):
+        return f"{self.get_category_display()} — GL Mapping"
 
 
 # ── Physical Stock Count ─────────────────────────────────────────────────────

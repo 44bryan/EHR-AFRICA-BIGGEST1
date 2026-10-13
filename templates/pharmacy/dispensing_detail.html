@@ -603,108 +603,15 @@
         <span class="badge bg-light text-muted border px-3 py-1">OR</span>
       </div>
 
-      {# PATH 2: Collect payment directly #}
-      <div class="card border-0 shadow-sm mb-2" id="payment-card">
-        <div class="card-header bg-light border-bottom py-2 d-flex align-items-center gap-2">
-          <span class="badge bg-success px-2 py-1" style="font-size:.7rem;">PATH 2</span>
-          <h6 class="fw-semibold mb-0"><i class="bi bi-cash-coin me-1 text-success"></i>Collect Payment Here</h6>
-        </div>
-        <div class="card-body">
-          <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
-                id="payment-form" onsubmit="return validatePayment()">
-            {% csrf_token %}
-
-            <div class="mb-3">
-              <label class="form-label fw-semibold small">Payment Method</label>
-              <div class="d-flex gap-2 flex-wrap" id="payment-method-btns">
-                {% for val, lbl in payment_methods %}
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn"
-                        data-value="{{ val }}">{{ lbl }}</button>
-                {% empty %}
-                <button type="button" class="btn btn-sm btn-outline-success pay-method-btn active" data-value="CASH"><i class="bi bi-cash-stack me-1"></i>Cash</button>
-                <button type="button" class="btn btn-sm btn-outline-warning pay-method-btn" data-value="MOBILE"><i class="bi bi-phone me-1"></i>Mobile Money</button>
-                <button type="button" class="btn btn-sm btn-outline-primary pay-method-btn" data-value="CARD"><i class="bi bi-credit-card me-1"></i>Card</button>
-                <button type="button" class="btn btn-sm btn-outline-info pay-method-btn" data-value="INSURANCE"><i class="bi bi-shield-check me-1"></i>Insurance</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary pay-method-btn" data-value="TRANSFER"><i class="bi bi-bank me-1"></i>Transfer</button>
-                {% endfor %}
-              </div>
-              <input type="hidden" name="payment_method" id="payment-method-input" value="CASH">
-            </div>
-
-            {# Discount Section #}
-            <div class="mb-3 p-2 rounded" style="background:#fefce8;border:1px solid #fef08a;">
-              <label class="form-label fw-semibold small mb-1"><i class="bi bi-percent me-1"></i>Discount</label>
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="input-group input-group-sm">
-                    <input type="number" name="discount_pct" id="discount-pct"
-                           class="form-control text-center" value="{{ dispensing.discount_pct|default:0 }}"
-                           min="0" max="100" step="0.5" placeholder="0">
-                    <span class="input-group-text">%</span>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="input-group input-group-sm">
-                    <input type="number" name="discount" id="discount-flat"
-                           class="form-control text-center" value="{{ dispensing.discount|floatformat:0|default:0 }}"
-                           min="0" step="100" placeholder="0">
-                    <span class="input-group-text">FCFA</span>
-                  </div>
-                </div>
-              </div>
-              <div class="d-flex justify-content-between mt-1 small">
-                <span class="text-muted">Subtotal: <strong id="subtotal-display">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong></span>
-                <span class="text-dark fw-bold">Net: <strong id="net-display" class="text-success">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong> FCFA</span>
-              </div>
-            </div>
-
-            <div class="mb-2">
-              <label class="form-label fw-semibold small">Amount Received (FCFA)</label>
-              <input type="number" name="amount" id="amount-received"
-                     class="form-control form-control-lg fw-bold text-center"
-                     value="{{ dispensing.total_amount|floatformat:0 }}"
-                     min="0" step="1" required readonly
-                     style="background:#f8fdf8;cursor:default;">
-              {# FCFA denomination buttons — tap bills to accumulate amount #}
-              <div class="d-flex flex-wrap gap-1 mt-2 justify-content-center" id="denom-buttons">
-                <button type="button" class="btn btn-outline-secondary btn-sm fw-bold denom-btn" data-val="100">100</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm fw-bold denom-btn" data-val="500">500</button>
-                <button type="button" class="btn btn-outline-primary btn-sm fw-bold denom-btn" data-val="1000">1,000</button>
-                <button type="button" class="btn btn-outline-primary btn-sm fw-bold denom-btn" data-val="2000">2,000</button>
-                <button type="button" class="btn btn-outline-success btn-sm fw-bold denom-btn" data-val="5000">5,000</button>
-                <button type="button" class="btn btn-success btn-sm fw-bold denom-btn" data-val="10000">10,000</button>
-              </div>
-              <div class="d-flex gap-1 mt-1 justify-content-center">
-                <button type="button" class="btn btn-outline-warning btn-sm small" id="denom-exact"
-                        title="Set to exact total"><i class="bi bi-bullseye me-1"></i>Exact</button>
-                <button type="button" class="btn btn-outline-danger btn-sm small" id="denom-clear"
-                        title="Reset to 0"><i class="bi bi-x-circle me-1"></i>Clear</button>
-              </div>
-            </div>
-
-            {# Change due calculator #}
-            <div class="p-2 rounded mb-3 d-flex justify-content-between align-items-center"
-                 id="change-panel"
-                 style="background:#f0fdf4;border:1px solid #bbf7d0;">
-              <span class="small fw-semibold text-success">Change Due</span>
-              <span class="fw-bold fs-5 text-success" id="change-due-display">0</span>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label fw-semibold small">Reference / Receipt No. <span class="text-muted">(optional)</span></label>
-              <input type="text" name="reference" class="form-control form-control-sm"
-                     placeholder="Mobile money ref, approval code…">
-            </div>
-
-            <div id="payment-blocked-msg" class="alert alert-warning small py-2 d-none">
-              <i class="bi bi-exclamation-triangle me-1"></i>Add at least one drug item before collecting payment.
-            </div>
-
-            <button type="submit" id="collect-btn" class="btn btn-success btn-lg fw-bold w-100">
-              <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
-            </button>
-          </form>
-        </div>
+      {# PATH 2: Collect payment via modal #}
+      <button type="button" class="btn btn-success btn-lg fw-bold w-100 py-3"
+              id="openPayModalBtn"
+              data-bs-toggle="modal" data-bs-target="#payModal"
+              {% if not dispensing.items.count %}disabled{% endif %}>
+        <i class="bi bi-cash-coin me-2 fs-5"></i>Collect Payment
+      </button>
+      <div class="text-muted text-center small mt-2">
+        Select method, enter amount &amp; dispense directly.
       </div>
       {% endif %}
 
@@ -1134,6 +1041,7 @@ function updateTotals(total, count) {
   recalcDiscount();
   const blockedMsg = document.getElementById('payment-blocked-msg');
   if (blockedMsg) blockedMsg.classList.toggle('d-none', count > 0);
+  syncPayBtn();
 }
 
 function resetAddForm() {
@@ -1275,6 +1183,24 @@ document.querySelectorAll('.pay-method-btn').forEach(function (btn) {
 // Activate Cash by default
 const cashBtn = document.querySelector('.pay-method-btn[data-value="CASH"]');
 if (cashBtn) cashBtn.classList.add('active');
+
+// ── Enable/disable "Collect Payment" button as items change ────────────────
+function syncPayBtn() {
+  const btn = document.getElementById('openPayModalBtn');
+  if (btn) btn.disabled = (itemCount === 0);
+}
+
+// ── Sync running total into modal header when modal opens ─────────────────
+const payModalEl = document.getElementById('payModal');
+if (payModalEl) {
+  payModalEl.addEventListener('show.bs.modal', function () {
+    // Refresh the grand total display inside the modal header
+    const modalGt = document.getElementById('modal-grand-total');
+    if (modalGt) modalGt.textContent = Math.round(runningTotal).toLocaleString();
+    // Re-run discount calc so net/amount-received are current
+    recalcDiscount();
+  });
+}
 
 // ── Payment validation ─────────────────────────────────────────────────────
 function validatePayment() {
@@ -1541,6 +1467,171 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
   });
 });
 </script>
+
+{# ── Collect Payment Modal ── #}
+{% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}
+<div class="modal fade" id="payModal" tabindex="-1" aria-labelledby="payModalLabel" aria-modal="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white py-3">
+        <div>
+          <h5 class="modal-title mb-0" id="payModalLabel">
+            <i class="bi bi-cash-coin me-2"></i>Collect Payment
+          </h5>
+          <div class="small opacity-75 mt-1">{{ dispensing.dispensing_number }} — {{ dispensing.customer_name }}</div>
+        </div>
+        <div class="ms-auto text-end me-3">
+          <div class="small opacity-75">Amount Due</div>
+          <div class="fw-bold fs-4" id="modal-grand-total">{{ dispensing.total_amount|floatformat:0|intcomma }}</div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <form method="post" action="{% url 'pharmacy:complete_dispensing' dispensing_id=dispensing.id %}"
+            id="payment-form" onsubmit="return validatePayment()">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="row g-3">
+
+            {# Left column: method + discount + amount #}
+            <div class="col-md-7">
+
+              {# Payment Method #}
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Payment Method</label>
+                <div class="d-flex gap-2 flex-wrap" id="payment-method-btns">
+                  {% for val, lbl in payment_methods %}
+                  <button type="button" class="btn btn-outline-secondary pay-method-btn"
+                          data-value="{{ val }}">{{ lbl }}</button>
+                  {% empty %}
+                  <button type="button" class="btn btn-outline-success pay-method-btn active" data-value="CASH"><i class="bi bi-cash-stack me-1"></i>Cash</button>
+                  <button type="button" class="btn btn-outline-warning pay-method-btn" data-value="MOBILE"><i class="bi bi-phone me-1"></i>Mobile Money</button>
+                  <button type="button" class="btn btn-outline-primary pay-method-btn" data-value="CARD"><i class="bi bi-credit-card me-1"></i>Card</button>
+                  <button type="button" class="btn btn-outline-info pay-method-btn" data-value="INSURANCE"><i class="bi bi-shield-check me-1"></i>Insurance</button>
+                  <button type="button" class="btn btn-outline-secondary pay-method-btn" data-value="TRANSFER"><i class="bi bi-bank me-1"></i>Transfer</button>
+                  {% endfor %}
+                </div>
+                <input type="hidden" name="payment_method" id="payment-method-input" value="CASH">
+              </div>
+
+              {# Discount #}
+              <div class="mb-3 p-3 rounded" style="background:#fefce8;border:1px solid #fef08a;">
+                <label class="form-label fw-semibold mb-2"><i class="bi bi-percent me-1"></i>Discount</label>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <div class="input-group">
+                      <input type="number" name="discount_pct" id="discount-pct"
+                             class="form-control text-center" value="{{ dispensing.discount_pct|default:0 }}"
+                             min="0" max="100" step="0.5" placeholder="0">
+                      <span class="input-group-text">%</span>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div class="input-group">
+                      <input type="number" name="discount" id="discount-flat"
+                             class="form-control text-center" value="{{ dispensing.discount|floatformat:0|default:0 }}"
+                             min="0" step="100" placeholder="0">
+                      <span class="input-group-text">FCFA</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between mt-2 small">
+                  <span class="text-muted">Subtotal: <strong id="subtotal-display">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong> FCFA</span>
+                  <span class="fw-bold">Net: <strong id="net-display" class="text-success">{{ dispensing.total_amount|floatformat:0|intcomma }}</strong> FCFA</span>
+                </div>
+              </div>
+
+              {# Amount Received #}
+              <div class="mb-2">
+                <label class="form-label fw-semibold">Amount Received (FCFA)</label>
+                <input type="number" name="amount" id="amount-received"
+                       class="form-control form-control-lg fw-bold text-center fs-4"
+                       value="{{ dispensing.total_amount|floatformat:0 }}"
+                       min="0" step="1" required readonly
+                       style="background:#f8fdf8;cursor:default;letter-spacing:.05em;">
+              </div>
+
+              {# Reference #}
+              <div class="mb-3">
+                <label class="form-label fw-semibold small">Reference / Receipt No. <span class="text-muted">(optional)</span></label>
+                <input type="text" name="reference" class="form-control form-control-sm"
+                       placeholder="Mobile money ref, approval code…">
+              </div>
+
+              <div id="payment-blocked-msg" class="alert alert-warning small py-2 d-none">
+                <i class="bi bi-exclamation-triangle me-1"></i>Add at least one drug item before collecting payment.
+              </div>
+            </div>
+
+            {# Right column: denomination buttons + change #}
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Cash Denominations (FCFA)</label>
+              <div class="d-grid gap-2" id="denom-buttons">
+                <div class="row g-2">
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="100">100</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="500">500</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="1000">1,000</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="2000">2,000</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-success fw-bold w-100 denom-btn" data-val="5000">5,000</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-success fw-bold w-100 denom-btn" data-val="10000">10,000</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-warning fw-bold w-100 denom-btn" data-val="25000">25,000</button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" class="btn btn-outline-warning fw-bold w-100 denom-btn" data-val="50000">50,000</button>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-outline-warning btn-sm flex-fill" id="denom-exact">
+                  <i class="bi bi-bullseye me-1"></i>Exact
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-sm flex-fill" id="denom-clear">
+                  <i class="bi bi-x-circle me-1"></i>Clear
+                </button>
+              </div>
+
+              {# Change Due #}
+              <div class="p-3 rounded mt-3 d-flex justify-content-between align-items-center"
+                   id="change-panel"
+                   style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                <div>
+                  <div class="small fw-semibold text-success">Change Due</div>
+                  <div class="text-muted" style="font-size:.72rem;">Give back to patient</div>
+                </div>
+                <span class="fw-bold fs-3 text-success" id="change-due-display">0</span>
+              </div>
+            </div>
+
+          </div>{# /row #}
+        </div>{# /modal-body #}
+
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x me-1"></i>Cancel
+          </button>
+          <button type="submit" id="collect-btn" class="btn btn-success btn-lg fw-bold px-5">
+            <i class="bi bi-send-check me-2"></i>Collect &amp; Dispense
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# ── Cancel Dispensing Modal ── #}
 {% if dispensing.status == 'PENDING' or dispensing.status == 'PARTIAL' %}

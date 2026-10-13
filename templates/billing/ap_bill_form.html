@@ -68,12 +68,13 @@
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">GL Expense Account</label>
-              <select name="expense_account" class="form-select">
+              <select name="expense_account" class="form-select" id="expenseAccount">
                 <option value="">— Auto (from category) —</option>
                 {% for a in expense_accounts %}
                 <option value="{{ a.pk }}">{{ a.code }} — {{ a.name }}</option>
                 {% endfor %}
               </select>
+              <div class="form-text text-muted" id="expenseAccountNote">Used for direct service bills only (no GRN).</div>
             </div>
             <div class="col-12">
               <label class="form-label fw-semibold">Description</label>
@@ -89,6 +90,34 @@
         </div>
       </div>
 
+      <div class="card shadow-sm mb-3 border-info border-top border-3">
+        <div class="card-header py-2 fw-semibold text-info">
+          <i class="bi bi-arrow-left-right me-1"></i>3-Way Match — Link to GRN (Goods Purchase)
+        </div>
+        <div class="card-body">
+          <label class="form-label fw-semibold">Goods Received Note (GRN)</label>
+          <select name="grn" class="form-select" id="grnSelect">
+            <option value="">— No GRN (direct service / utility bill) —</option>
+            {% for grn in open_grns %}
+            <option value="{{ grn.pk }}">
+              {{ grn.grn_number }} — PO {{ grn.purchase_order.po_number }} — {{ grn.purchase_order.vendor.name }} — {{ grn.received_date|date:"d M Y" }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="mt-2 small" id="grnHint">
+            <span class="text-info" id="grnSelectedMsg" style="display:none;">
+              <i class="bi bi-check-circle me-1"></i>
+              <strong>3-Way Match:</strong> GL will post Dr 408100 (clears GRN accrual) → Cr AP Vendors.
+              The expense account above is ignored.
+            </span>
+            <span class="text-muted" id="grnEmptyMsg">
+              <i class="bi bi-info-circle me-1"></i>
+              No GRN selected → direct expense bill: Dr Expense Account → Cr AP Vendors.
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div class="card shadow-sm mb-4 border-warning">
         <div class="card-body py-2">
           <div class="form-check">
@@ -96,8 +125,8 @@
             <label class="form-check-label fw-semibold" for="postImmediate">
               Post to General Ledger immediately
             </label>
-            <div class="text-muted small">
-              Creates Dr Expense / Cr Accounts Payable journal entry automatically.
+            <div class="text-muted small" id="glPostNote">
+              GL posting depends on GRN link — see above.
             </div>
           </div>
         </div>
@@ -114,16 +143,16 @@
     <div class="card shadow-sm bg-light">
       <div class="card-header py-2 fw-semibold">How Bills Work</div>
       <div class="card-body small text-muted">
-        <p><strong>Recording a bill</strong> creates a liability — the hospital owes money to the vendor.</p>
-        <p><strong>GL posting:</strong></p>
-        <ul>
-          <li>Dr Expense Account (increases expense)</li>
-          <li>Cr Accounts Payable (increases liability)</li>
+        <p class="fw-semibold text-dark mb-1">Goods Purchase (linked to GRN):</p>
+        <ul class="mb-2">
+          <li>GRN validated earlier: Dr Stock → Cr <strong>408100</strong></li>
+          <li>This bill clears it: Dr <strong>408100</strong> → Cr AP Vendors</li>
+          <li>Payment: Dr AP Vendors → Cr Bank</li>
         </ul>
-        <p><strong>When you pay the bill:</strong></p>
-        <ul>
-          <li>Dr Accounts Payable (clears liability)</li>
-          <li>Cr Bank / Cash (reduces cash)</li>
+        <p class="fw-semibold text-dark mb-1">Service / Utility (no GRN):</p>
+        <ul class="mb-2">
+          <li>This bill: Dr Expense Account → Cr AP Vendors</li>
+          <li>Payment: Dr AP Vendors → Cr Bank</li>
         </ul>
         <p class="mb-0 text-info"><i class="bi bi-info-circle me-1"></i>
           Bills start as <em>Pending</em> and become <em>Paid</em> once fully settled.</p>
@@ -131,4 +160,24 @@
     </div>
   </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const grnSelect = document.getElementById('grnSelect');
+const expenseAccount = document.getElementById('expenseAccount');
+const expenseAccountNote = document.getElementById('expenseAccountNote');
+const grnSelectedMsg = document.getElementById('grnSelectedMsg');
+const grnEmptyMsg = document.getElementById('grnEmptyMsg');
+function updateGrnState() {
+  const hasGrn = grnSelect.value !== '';
+  grnSelectedMsg.style.display = hasGrn ? '' : 'none';
+  grnEmptyMsg.style.display = hasGrn ? 'none' : '';
+  expenseAccount.disabled = hasGrn;
+  expenseAccountNote.textContent = hasGrn
+    ? 'Not used — GL will clear 408100 accrual from GRN receipt.'
+    : 'Used for direct service bills only (no GRN).';
+}
+grnSelect.addEventListener('change', updateGrnState);
+updateGrnState();
+</script>
 {% endblock %}

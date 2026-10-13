@@ -163,6 +163,7 @@ urlpatterns = [
     # Item Category GL Routing (automatic account resolution — Finance Director sets once)
     path('gl/item-category-gl/', views.item_category_gl_list, name='item_category_gl_list'),
     path('gl/item-category-gl/<str:category>/edit/', views.item_category_gl_edit, name='item_category_gl_edit'),
+    path('gl/operation-cc-mapping/', views.operation_cc_mapping, name='operation_cc_mapping'),
     # Stock Operation Types (exception/special operations only)
     path('gl/stock-operation-types/', views.stock_operation_type_list, name='stock_operation_type_list'),
     path('gl/stock-operation-types/create/', views.stock_operation_type_create, name='stock_operation_type_create'),
