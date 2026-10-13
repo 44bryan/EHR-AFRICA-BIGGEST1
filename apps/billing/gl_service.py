@@ -86,16 +86,17 @@ _mapping_cache = None
 
 # ServiceCategory → CostCenter code (codes are now 0001-0012 format)
 _SERVICE_CAT_TO_CC = {
-    'CONSULT':   '0003',   # OPD consultations
-    'CLINICAL':  '0003',   # Clinical procedures (OPD)
-    'INVEST':    '0004',   # Investigations / Lab
-    'LAB':       '0004',   # Laboratory
-    'PHARMACY':  '0001',   # Pharmacy dispensary
-    'OPTICAL':   '0005',   # Optical dispensary
-    'SURGICAL':  '0002',   # Theatre / Surgery
-    'ADMISSION': '0006',   # IPD / Ward
-    'REG':       '0008',   # Registration / Administration
-    'OTHER':     '0008',   # Default → Administration
+    'CONSULT':     '0003',   # OPD consultations
+    'CLINICAL':    '0003',   # Clinical procedures (OPD)
+    'INVEST':      '0004',   # Investigations / Lab
+    'LAB':         '0004',   # Laboratory
+    'PHARMACY':    '0001',   # Pharmacy dispensary
+    'OPTICAL':     '0005',   # Optical dispensary
+    'REFRACTION':  '0005',   # Refraction → Optical
+    'SURGICAL':    '0002',   # Theatre / Surgery
+    'ADMISSION':   '0006',   # IPD / Ward
+    'REG':         '0008',   # Registration / Administration
+    'OTHER':       '0008',   # Default → Administration
 }
 
 # ExpenseCategory → CostCenter code
@@ -140,7 +141,7 @@ def _cc_for_service_category(category_code):
             return row.cost_center
     except Exception:
         pass
-    return _billing_cc(_SERVICE_CAT_TO_CC.get(category_code, 'CC-008'))
+    return _billing_cc(_SERVICE_CAT_TO_CC.get(category_code, '0008'))
 
 
 def _cc_for_expense_category(category_code):
@@ -157,7 +158,7 @@ def _cc_for_expense_category(category_code):
             return row.cost_center
     except Exception:
         pass
-    return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, 'CC-008'))
+    return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, '0008'))
 
 
 def _op_for_key(category_key, group=None):
