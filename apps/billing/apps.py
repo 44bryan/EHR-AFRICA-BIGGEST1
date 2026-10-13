@@ -24,55 +24,63 @@ class BillingConfig(AppConfig):
                 ).exists():
                     gl_service.post_invoice_issued(instance)
 
+        def _already_posted(source_type, pk):
+            from apps.billing.models import JournalEntry
+            return JournalEntry.objects.filter(
+                source_type=source_type, source_id=str(pk)
+            ).exists()
+
         def on_payment_saved(sender, instance, created, **kwargs):
-            if created:
+            if created and not _already_posted('payment', instance.pk):
                 gl_service.post_payment(instance)
 
         def on_expense_approved(sender, instance, created, **kwargs):
             if not created and instance.approved_by:
-                from apps.billing.models import JournalEntry
-                if not JournalEntry.objects.filter(
-                    source_type='expense', source_id=str(instance.pk)
-                ).exists():
+                if not _already_posted('expense', instance.pk):
                     gl_service.post_expense(instance)
 
         def on_ap_payment_saved(sender, instance, created, **kwargs):
-            if created:
+            if created and not _already_posted('ap_payment', instance.pk):
                 gl_service.post_ap_payment(instance)
 
         def on_ap_bill_saved(sender, instance, created, **kwargs):
             if created and instance.status not in ('DRAFT', 'VOID'):
-                gl_service.post_ap_bill(instance)
+                if not _already_posted('ap_bill', instance.pk):
+                    gl_service.post_ap_bill(instance)
 
         def on_refund_saved(sender, instance, created, **kwargs):
-            if created:
+            if created and not _already_posted('refund', instance.pk):
                 gl_service.post_refund(instance)
 
         def on_petty_cash_entry_saved(sender, instance, created, **kwargs):
-            if created:
+            if created and not _already_posted('petty_cash_entry', instance.pk):
                 gl_service.post_petty_cash_entry(instance)
 
         def on_petty_cash_fund_saved(sender, instance, created, **kwargs):
             if created and instance.opening_balance > 0:
-                gl_service.post_petty_cash_fund_creation(instance)
+                if not _already_posted('petty_cash_fund', instance.pk):
+                    gl_service.post_petty_cash_fund_creation(instance)
 
         def on_wallet_txn_saved(sender, instance, created, **kwargs):
             if created:
                 from apps.billing.models import WalletTransactionType
                 if instance.transaction_type == WalletTransactionType.DEPOSIT:
-                    gl_service.post_wallet_deposit(instance)
+                    if not _already_posted('wallet_deposit', instance.pk):
+                        gl_service.post_wallet_deposit(instance)
                 elif instance.transaction_type in (
                     WalletTransactionType.DEDUCTION,
                     WalletTransactionType.WITHDRAWAL,
                 ):
-                    gl_service.post_wallet_deduction(instance)
+                    if not _already_posted('wallet_deduction', instance.pk):
+                        gl_service.post_wallet_deduction(instance)
 
         def on_cash_withdrawal_saved(sender, instance, created, **kwargs):
             if created and not instance.is_reversed:
-                gl_service.post_cash_withdrawal(instance)
+                if not _already_posted('cash_withdrawal', instance.pk):
+                    gl_service.post_cash_withdrawal(instance)
 
         def on_desk_supply_saved(sender, instance, created, **kwargs):
-            if created:
+            if created and not _already_posted('desk_supply', instance.pk):
                 gl_service.post_desk_supply(instance)
 
         post_save.connect(on_invoice_saved,     sender=Invoice)
