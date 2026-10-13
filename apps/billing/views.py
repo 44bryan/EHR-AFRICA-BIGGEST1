@@ -7079,15 +7079,32 @@ def trial_balance(request):
                 open_data[r['entry__cost_center_id']][r['account_id']] = (
                     r['total_dr'] or D0, r['total_cr'] or D0)
 
-        # Determine which accounts to display per CC based on balance_type
-        # General: summary + standalone leaf accounts (rolled-up, same as General Balance)
-        # Auxiliary: raw leaf posting accounts (same as Auxiliary Balance)
-        _cc_display_ids = None  # None = all (auxiliaire); set = restricted (general)
+        # Precompute parent→children map and standalone leaves (used for auxiliaire CC)
+        _pc_map = {}   # parent_id → [child accts]
+        _sl_accts = [] # standalone leaf accounts
+        for _a in all_accounts:
+            if _a.is_summary:
+                continue
+            if _a.parent_id and _a.parent_id in acct_by_id:
+                _pc_map.setdefault(_a.parent_id, []).append(_a)
+            else:
+                _sl_accts.append(_a)
+
+        # For General CC: precompute display ids + rollup helper
+        _cc_display_ids = None
         if balance_type != 'auxiliaire':
             _cc_display_ids = {
                 a.id for a in all_accounts
                 if a.is_summary or (not a.parent_id and not a.is_summary)
             }
+            def _cc_rollup(raw):
+                totals = {a.id: raw.get(a.id, (D0, D0)) for a in all_accounts}
+                for acct in sorted(all_accounts, key=lambda a: -depth_cache[a.id]):
+                    if acct.parent_id and acct.parent_id in acct_by_id:
+                        dr, cr = totals[acct.id]
+                        p_dr, p_cr = totals[acct.parent_id]
+                        totals[acct.parent_id] = (p_dr + dr, p_cr + cr)
+                return totals
 
         for cc in all_ccs_q:
             cc_id = cc.pk
@@ -7096,67 +7113,84 @@ def trial_balance(request):
             if not mv_raw and not op_raw:
                 continue
 
-            # For General CC balance: roll up leaf totals to summary level
-            if balance_type != 'auxiliaire':
-                def _cc_rollup(raw):
-                    totals = {a.id: raw.get(a.id, (D0, D0)) for a in all_accounts}
-                    for acct in sorted(all_accounts, key=lambda a: -depth_cache[a.id]):
-                        if acct.parent_id and acct.parent_id in acct_by_id:
-                            dr, cr = totals[acct.id]
-                            p_dr, p_cr = totals[acct.parent_id]
-                            totals[acct.parent_id] = (p_dr + dr, p_cr + cr)
-                    return totals
+            tt = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
+            class_groups = []
+
+            if balance_type == 'auxiliaire':
+                # ── Auxiliary CC: same parent→child→subtotal structure as Auxiliary Balance ──
+                for cls_key, cls_label in sorted(_CC_CLASS_LABELS.items()):
+                    rows = []
+                    sub = {k: D0 for k in tt}
+                    # 1. Summary/control accounts with their children
+                    for par in sorted([a for a in all_accounts if a.is_summary and a.code.startswith(cls_key)], key=lambda a: a.code):
+                        kids = sorted(_pc_map.get(par.id, []), key=lambda a: a.code)
+                        p_o_dr = p_o_cr = p_m_dr = p_m_cr = D0
+                        child_rows = []
+                        for child in kids:
+                            o_dr_r, o_cr_r = op_raw.get(child.id, (D0, D0))
+                            m_dr, m_cr = mv_raw.get(child.id, (D0, D0))
+                            if avec_mouvement == '1' and not (o_dr_r or o_cr_r or m_dr or m_cr):
+                                continue
+                            open_net = o_dr_r - o_cr_r
+                            o_dr2 = max(D0, open_net); o_cr2 = max(D0, -open_net)
+                            clos_net = open_net + m_dr - m_cr
+                            c_dr = max(D0, clos_net); c_cr = max(D0, -clos_net)
+                            p_o_dr += o_dr2; p_o_cr += o_cr2; p_m_dr += m_dr; p_m_cr += m_cr
+                            child_rows.append({'row_type':'child', 'code':child.code, 'name':child.name, 'pk':child.pk, 'level':depth_cache.get(child.id,0), 'open_dr':o_dr2, 'open_cr':o_cr2, 'move_dr':m_dr, 'move_cr':m_cr, 'clos_dr':c_dr, 'clos_cr':c_cr})
+                        if avec_mouvement == '1' and not child_rows:
+                            continue
+                        p_clos_net = (p_o_dr - p_o_cr) + p_m_dr - p_m_cr
+                        p_c_dr = max(D0, p_clos_net); p_c_cr = max(D0, -p_clos_net)
+                        rows.append({'row_type':'parent', 'code':par.code, 'name':par.name, 'pk':par.pk, 'level':depth_cache.get(par.id,0), 'open_dr':p_o_dr, 'open_cr':p_o_cr, 'move_dr':p_m_dr, 'move_cr':p_m_cr, 'clos_dr':p_c_dr, 'clos_cr':p_c_cr})
+                        rows.extend(child_rows)
+                        if len(child_rows) > 1:
+                            rows.append({'row_type':'subtotal', 'code':'', 'name':f'= Sous-total {par.code} — {par.name}', 'pk':par.pk, 'level':0, 'open_dr':p_o_dr, 'open_cr':p_o_cr, 'move_dr':p_m_dr, 'move_cr':p_m_cr, 'clos_dr':p_c_dr, 'clos_cr':p_c_cr})
+                        for k, v in [('open_dr',p_o_dr),('open_cr',p_o_cr),('move_dr',p_m_dr),('move_cr',p_m_cr),('clos_dr',p_c_dr),('clos_cr',p_c_cr)]:
+                            sub[k] += v; tt[k] += v
+                    # 2. Standalone leaves in this class
+                    for acct in sorted([a for a in _sl_accts if a.code.startswith(cls_key)], key=lambda a: a.code):
+                        o_dr_r, o_cr_r = op_raw.get(acct.id, (D0, D0))
+                        m_dr, m_cr = mv_raw.get(acct.id, (D0, D0))
+                        if avec_mouvement == '1' and not (o_dr_r or o_cr_r or m_dr or m_cr):
+                            continue
+                        open_net = o_dr_r - o_cr_r
+                        o_dr2 = max(D0, open_net); o_cr2 = max(D0, -open_net)
+                        clos_net = open_net + m_dr - m_cr
+                        c_dr = max(D0, clos_net); c_cr = max(D0, -clos_net)
+                        rows.append({'row_type':'standalone', 'code':acct.code, 'name':acct.name, 'pk':acct.pk, 'level':0, 'open_dr':o_dr2, 'open_cr':o_cr2, 'move_dr':m_dr, 'move_cr':m_cr, 'clos_dr':c_dr, 'clos_cr':c_cr})
+                        for k, v in [('open_dr',o_dr2),('open_cr',o_cr2),('move_dr',m_dr),('move_cr',m_cr),('clos_dr',c_dr),('clos_cr',c_cr)]:
+                            sub[k] += v; tt[k] += v
+                    if rows:
+                        class_groups.append({'cls': cls_key, 'label': cls_label, 'rows': rows, **sub})
+
+            else:
+                # ── General CC: roll up to summary accounts ──
                 mv = _cc_rollup(mv_raw)
                 op = _cc_rollup(op_raw)
-                candidate_ids = sorted(
-                    _cc_display_ids,
-                    key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'
-                )
-            else:
-                mv = mv_raw
-                op = op_raw
-                candidate_ids = sorted(
-                    set(mv.keys()) | set(op.keys()),
-                    key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'
-                )
-
-            rows_by_cls = defaultdict(list)
-            tt = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-            for acct_id in candidate_ids:
-                if acct_id not in acct_by_id:
-                    continue
-                acct = acct_by_id[acct_id]
-                o_dr_r, o_cr_r = op.get(acct_id, (D0, D0))
-                m_dr,   m_cr   = mv.get(acct_id, (D0, D0))
-                if avec_mouvement == '1' and not (o_dr_r or o_cr_r or m_dr or m_cr):
-                    continue
-                open_net = o_dr_r - o_cr_r
-                o_dr2 = max(D0, open_net);  o_cr2 = max(D0, -open_net)
-                clos_net = open_net + m_dr - m_cr
-                c_dr = max(D0, clos_net);   c_cr  = max(D0, -clos_net)
-                cls_key = acct.code[0] if acct.code else '9'
-                rows_by_cls[cls_key].append({
-                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
-                    'open_dr': o_dr2, 'open_cr': o_cr2,
-                    'move_dr': m_dr,  'move_cr': m_cr,
-                    'clos_dr': c_dr,  'clos_cr': c_cr,
-                })
-                tt['open_dr'] += o_dr2; tt['open_cr'] += o_cr2
-                tt['move_dr'] += m_dr;  tt['move_cr'] += m_cr
-                tt['clos_dr'] += c_dr;  tt['clos_cr'] += c_cr
-            # Build class_groups with per-class subtotals
-            class_groups = []
-            for cls_key in sorted(rows_by_cls.keys()):
-                cls_rows = rows_by_cls[cls_key]
-                sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-                for row in cls_rows:
-                    for k in sub: sub[k] += row[k]
-                class_groups.append({
-                    'cls': cls_key,
-                    'label': _CC_CLASS_LABELS.get(cls_key, f'Class {cls_key}'),
-                    'rows': cls_rows,
-                    **sub,
-                })
+                rows_by_cls = defaultdict(list)
+                for acct_id in sorted(_cc_display_ids, key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'):
+                    if acct_id not in acct_by_id:
+                        continue
+                    acct = acct_by_id[acct_id]
+                    o_dr_r, o_cr_r = op.get(acct_id, (D0, D0))
+                    m_dr, m_cr = mv.get(acct_id, (D0, D0))
+                    if avec_mouvement == '1' and not (o_dr_r or o_cr_r or m_dr or m_cr):
+                        continue
+                    open_net = o_dr_r - o_cr_r
+                    o_dr2 = max(D0, open_net); o_cr2 = max(D0, -open_net)
+                    clos_net = open_net + m_dr - m_cr
+                    c_dr = max(D0, clos_net); c_cr = max(D0, -clos_net)
+                    cls_key = acct.code[0] if acct.code else '9'
+                    rows_by_cls[cls_key].append({'row_type':'standalone', 'code':acct.code, 'name':acct.name, 'pk':acct.pk, 'level':depth_cache.get(acct.id,0), 'open_dr':o_dr2, 'open_cr':o_cr2, 'move_dr':m_dr, 'move_cr':m_cr, 'clos_dr':c_dr, 'clos_cr':c_cr})
+                    tt['open_dr'] += o_dr2; tt['open_cr'] += o_cr2
+                    tt['move_dr'] += m_dr;  tt['move_cr'] += m_cr
+                    tt['clos_dr'] += c_dr;  tt['clos_cr'] += c_cr
+                for cls_key in sorted(rows_by_cls.keys()):
+                    cls_rows = rows_by_cls[cls_key]
+                    sub = {k: D0 for k in tt}
+                    for row in cls_rows:
+                        for k in sub: sub[k] += row[k]
+                    class_groups.append({'cls': cls_key, 'label': _CC_CLASS_LABELS.get(cls_key, f'Class {cls_key}'), 'rows': cls_rows, **sub})
             if class_groups:
                 cc_sections.append({'cc': cc, 'class_groups': class_groups, **tt})
                 tot_open_dr += tt['open_dr']; tot_open_cr += tt['open_cr']

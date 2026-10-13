@@ -162,31 +162,40 @@
             </td>
           </tr>
           {% for row in grp.rows %}
-          <tr>
-            <td class="font-monospace small text-muted ps-4">{{ row.code }}</td>
-            <td class="small ps-4">
-              <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
-                 class="text-decoration-none text-dark">{{ row.name }}</a>
-            </td>
-            <td class="text-end small {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
-              {% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
-            <td class="text-end small {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">
-              {% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
-            <td class="text-end small {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
-              {% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
-            <td class="text-end small {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">
-              {% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
-            <td class="text-end small {% if row.clos_dr %}text-dark fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
-              {% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
-            <td class="text-end small {% if row.clos_cr %}text-dark fw-semibold{% else %}text-muted{% endif %}">
-              {% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
-            </td>
+          {% if row.row_type == 'parent' %}
+          <tr style="background:#e8eef7;border-top:2px solid #c5cfe8">
+            <td class="font-monospace fw-bold small text-primary ps-4">{{ row.code }}</td>
+            <td class="fw-bold small ps-4"><i class="bi bi-folder2 me-1 text-primary opacity-75"></i><a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}" class="text-decoration-none text-primary fw-bold">{{ row.name }}</a></td>
+            <td class="text-end fw-bold {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end fw-bold {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">{% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end fw-bold {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end fw-bold {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">{% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end fw-bold {% if row.clos_dr %}text-dark{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end fw-bold {% if row.clos_cr %}text-dark{% else %}text-muted{% endif %}">{% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
           </tr>
+          {% elif row.row_type == 'subtotal' %}
+          <tr style="background:#f5f7fb;border-top:1px dashed #b0bcd6;border-bottom:2px solid #c5cfe8">
+            <td class="small ps-4" style="font-style:italic"></td>
+            <td class="small text-muted ps-5" style="font-style:italic">{{ row.name }}</td>
+            <td class="text-end small fw-semibold {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small fw-semibold {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">{% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small fw-semibold {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small fw-semibold {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">{% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small fw-semibold text-dark" style="border-left:2px solid #ccc">{% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% elif row.clos_cr %}({{ row.clos_cr|floatformat:0|intcomma }}){% else %}—{% endif %}</td>
+            <td class="text-end small fw-semibold text-dark">{% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% elif row.clos_dr %}({{ row.clos_dr|floatformat:0|intcomma }}){% else %}—{% endif %}</td>
+          </tr>
+          {% else %}{# child or standalone #}
+          <tr>
+            <td class="font-monospace small text-muted {% if row.row_type == 'child' %}ps-5{% else %}ps-4{% endif %}">{{ row.code }}</td>
+            <td class="small {% if row.row_type == 'child' %}ps-5{% else %}ps-4{% endif %}">{% if row.row_type == 'child' %}<i class="bi bi-arrow-return-right me-1 text-muted opacity-50" style="font-size:.7rem"></i>{% endif %}<a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}" class="text-decoration-none text-dark">{{ row.name }}</a></td>
+            <td class="text-end small {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">{% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">{% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small {% if row.clos_dr %}text-dark fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">{% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+            <td class="text-end small {% if row.clos_cr %}text-dark fw-semibold{% else %}text-muted{% endif %}">{% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endif %}
           {% endfor %}
           {# ── Class subtotal within this CC ── #}
           <tr class="table-light fw-semibold" style="border-top:1px dashed #bbb">
