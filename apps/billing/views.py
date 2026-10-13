@@ -7047,6 +7047,16 @@ def trial_balance(request):
 
     if cc_breakdown:
         from collections import defaultdict
+        _CC_CLASS_LABELS = {
+            '1': 'Class 1 — Permanent Capital',
+            '2': 'Class 2 — Fixed Assets',
+            '3': 'Class 3 — Inventory',
+            '4': 'Class 4 — Third-Party Accounts',
+            '5': 'Class 5 — Cash & Bank',
+            '6': 'Class 6 — Expenses',
+            '7': 'Class 7 — Revenue',
+            '8': 'Class 8 — Special Accounts',
+        }
         all_ccs_q = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
         move_by_cc = (
             move_base
@@ -7076,7 +7086,8 @@ def trial_balance(request):
             if not mv and not op:
                 continue
             all_acct_ids = set(mv.keys()) | set(op.keys())
-            rows = []
+            # Build rows grouped by OHADA class (first digit of account code)
+            rows_by_cls = defaultdict(list)
             tt = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
             for acct_id in sorted(all_acct_ids,
                                   key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'):
@@ -7085,11 +7096,14 @@ def trial_balance(request):
                 acct = acct_by_id[acct_id]
                 o_dr_r, o_cr_r = op.get(acct_id, (D0, D0))
                 m_dr,   m_cr   = mv.get(acct_id, (D0, D0))
+                if avec_mouvement == '1' and not (o_dr_r or o_cr_r or m_dr or m_cr):
+                    continue
                 open_net = o_dr_r - o_cr_r
                 o_dr2 = max(D0, open_net);  o_cr2 = max(D0, -open_net)
                 clos_net = open_net + m_dr - m_cr
                 c_dr = max(D0, clos_net);   c_cr  = max(D0, -clos_net)
-                rows.append({
+                cls_key = acct.code[0] if acct.code else '9'
+                rows_by_cls[cls_key].append({
                     'code': acct.code, 'name': acct.name, 'pk': acct.pk,
                     'open_dr': o_dr2, 'open_cr': o_cr2,
                     'move_dr': m_dr,  'move_cr': m_cr,
@@ -7098,8 +7112,21 @@ def trial_balance(request):
                 tt['open_dr'] += o_dr2; tt['open_cr'] += o_cr2
                 tt['move_dr'] += m_dr;  tt['move_cr'] += m_cr
                 tt['clos_dr'] += c_dr;  tt['clos_cr'] += c_cr
-            if rows:
-                cc_sections.append({'cc': cc, 'rows': rows, **tt})
+            # Build class_groups with per-class subtotals
+            class_groups = []
+            for cls_key in sorted(rows_by_cls.keys()):
+                cls_rows = rows_by_cls[cls_key]
+                sub = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
+                for row in cls_rows:
+                    for k in sub: sub[k] += row[k]
+                class_groups.append({
+                    'cls': cls_key,
+                    'label': _CC_CLASS_LABELS.get(cls_key, f'Class {cls_key}'),
+                    'rows': cls_rows,
+                    **sub,
+                })
+            if class_groups:
+                cc_sections.append({'cc': cc, 'class_groups': class_groups, **tt})
                 tot_open_dr += tt['open_dr']; tot_open_cr += tt['open_cr']
                 tot_move_dr += tt['move_dr']; tot_move_cr += tt['move_cr']
                 tot_clos_dr += tt['clos_dr']; tot_clos_cr += tt['clos_cr']

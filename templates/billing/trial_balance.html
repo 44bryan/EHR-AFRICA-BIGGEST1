@@ -117,58 +117,58 @@
 </div>
 
 {% if cc_breakdown %}
-<!-- ══ COST CENTER BREAKDOWN ═══════════════════════════════════════════════ -->
-<div class="mb-2 d-flex align-items-center gap-2">
-  <span class="badge bg-primary fs-6 px-3 py-2">
-    <i class="bi bi-building me-1"></i>{{ cc_sections|length }} Cost Center{{ cc_sections|length|pluralize }} with activity
-  </span>
-  <span class="text-muted small">{{ date_from }} to {{ date_to }} &mdash; click any department header to expand accounts</span>
-</div>
-
-<div class="accordion" id="ccAccordion">
-{% for ccs in cc_sections %}
-<div class="card border-0 shadow-sm mb-2">
-  <div class="card-header py-2 px-3 d-flex align-items-center justify-content-between"
-       style="cursor:pointer;background:#f0f4ff"
-       data-bs-toggle="collapse" data-bs-target="#cc{{ forloop.counter }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
-    <div class="d-flex align-items-center gap-3">
-      <span class="badge bg-primary px-2 py-1" style="font-size:.82rem;min-width:42px">{{ ccs.cc.code }}</span>
-      <span class="fw-bold">{{ ccs.cc.name }}</span>
-      <span class="text-muted small">({{ ccs.rows|length }} account{{ ccs.rows|length|pluralize }})</span>
-    </div>
-    <div class="d-flex gap-3 align-items-center small">
-      <span class="text-danger fw-semibold">Dr&nbsp;{{ ccs.move_dr|floatformat:0|intcomma }}</span>
-      <span class="text-success fw-semibold">Cr&nbsp;{{ ccs.move_cr|floatformat:0|intcomma }}</span>
-      <span class="fw-bold {% if ccs.clos_dr > ccs.clos_cr %}text-danger{% else %}text-success{% endif %}">
-        Net&nbsp;{% if ccs.clos_dr > ccs.clos_cr %}Dr {{ ccs.clos_dr|floatformat:0|intcomma }}{% else %}Cr {{ ccs.clos_cr|floatformat:0|intcomma }}{% endif %}
-      </span>
-      <i class="bi bi-chevron-down text-muted"></i>
-    </div>
+<!-- ══ COST CENTER TRIAL BALANCE — same table structure as General Balance ══ -->
+<div class="card shadow-sm">
+  <div class="card-header py-2 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold small">
+      Cost Center Balance — All Departments
+      &nbsp;·&nbsp; {{ date_from }} to {{ date_to }}
+    </span>
+    <span class="badge bg-secondary">{{ cc_sections|length }} department{{ cc_sections|length|pluralize }}</span>
   </div>
-  <div id="cc{{ forloop.counter }}" class="collapse {% if forloop.first %}show{% endif %}">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.8rem">
-        <thead class="table-light">
-          <tr>
-            <th style="width:90px">Code</th>
-            <th>Account Name</th>
-            <th class="text-end text-muted" style="border-left:1px solid #ddd">Open Dr</th>
-            <th class="text-end text-muted">Open Cr</th>
-            <th class="text-end text-danger fw-bold" style="border-left:2px solid #ccc">Move Dr</th>
-            <th class="text-end text-success fw-bold">Move Cr</th>
-            <th class="text-end fw-bold" style="border-left:2px solid #ccc">Close Dr</th>
-            <th class="text-end fw-bold">Close Cr</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in ccs.rows %}
-          <tr>
-            <td class="font-monospace text-muted small">{{ row.code }}</td>
-            <td>
-              <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
-                 class="text-decoration-none text-dark small">{{ row.name }}</a>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.82rem">
+      <thead class="table-light">
+        <tr style="border-bottom:1px solid #ccc">
+          <th rowspan="2" style="width:90px;vertical-align:middle">Code</th>
+          <th rowspan="2" style="vertical-align:middle">Account Name</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Opening Balances</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Period Movements</th>
+          <th colspan="2" class="text-center fw-semibold" style="width:260px;border-left:2px solid #ccc">Closing Balances</th>
+        </tr>
+        <tr style="border-bottom:2px solid #aaa">
+          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
+          <th class="text-end text-danger fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end text-success fw-bold" style="width:130px">Credit</th>
+          <th class="text-end fw-bold" style="width:130px;border-left:2px solid #ccc">Debit</th>
+          <th class="text-end fw-bold" style="width:130px">Credit</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ccs in cc_sections %}
+        {# ── Cost center header row (blue, like OHADA class header) ── #}
+        <tr style="background:#1e3a5f;color:#fff">
+          <td class="fw-bold small ps-2" style="letter-spacing:.3px">{{ ccs.cc.code }}</td>
+          <td colspan="7" class="fw-bold small text-uppercase ps-1">
+            <i class="bi bi-building me-1 opacity-75"></i>{{ ccs.cc.name }}
+          </td>
+        </tr>
+        {% for grp in ccs.class_groups %}
+          {# ── OHADA class sub-header ── #}
+          <tr class="table-secondary">
+            <td colspan="8" class="small fw-semibold text-uppercase ps-4 py-1" style="font-size:.75rem;color:#555">
+              {{ grp.label }}
             </td>
-            <td class="text-end small {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:1px solid #ddd">
+          </tr>
+          {% for row in grp.rows %}
+          <tr>
+            <td class="font-monospace small text-muted ps-4">{{ row.code }}</td>
+            <td class="small ps-4">
+              <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
+                 class="text-decoration-none text-dark">{{ row.name }}</a>
+            </td>
+            <td class="text-end small {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
               {% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
             </td>
             <td class="text-end small {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">
@@ -188,37 +188,43 @@
             </td>
           </tr>
           {% endfor %}
-        </tbody>
-        <tfoot class="table-light fw-semibold" style="border-top:2px solid #bbb">
-          <tr>
-            <td colspan="2" class="text-end pe-2 small text-muted">{{ ccs.cc.code }} — {{ ccs.cc.name }} Total</td>
-            <td class="text-end text-danger" style="border-left:1px solid #ddd">{{ ccs.open_dr|floatformat:0|intcomma }}</td>
-            <td class="text-end text-success">{{ ccs.open_cr|floatformat:0|intcomma }}</td>
-            <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ ccs.move_dr|floatformat:0|intcomma }}</td>
-            <td class="text-end text-success">{{ ccs.move_cr|floatformat:0|intcomma }}</td>
-            <td class="text-end text-dark" style="border-left:2px solid #ccc">{{ ccs.clos_dr|floatformat:0|intcomma }}</td>
-            <td class="text-end text-dark">{{ ccs.clos_cr|floatformat:0|intcomma }}</td>
+          {# ── Class subtotal within this CC ── #}
+          <tr class="table-light fw-semibold" style="border-top:1px dashed #bbb">
+            <td colspan="2" class="text-end pe-3 small text-muted" style="font-style:italic">Subtotal — {{ grp.label }}</td>
+            <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ grp.open_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success">{{ grp.open_cr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ grp.move_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success">{{ grp.move_cr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-dark" style="border-left:2px solid #ccc">{{ grp.clos_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-dark">{{ grp.clos_cr|floatformat:0|intcomma }}</td>
           </tr>
-        </tfoot>
-      </table>
-    </div>
-  </div>
-</div>
-{% empty %}
-<div class="alert alert-info">No cost center activity found for the selected period.</div>
-{% endfor %}
-</div>
-
-<!-- Grand total bar -->
-<div class="card border-0 shadow-sm mt-3">
-  <div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
-    <span class="fw-bold text-uppercase small text-muted">Grand Totals — All Cost Centers</span>
-    <span class="fw-bold text-danger">Opening Dr: {{ tot_open_dr|floatformat:0|intcomma }}</span>
-    <span class="fw-bold text-success">Opening Cr: {{ tot_open_cr|floatformat:0|intcomma }}</span>
-    <span class="fw-bold text-danger">Period Dr: {{ tot_move_dr|floatformat:0|intcomma }}</span>
-    <span class="fw-bold text-success">Period Cr: {{ tot_move_cr|floatformat:0|intcomma }}</span>
-    <span class="fw-bold">Closing Dr: {{ tot_clos_dr|floatformat:0|intcomma }}</span>
-    <span class="fw-bold">Closing Cr: {{ tot_clos_cr|floatformat:0|intcomma }}</span>
+        {% endfor %}
+        {# ── Cost center total row ── #}
+        <tr style="background:#e8eef7;border-top:2px solid #1e3a5f" class="fw-bold">
+          <td colspan="2" class="text-end pe-3 small">Total — {{ ccs.cc.code }} {{ ccs.cc.name }}</td>
+          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ ccs.open_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-success">{{ ccs.open_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ ccs.move_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-success">{{ ccs.move_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-dark" style="border-left:2px solid #ccc">{{ ccs.clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-dark">{{ ccs.clos_cr|floatformat:0|intcomma }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No cost center activity found for the selected period.</td></tr>
+      {% endfor %}
+      </tbody>
+      <tfoot class="table-secondary fw-bold" style="border-top:3px solid #aaa">
+        <tr>
+          <td colspan="2" class="text-end pe-3 small text-uppercase">Grand Totals — All Departments</td>
+          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_open_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-success">{{ tot_open_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ tot_move_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end text-success">{{ tot_move_cr|floatformat:0|intcomma }}</td>
+          <td class="text-end" style="border-left:2px solid #ccc">{{ tot_clos_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end">{{ tot_clos_cr|floatformat:0|intcomma }}</td>
+        </tr>
+      </tfoot>
+    </table>
   </div>
 </div>
 
