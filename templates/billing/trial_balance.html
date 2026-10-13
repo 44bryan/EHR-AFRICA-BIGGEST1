@@ -23,33 +23,6 @@
 {% endblock %}
 
 {% block content %}
-<!-- ── Mode selector ─────────────────────────────────────────────────────────── -->
-<div class="d-flex gap-2 mb-3">
-  <a href="?balance_type={{ balance_type }}&date_from={{ date_from }}&date_to={{ date_to }}&avec_mouvement={{ avec_mouvement }}&tb_mode=general"
-     class="btn {% if not selected_cc %}btn-primary{% else %}btn-outline-secondary{% endif %} btn-sm fw-semibold">
-    <i class="bi bi-hospital me-1"></i>General Balance — Entire Hospital
-  </a>
-  <a href="#" id="deptModeBtn"
-     class="btn {% if selected_cc %}btn-warning text-dark{% else %}btn-outline-warning{% endif %} btn-sm fw-semibold">
-    <i class="bi bi-building me-1"></i>By Department / Cost Center
-  </a>
-</div>
-
-<!-- ── Active scope banner ─────────────────────────────────────────────────── -->
-{% if selected_cc %}
-<div class="alert alert-warning border-warning d-flex align-items-center py-2 mb-3">
-  <i class="bi bi-building-fill fs-5 me-2 text-warning"></i>
-  <div>
-    <strong class="d-block">Department Trial Balance — {{ selected_cc.name }} ({{ selected_cc.code }})</strong>
-    <span class="small text-muted">Only journal entries tagged to this cost center are included. Other departments are excluded.</span>
-  </div>
-  <a href="{% url 'billing:trial_balance' %}?balance_type={{ balance_type }}&date_from={{ date_from }}&date_to={{ date_to }}&avec_mouvement={{ avec_mouvement }}"
-     class="btn btn-sm btn-outline-secondary ms-auto">
-    <i class="bi bi-x me-1"></i>Back to General Balance
-  </a>
-</div>
-{% endif %}
-
 <!-- ── Filters ───────────────────────────────────────────────────────────────── -->
 <form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:165px">
@@ -64,18 +37,15 @@
     <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
     {% endfor %}
   </select>
-  {# Cost center selector — hidden by default, shown when dept mode is active #}
-  <div id="ccSelectWrap" {% if not selected_cc %}style="display:none"{% endif %}>
-    <select name="cost_center" id="ccSelect" class="form-select form-select-sm" title="Department / Cost Center" style="width:220px">
-      <option value="">— Pick a Department —</option>
-      {% for cc in cost_centers %}
-      <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
-        {{ cc.code }} — {{ cc.name }}
-      </option>
-      {% endfor %}
-    </select>
-  </div>
-  {% if selected_cc %}<input type="hidden" name="cost_center" value="{{ cc_filter }}">{% endif %}
+  <select name="cost_center" class="form-select form-select-sm {% if selected_cc %}border-warning{% endif %}"
+          title="Department / Cost Center (leave blank for all)" style="width:215px">
+    <option value="" {% if not cc_filter %}selected{% endif %}>All Departments</option>
+    {% for cc in cost_centers %}
+    <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
+      {{ cc.code }} — {{ cc.name }}
+    </option>
+    {% endfor %}
+  </select>
   <div class="form-check mb-0">
     <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
            id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
@@ -84,43 +54,22 @@
   <button type="submit" class="btn btn-sm btn-primary">
     <i class="bi bi-funnel me-1"></i>Filter
   </button>
-  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
 </form>
 
-<script>
-(function(){
-  var deptBtn = document.getElementById('deptModeBtn');
-  var ccWrap  = document.getElementById('ccSelectWrap');
-  var ccSel   = document.getElementById('ccSelect');
-  var hiddenCc = document.querySelector('input[name="cost_center"][type="hidden"]');
-
-  deptBtn.addEventListener('click', function(e){
-    e.preventDefault();
-    // Show the cost center picker inline
-    if (ccWrap.style.display === 'none') {
-      ccWrap.style.display = '';
-      // Remove hidden input so the select drives the value
-      if (hiddenCc) hiddenCc.remove();
-      deptBtn.classList.remove('btn-outline-warning');
-      deptBtn.classList.add('btn-warning', 'text-dark');
-      ccSel.focus();
-    } else {
-      ccWrap.style.display = 'none';
-      deptBtn.classList.remove('btn-warning', 'text-dark');
-      deptBtn.classList.add('btn-outline-warning');
-    }
-  });
-
-  // Auto-submit when a cost center is picked
-  if (ccSel) {
-    ccSel.addEventListener('change', function(){
-      if (ccSel.value) {
-        document.getElementById('tbForm').submit();
-      }
-    });
-  }
-})();
-</script>
+{% if selected_cc %}
+<div class="alert alert-warning border-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-building-fill fs-5 me-2 text-warning"></i>
+  <div>
+    <strong class="d-block">Department Trial Balance — {{ selected_cc.name }} ({{ selected_cc.code }})</strong>
+    <span class="small text-muted">Only journal entries tagged to this cost center are included. Other departments are excluded.</span>
+  </div>
+  <a href="{% url 'billing:trial_balance' %}?balance_type={{ balance_type }}&date_from={{ date_from }}&date_to={{ date_to }}&avec_mouvement={{ avec_mouvement }}"
+     class="btn btn-sm btn-outline-secondary ms-auto">
+    <i class="bi bi-x me-1"></i>Clear Department Filter
+  </a>
+</div>
+{% endif %}
 
 <script>
 (function(){
