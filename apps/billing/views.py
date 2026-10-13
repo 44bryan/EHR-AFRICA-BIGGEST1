@@ -6673,8 +6673,8 @@ def operation_cc_mapping(request):
                 new_cc = None
             else:
                 try:
-                    new_cc = CostCenter.objects.get(pk=int(val), is_active=True, is_deleted=False)
-                except (CostCenter.DoesNotExist, ValueError):
+                    new_cc = CostCenter.objects.get(pk=val, is_active=True, is_deleted=False)
+                except CostCenter.DoesNotExist:
                     new_cc = op.cost_center
             if op.cost_center != new_cc:
                 op.cost_center = new_cc
@@ -6785,58 +6785,141 @@ def stock_operation_type_edit(request, sot_id):
 
 @login_required
 def cost_center_pl_report(request):
-    """Departmental P&L — revenue vs expenses per cost center."""
+    """Departmental P&L — revenue vs expenses per cost center, OHADA detail."""
     if not _can_access_gl(request.user):
         return HttpResponseForbidden()
-    from django.db.models import Sum, Q as _Q
+    from django.db.models import Sum
 
     today = timezone.localdate()
     date_from = request.GET.get('date_from') or str(today.replace(month=1, day=1))
-    date_to = request.GET.get('date_to') or str(today)
+    date_to   = request.GET.get('date_to')   or str(today)
+    cc_filter = request.GET.get('cc_select', '')
 
-    centers = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    centers_qs = CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    if cc_filter:
+        centers_qs = centers_qs.filter(pk=cc_filter)
 
-    rows = []
-    grand_revenue = Decimal('0')
-    grand_expense = Decimal('0')
+    # Sub-category labels for Class 6 and 7 (OHADA SYSCOHADA)
+    _CL6_LABELS = {
+        '60': 'Achats et variations de stocks',
+        '61': 'Transports',
+        '62': 'Services extérieurs A',
+        '63': 'Services extérieurs B',
+        '64': 'Impôts et taxes',
+        '65': 'Autres charges',
+        '66': 'Charges de personnel',
+        '67': 'Frais financiers',
+        '68': 'Dotations aux amortissements / provisions',
+        '69': 'Charges HAO',
+    }
+    _CL7_LABELS = {
+        '70': 'Ventes de marchandises',
+        '71': 'Ventes de produits fabriqués',
+        '72': 'Travaux, services vendus',
+        '73': 'Produits accessoires',
+        '74': 'Subventions d\'exploitation',
+        '75': 'Autres produits',
+        '76': 'Reprises de provisions',
+        '77': 'Revenus financiers',
+        '78': 'Transferts de charges',
+        '79': 'Produits HAO',
+    }
 
-    for cc in centers:
-        # Revenue: Class 7 accounts
-        rev_data = JournalLine.objects.filter(
-            entry__is_deleted=False, entry__is_posted=True,
-            entry__cost_center=cc,
-            entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
-            account__code__startswith='7',
-        ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
-        revenue = (rev_data['cr'] or Decimal('0')) - (rev_data['dr'] or Decimal('0'))
+    D0 = Decimal('0')
+    cc_sections = []
+    grand_revenue = D0
+    grand_expense = D0
 
-        # Expenses: Class 6 accounts
-        exp_data = JournalLine.objects.filter(
-            entry__is_deleted=False, entry__is_posted=True,
-            entry__cost_center=cc,
-            entry__entry_date__gte=date_from, entry__entry_date__lte=date_to,
-            account__code__startswith='6',
-        ).aggregate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
-        expense = (exp_data['dr'] or Decimal('0')) - (exp_data['cr'] or Decimal('0'))
+    for cc in centers_qs:
+        # Aggregate Class 7 lines at account level
+        rev_lines = (
+            JournalLine.objects
+            .filter(
+                entry__is_deleted=False, entry__is_posted=True,
+                entry__cost_center=cc,
+                entry__entry_date__gte=date_from,
+                entry__entry_date__lte=date_to,
+                account__code__startswith='7',
+            )
+            .values('account__code', 'account__name')
+            .annotate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+            .order_by('account__code')
+        )
+        # Aggregate Class 6 lines at account level
+        exp_lines = (
+            JournalLine.objects
+            .filter(
+                entry__is_deleted=False, entry__is_posted=True,
+                entry__cost_center=cc,
+                entry__entry_date__gte=date_from,
+                entry__entry_date__lte=date_to,
+                account__code__startswith='6',
+            )
+            .values('account__code', 'account__name')
+            .annotate(dr=Sum('debit_amount'), cr=Sum('credit_amount'))
+            .order_by('account__code')
+        )
 
-        margin = revenue - expense
-        rows.append({
-            'center': cc,
-            'revenue': revenue,
-            'expense': expense,
-            'margin': margin,
-            'margin_pct': (margin / revenue * 100) if revenue else Decimal('0'),
+        # Build revenue groups by 2-digit prefix
+        rev_groups = {}
+        for line in rev_lines:
+            prefix = line['account__code'][:2]
+            amt = (line['cr'] or D0) - (line['dr'] or D0)
+            if amt == D0:
+                continue
+            if prefix not in rev_groups:
+                rev_groups[prefix] = {'label': _CL7_LABELS.get(prefix, prefix), 'rows': [], 'total': D0}
+            rev_groups[prefix]['rows'].append({
+                'code': line['account__code'],
+                'name': line['account__name'],
+                'amount': amt,
+            })
+            rev_groups[prefix]['total'] += amt
+
+        # Build expense groups by 2-digit prefix
+        exp_groups = {}
+        for line in exp_lines:
+            prefix = line['account__code'][:2]
+            amt = (line['dr'] or D0) - (line['cr'] or D0)
+            if amt == D0:
+                continue
+            if prefix not in exp_groups:
+                exp_groups[prefix] = {'label': _CL6_LABELS.get(prefix, prefix), 'rows': [], 'total': D0}
+            exp_groups[prefix]['rows'].append({
+                'code': line['account__code'],
+                'name': line['account__name'],
+                'amount': amt,
+            })
+            exp_groups[prefix]['total'] += amt
+
+        total_rev = sum(g['total'] for g in rev_groups.values())
+        total_exp = sum(g['total'] for g in exp_groups.values())
+        net_result = total_rev - total_exp
+
+        if not rev_groups and not exp_groups:
+            continue  # skip CCs with zero activity
+
+        cc_sections.append({
+            'cc': cc,
+            'rev_groups': sorted(rev_groups.items()),
+            'exp_groups': sorted(exp_groups.items()),
+            'total_rev': total_rev,
+            'total_exp': total_exp,
+            'net_result': net_result,
+            'margin_pct': (net_result / total_rev * 100) if total_rev else D0,
         })
-        grand_revenue += revenue
-        grand_expense += expense
+        grand_revenue += total_rev
+        grand_expense += total_exp
 
     return render(request, 'billing/cost_center_pl_report.html', {
-        'rows': rows,
-        'date_from': date_from,
-        'date_to': date_to,
-        'grand_revenue': grand_revenue,
-        'grand_expense': grand_expense,
-        'grand_margin': grand_revenue - grand_expense,
+        'cc_sections':    cc_sections,
+        'date_from':      date_from,
+        'date_to':        date_to,
+        'grand_revenue':  grand_revenue,
+        'grand_expense':  grand_expense,
+        'grand_margin':   grand_revenue - grand_expense,
+        'cost_centers':   CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code'),
+        'cc_filter':      cc_filter,
     })
 
 
@@ -7376,28 +7459,55 @@ def trial_balance(request):
     if export_fmt == 'csv':
         import csv
         from django.http import HttpResponse
+        _cc_mode_slug = '_cc' if cc_breakdown else ''
         resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
         resp['Content-Disposition'] = (
-            f'attachment; filename="balance_{balance_type}{_cc_slug}_{date_from}_{date_to}.csv"'
+            f'attachment; filename="balance{_cc_mode_slug}_{balance_type}{_cc_slug}_{date_from}_{date_to}.csv"'
         )
         w = csv.writer(resp)
         bal_lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
-        w.writerow([f'{bal_lbl}{_cc_label}  |  Period: {date_from} to {date_to}'])
+        cc_mode_lbl = ' (COST CENTER BREAKDOWN)' if cc_breakdown else ''
+        w.writerow([f'{bal_lbl}{cc_mode_lbl}{_cc_label}  |  Period: {date_from} to {date_to}'])
         w.writerow(['Code', 'Account Name',
                     'Opening Debit', 'Opening Credit',
                     'Movement Debit', 'Movement Credit',
                     'Closing Debit', 'Closing Credit'])
-        for sec in sections:
-            w.writerow([sec['label'], '', '', '', '', '', '', ''])
-            for row in sec['rows']:
-                w.writerow([row['code'], row['name'],
-                            row['open_dr'], row['open_cr'],
-                            row['move_dr'], row['move_cr'],
-                            row['clos_dr'], row['clos_cr']])
-            w.writerow(['Subtotal — ' + sec['label'], '',
-                        sec['open_dr'], sec['open_cr'],
-                        sec['move_dr'], sec['move_cr'],
-                        sec['clos_dr'], sec['clos_cr']])
+        if cc_breakdown:
+            for cc_sec in cc_sections:
+                cc_obj = cc_sec['cc']
+                w.writerow([f'=== COST CENTER: {cc_obj.code} — {cc_obj.name} ===',
+                            '', '', '', '', '', '', ''])
+                for grp in cc_sec['class_groups']:
+                    w.writerow([f'Class {grp["cls"]} — {grp["label"]}',
+                                '', '', '', '', '', '', ''])
+                    for row in grp['rows']:
+                        indent = '    ' if row['row_type'] == 'child' else ''
+                        row_prefix = '' if row['row_type'] not in ('parent', 'subtotal') else ''
+                        w.writerow([indent + row['code'], row['name'],
+                                    row['open_dr'], row['open_cr'],
+                                    row['move_dr'], row['move_cr'],
+                                    row['clos_dr'], row['clos_cr']])
+                    w.writerow(['Subtotal — Class ' + grp['cls'], '',
+                                grp['open_dr'], grp['open_cr'],
+                                grp['move_dr'], grp['move_cr'],
+                                grp['clos_dr'], grp['clos_cr']])
+                w.writerow([f'TOTAL — {cc_obj.code} {cc_obj.name}', '',
+                            cc_sec['open_dr'], cc_sec['open_cr'],
+                            cc_sec['move_dr'], cc_sec['move_cr'],
+                            cc_sec['clos_dr'], cc_sec['clos_cr']])
+                w.writerow([])  # blank separator between cost centers
+        else:
+            for sec in sections:
+                w.writerow([sec['label'], '', '', '', '', '', '', ''])
+                for row in sec['rows']:
+                    w.writerow([row['code'], row['name'],
+                                row['open_dr'], row['open_cr'],
+                                row['move_dr'], row['move_cr'],
+                                row['clos_dr'], row['clos_cr']])
+                w.writerow(['Subtotal — ' + sec['label'], '',
+                            sec['open_dr'], sec['open_cr'],
+                            sec['move_dr'], sec['move_cr'],
+                            sec['clos_dr'], sec['clos_cr']])
         w.writerow(['GRAND TOTALS', '',
                     tot_open_dr, tot_open_cr,
                     tot_move_dr, tot_move_cr,
@@ -7434,7 +7544,8 @@ def trial_balance(request):
         ws.merge_cells('A1:H1')
         lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
         cls_lbl = f' · Classe {classe_filter}' if classe_filter else ''
-        ws['A1'] = f'{lbl}{cls_lbl} — Du {date_from} au {date_to}'
+        cc_mode_lbl_x = ' — COST CENTER BREAKDOWN' if cc_breakdown else ''
+        ws['A1'] = f'{lbl}{cc_mode_lbl_x}{cls_lbl} — Du {date_from} au {date_to}'
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center')
         ws.merge_cells('A2:H2')
@@ -7459,38 +7570,123 @@ def trial_balance(request):
             c.fill = hdr_fill; c.font = hdr_font
             c.alignment = Alignment(horizontal='right' if col > 2 else 'left')
 
+        cc_hdr_fill = PatternFill('solid', fgColor='1E3A5F')   # dark blue — CC banner
+        cc_tot_fill = PatternFill('solid', fgColor='E8EEF7')   # light blue — CC total
+        cc_tot_font = Font(bold=True, size=9, color='1E3A5F')
+        cls_fill    = PatternFill('solid', fgColor='D9E1F2')   # same as sec_fill
+        par_fill    = PatternFill('solid', fgColor='EEF2FA')   # light blue-tint — parent rows
+        sub_row_fill= PatternFill('solid', fgColor='F5F7FB')   # subtotal rows inside CC
+
         row_num = 5
-        for sec in sections:
-            # Section header
-            ws.merge_cells(f'A{row_num}:H{row_num}')
-            c = ws.cell(row=row_num, column=1, value=sec['label'].upper())
-            c.fill = sec_fill; c.font = sec_font
-            row_num += 1
-            # Account rows
-            for row in sec['rows']:
-                vals = [row['code'], row['name'],
-                        float(row['open_dr']), float(row['open_cr']),
-                        float(row['move_dr']), float(row['move_cr']),
-                        float(row['clos_dr']), float(row['clos_cr'])]
-                for col, val in enumerate(vals, 1):
+        if cc_breakdown:
+            for cc_sec in cc_sections:
+                cc_obj = cc_sec['cc']
+                # CC banner row
+                ws.merge_cells(f'A{row_num}:H{row_num}')
+                c = ws.cell(row=row_num, column=1,
+                            value=f'COST CENTER: {cc_obj.code} — {cc_obj.name}')
+                c.fill = cc_hdr_fill
+                c.font = Font(bold=True, color='FFFFFF', size=10)
+                c.alignment = Alignment(horizontal='left', indent=1)
+                row_num += 1
+                for grp in cc_sec['class_groups']:
+                    # Class sub-header
+                    ws.merge_cells(f'A{row_num}:H{row_num}')
+                    c = ws.cell(row=row_num, column=1,
+                                value=f'Class {grp["cls"]} — {grp["label"]}'.upper())
+                    c.fill = cls_fill; c.font = sec_font
+                    row_num += 1
+                    for row in grp['rows']:
+                        rtype = row.get('row_type', 'standalone')
+                        if rtype == 'parent':
+                            row_fill = par_fill
+                            row_font = Font(bold=True, size=9, color='1E3A5F')
+                            indent = 1
+                        elif rtype == 'subtotal':
+                            row_fill = sub_row_fill
+                            row_font = Font(bold=False, italic=True, size=9)
+                            indent = 1
+                        elif rtype == 'child':
+                            row_fill = None
+                            row_font = Font(size=9)
+                            indent = 3
+                        else:  # standalone
+                            row_fill = None
+                            row_font = Font(size=9)
+                            indent = 1
+                        vals = [row['code'], row['name'],
+                                float(row['open_dr']), float(row['open_cr']),
+                                float(row['move_dr']), float(row['move_cr']),
+                                float(row['clos_dr']), float(row['clos_cr'])]
+                        for col, val in enumerate(vals, 1):
+                            c = ws.cell(row=row_num, column=col, value=val)
+                            c.border = border
+                            c.font = row_font
+                            if row_fill:
+                                c.fill = row_fill
+                            if col == 2:
+                                c.alignment = Alignment(horizontal='left', indent=indent)
+                            elif col > 2:
+                                c.number_format = num_fmt
+                                c.alignment = Alignment(horizontal='right')
+                        row_num += 1
+                    # Class subtotal within CC
+                    cls_sub = [f'Subtotal — Class {grp["cls"]}', '',
+                               float(grp['open_dr']), float(grp['open_cr']),
+                               float(grp['move_dr']), float(grp['move_cr']),
+                               float(grp['clos_dr']), float(grp['clos_cr'])]
+                    for col, val in enumerate(cls_sub, 1):
+                        c = ws.cell(row=row_num, column=col, value=val)
+                        c.fill = sub_fill; c.font = Font(bold=True, size=9)
+                        if col > 2:
+                            c.number_format = num_fmt
+                            c.alignment = Alignment(horizontal='right')
+                    row_num += 1
+                # CC total row
+                cc_tot = [f'TOTAL — {cc_obj.code} {cc_obj.name}', '',
+                          float(cc_sec['open_dr']), float(cc_sec['open_cr']),
+                          float(cc_sec['move_dr']), float(cc_sec['move_cr']),
+                          float(cc_sec['clos_dr']), float(cc_sec['clos_cr'])]
+                for col, val in enumerate(cc_tot, 1):
                     c = ws.cell(row=row_num, column=col, value=val)
-                    c.border = border
+                    c.fill = cc_tot_fill; c.font = cc_tot_font
                     if col > 2:
                         c.number_format = num_fmt
                         c.alignment = Alignment(horizontal='right')
                 row_num += 1
-            # Section subtotal
-            sub_vals = ['Subtotal — ' + sec['label'], '',
-                        float(sec['open_dr']), float(sec['open_cr']),
-                        float(sec['move_dr']), float(sec['move_cr']),
-                        float(sec['clos_dr']), float(sec['clos_cr'])]
-            for col, val in enumerate(sub_vals, 1):
-                c = ws.cell(row=row_num, column=col, value=val)
-                c.fill = sub_fill; c.font = Font(bold=True, size=9)
-                if col > 2:
-                    c.number_format = num_fmt
-                    c.alignment = Alignment(horizontal='right')
-            row_num += 1
+                row_num += 1  # blank spacer row between cost centers
+        else:
+            for sec in sections:
+                # Section header
+                ws.merge_cells(f'A{row_num}:H{row_num}')
+                c = ws.cell(row=row_num, column=1, value=sec['label'].upper())
+                c.fill = sec_fill; c.font = sec_font
+                row_num += 1
+                # Account rows
+                for row in sec['rows']:
+                    vals = [row['code'], row['name'],
+                            float(row['open_dr']), float(row['open_cr']),
+                            float(row['move_dr']), float(row['move_cr']),
+                            float(row['clos_dr']), float(row['clos_cr'])]
+                    for col, val in enumerate(vals, 1):
+                        c = ws.cell(row=row_num, column=col, value=val)
+                        c.border = border
+                        if col > 2:
+                            c.number_format = num_fmt
+                            c.alignment = Alignment(horizontal='right')
+                    row_num += 1
+                # Section subtotal
+                sub_vals = ['Subtotal — ' + sec['label'], '',
+                            float(sec['open_dr']), float(sec['open_cr']),
+                            float(sec['move_dr']), float(sec['move_cr']),
+                            float(sec['clos_dr']), float(sec['clos_cr'])]
+                for col, val in enumerate(sub_vals, 1):
+                    c = ws.cell(row=row_num, column=col, value=val)
+                    c.fill = sub_fill; c.font = Font(bold=True, size=9)
+                    if col > 2:
+                        c.number_format = num_fmt
+                        c.alignment = Alignment(horizontal='right')
+                row_num += 1
 
         # Grand total
         tot_vals = ['GRAND TOTALS', '',
@@ -7516,8 +7712,9 @@ def trial_balance(request):
         buf.seek(0)
         resp = HR(buf.read(),
                   content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        _cc_mode_slug_x = '_cc' if cc_breakdown else ''
         resp['Content-Disposition'] = (
-            f'attachment; filename="balance_comptes{_cc_slug}_{date_from}_{date_to}.xlsx"'
+            f'attachment; filename="balance{_cc_mode_slug_x}_{balance_type}{_cc_slug}_{date_from}_{date_to}.xlsx"'
         )
         return resp
 

@@ -3,84 +3,111 @@
 {% block title %}Cost Center P&L{% endblock %}
 {% block content %}
 <div class="container-fluid py-3">
+
   <div class="d-flex align-items-center justify-content-between mb-3">
-    <h5 class="mb-0 fw-bold"><i class="bi bi-building me-2"></i>Cost Center P&L (Compte de Resultat par Centre)</h5>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-building me-2"></i>Compte de Résultat par Centre de Coût</h5>
     <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Chart of Accounts
+      <i class="bi bi-arrow-left me-1"></i>Back
     </a>
   </div>
 
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
-      <form method="get" class="row g-2 align-items-end">
-        <div class="col-auto">
-          <label class="form-label small mb-0">From</label>
-          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
-        </div>
-        <div class="col-auto">
-          <label class="form-label small mb-0">To</label>
-          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
-        </div>
-        <div class="col-auto">
-          <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
-        </div>
+      <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
+        <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
+        <select name="cc_select" class="form-select form-select-sm" style="width:220px" onchange="this.form.submit()">
+          <option value="">— All Cost Centers —</option>
+          {% for cc in cost_centers %}
+            <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>{{ cc.code }} — {{ cc.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="{% url 'billing:cost_center_pl_report' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
       </form>
     </div>
   </div>
 
   <div class="card border-0 shadow-sm">
     <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+      <table class="table table-sm table-hover mb-0" style="font-size:.84rem;">
         <thead class="table-light">
           <tr>
-            <th>Code</th>
-            <th>Cost Center</th>
-            <th class="text-end">Revenue (Cl. 7)</th>
-            <th class="text-end">Expenses (Cl. 6)</th>
-            <th class="text-end">Margin</th>
-            <th class="text-end">Margin %</th>
+            <th style="width:90px">Code</th>
+            <th>Account / Cost Center</th>
+            <th class="text-end" style="width:130px">Revenue (Cl.7)</th>
+            <th class="text-end" style="width:130px">Expenses (Cl.6)</th>
+            <th class="text-end" style="width:120px">Net Result</th>
+            <th class="text-end" style="width:70px">Margin%</th>
           </tr>
         </thead>
         <tbody>
-        {% for r in rows %}
-          <tr>
-            <td><strong>{{ r.center.code }}</strong></td>
-            <td>{{ r.center.name }}</td>
-            <td class="text-end {% if r.revenue %}text-success{% endif %}">{{ r.revenue|intcomma }}</td>
-            <td class="text-end {% if r.expense %}text-danger{% endif %}">{{ r.expense|intcomma }}</td>
-            <td class="text-end fw-bold {% if r.margin >= 0 %}text-success{% else %}text-danger{% endif %}">
-              {{ r.margin|intcomma }}
-            </td>
+        {% for sec in cc_sections %}
+          {# Cost Center header row #}
+          <tr class="table-light">
+            <td class="fw-bold font-monospace">{{ sec.cc.code }}</td>
+            <td class="fw-bold"><i class="bi bi-building me-1"></i>{{ sec.cc.name }}</td>
+            <td class="text-end fw-bold text-success">{{ sec.total_rev|intcomma }}</td>
+            <td class="text-end fw-bold text-danger">{{ sec.total_exp|intcomma }}</td>
+            <td class="text-end fw-bold {% if sec.net_result >= 0 %}text-success{% else %}text-danger{% endif %}">{{ sec.net_result|intcomma }}</td>
             <td class="text-end">
-              {% if r.margin_pct > 0 %}
-                <span class="badge bg-success">{{ r.margin_pct|floatformat:1 }}%</span>
-              {% elif r.margin_pct < 0 %}
-                <span class="badge bg-danger">{{ r.margin_pct|floatformat:1 }}%</span>
-              {% else %}
-                <span class="badge bg-secondary">0%</span>
-              {% endif %}
+              {% if sec.margin_pct > 0 %}<span class="badge bg-success">{{ sec.margin_pct|floatformat:1 }}%</span>
+              {% elif sec.margin_pct < 0 %}<span class="badge bg-danger">{{ sec.margin_pct|floatformat:1 }}%</span>
+              {% else %}<span class="badge bg-secondary">0%</span>{% endif %}
             </td>
           </tr>
+          {# Revenue sub-category rows #}
+          {% for prefix, grp in sec.rev_groups %}
+          <tr>
+            <td class="ps-3 font-monospace text-muted small">{{ prefix }}x</td>
+            <td class="ps-3 text-success fst-italic small">{{ grp.label }}</td>
+            <td class="text-end text-success small">{{ grp.total|intcomma }}</td>
+            <td></td><td></td><td></td>
+          </tr>
+            {% for row in grp.rows %}
+          <tr>
+            <td class="ps-4 font-monospace text-muted small">{{ row.code }}</td>
+            <td class="ps-4 text-muted small">{{ row.name }}</td>
+            <td class="text-end small text-muted">{{ row.amount|intcomma }}</td>
+            <td></td><td></td><td></td>
+          </tr>
+            {% endfor %}
+          {% endfor %}
+          {# Expense sub-category rows #}
+          {% for prefix, grp in sec.exp_groups %}
+          <tr>
+            <td class="ps-3 font-monospace text-muted small">{{ prefix }}x</td>
+            <td class="ps-3 text-danger fst-italic small">{{ grp.label }}</td>
+            <td></td>
+            <td class="text-end text-danger small">{{ grp.total|intcomma }}</td>
+            <td></td><td></td>
+          </tr>
+            {% for row in grp.rows %}
+          <tr>
+            <td class="ps-4 font-monospace text-muted small">{{ row.code }}</td>
+            <td class="ps-4 text-muted small">{{ row.name }}</td>
+            <td></td>
+            <td class="text-end small text-muted">{{ row.amount|intcomma }}</td>
+            <td></td><td></td>
+          </tr>
+            {% endfor %}
+          {% endfor %}
         {% empty %}
           <tr><td colspan="6" class="text-center text-muted py-4">No cost centers with posted entries in this period.</td></tr>
         {% endfor %}
         </tbody>
-        {% if rows %}
+        {% if cc_sections %}
         <tfoot class="table-light fw-bold">
-          <tr>
-            <td colspan="2">TOTAL</td>
+          <tr style="border-top:2px solid #1E3A5F;">
+            <td colspan="2">GRAND TOTAL — ALL COST CENTERS</td>
             <td class="text-end text-success">{{ grand_revenue|intcomma }}</td>
             <td class="text-end text-danger">{{ grand_expense|intcomma }}</td>
-            <td class="text-end {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">
-              {{ grand_margin|intcomma }}
-            </td>
+            <td class="text-end {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">{{ grand_margin|intcomma }}</td>
             <td class="text-end">
               {% if grand_revenue %}
                 {% widthratio grand_margin grand_revenue 100 as pct %}
                 {{ pct }}%
-              {% else %}
-                0%
-              {% endif %}
+              {% else %}0%{% endif %}
             </td>
           </tr>
         </tfoot>
@@ -91,9 +118,8 @@
 
   <div class="card border-0 shadow-sm mt-3">
     <div class="card-body small text-muted">
-      <strong>How it works:</strong> Revenue = net credit balance on Class 7 accounts per cost center.
-      Expenses = net debit balance on Class 6 accounts per cost center.
-      Margin = Revenue - Expenses. Only posted journal entries within the selected date range are included.
+      <strong>Note:</strong> Revenue = net credit balance on Class 7 accounts. Expenses = net debit balance on Class 6 accounts.
+      Only posted journal entries within the selected date range are included. Indented rows show account-level detail.
     </div>
   </div>
 </div>

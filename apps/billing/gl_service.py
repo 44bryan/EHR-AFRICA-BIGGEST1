@@ -1486,8 +1486,16 @@ def post_pharmacy_cogs(dispensing_item, user=None):
         Cr  321000 (Pharmacy Stock — Marchandises)
 
     Uses the drug's cost_price (purchase cost) × quantity, NOT the selling price.
+    Idempotent: silently skips if a COGS entry for this item already exists.
     """
     try:
+        # Idempotency guard — never post COGS twice for the same dispensing item
+        from apps.billing.models import JournalEntry
+        if JournalEntry.objects.filter(
+            source_type='pharmacy_cogs', source_id=str(dispensing_item.pk)
+        ).exists():
+            return None
+
         drug = dispensing_item.drug
         if not drug:
             return None

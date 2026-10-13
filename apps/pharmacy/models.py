@@ -799,13 +799,21 @@ class StockTransfer(AuditModel):
     """
     Inter-location stock movement.
     WHO GPP — stock transfers between pharmacy locations must be documented.
+    Supports cross-module transfers: pharmacy → OT/Optical/Central store.
     """
     transfer_number = models.CharField(max_length=30, unique=True)
     from_location = models.ForeignKey(
         PharmacyLocation, on_delete=models.PROTECT, related_name='transfers_out',
     )
+    # Destination: either another PharmacyLocation OR a non-pharmacy StoreLocation
     to_location = models.ForeignKey(
         PharmacyLocation, on_delete=models.PROTECT, related_name='transfers_in',
+        null=True, blank=True,
+    )
+    to_store_location = models.ForeignKey(
+        'inventory.StoreLocation', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='pharmacy_transfers_in',
+        help_text='Set when destination is a non-pharmacy store (OT, Optical, etc.)',
     )
     status = models.CharField(max_length=15, choices=TransferStatus.choices, default=TransferStatus.PENDING)
     initiated_by = models.ForeignKey(
@@ -838,8 +846,13 @@ class StockTransfer(AuditModel):
     class Meta:
         ordering = ['-initiated_at']
 
+    @property
+    def destination(self):
+        return self.to_location or self.to_store_location
+
     def __str__(self):
-        return f"{self.transfer_number}: {self.from_location} → {self.to_location}"
+        dest = self.to_location or self.to_store_location or '—'
+        return f"{self.transfer_number}: {self.from_location} → {dest}"
 
     def save(self, *args, **kwargs):
         if not self.transfer_number:

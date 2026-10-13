@@ -3732,15 +3732,30 @@ def transfer_list(request):
 def transfer_create(request):
     if not _can_manage_pharmacy(request.user):
         return HttpResponse('Access denied', status=403)
-    locations = PharmacyLocation.objects.filter(is_deleted=False, is_active=True)
+    from apps.inventory.models import StoreLocation
+    ph_locations = list(PharmacyLocation.objects.filter(is_deleted=False, is_active=True))
+    # Non-pharmacy store locations for cross-store transfers (OT, Optical, Central, etc.)
+    store_locations = list(StoreLocation.objects.filter(is_deleted=False, is_active=True).order_by('store_type', 'store_code'))
     if request.method == 'POST':
         from_loc = get_object_or_404(PharmacyLocation, pk=request.POST.get('from_location'))
-        to_loc = get_object_or_404(PharmacyLocation, pk=request.POST.get('to_location'))
-        if from_loc == to_loc:
-            messages.error(request, 'Source and destination must be different.')
+        to_raw = request.POST.get('to_location', '')
+        # Destination is prefixed: "ph_<uuid>" for PharmacyLocation, "sl_<uuid>" for StoreLocation
+        to_ph_loc = None
+        to_sl_loc = None
+        if to_raw.startswith('ph_'):
+            to_ph_loc = get_object_or_404(PharmacyLocation, pk=to_raw[3:])
+            if from_loc.pk == to_ph_loc.pk:
+                messages.error(request, 'Source and destination must be different.')
+                return redirect('pharmacy:transfer_create')
+        elif to_raw.startswith('sl_'):
+            to_sl_loc = get_object_or_404(StoreLocation, pk=to_raw[3:])
+        else:
+            messages.error(request, 'Invalid destination selected.')
             return redirect('pharmacy:transfer_create')
         transfer = StockTransfer(
-            from_location=from_loc, to_location=to_loc,
+            from_location=from_loc,
+            to_location=to_ph_loc,
+            to_store_location=to_sl_loc,
             initiated_by=request.user, notes=request.POST.get('notes', ''),
         )
         transfer.save()
@@ -3773,8 +3788,9 @@ def transfer_create(request):
         is_active=True, is_deleted=False
     ).select_related('debit_account', 'credit_account').order_by('category', 'code')
     return render(request, 'pharmacy/transfer_form.html', {
-        'locations': locations,
-        'drugs': drugs_with_stock,
+        'locations':       ph_locations,
+        'store_locations': store_locations,
+        'drugs':           drugs_with_stock,
         'operation_types': transfer_op_types,
     })
 

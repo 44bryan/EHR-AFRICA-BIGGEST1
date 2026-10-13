@@ -1474,10 +1474,21 @@ class JournalEntry(AuditModel):
     def save(self, *args, **kwargs):
         if not self.entry_number:
             from django.db import transaction as _tx
+            from django.db.models import Max
             year = timezone.now().year
-            for attempt in range(20):
-                count = JournalEntry.objects.filter(created_at__year=year).count() + 1 + attempt
-                candidate = f"JNL-{year}-{count:05d}"
+            for attempt in range(50):
+                agg = JournalEntry.objects.filter(
+                    entry_number__startswith=f"JNL-{year}-"
+                ).aggregate(mx=Max('entry_number'))
+                max_num = agg['mx']
+                if max_num:
+                    try:
+                        last_seq = int(max_num.split('-')[-1])
+                    except (ValueError, IndexError):
+                        last_seq = 0
+                else:
+                    last_seq = 0
+                candidate = f"JNL-{year}-{last_seq + 1 + attempt:05d}"
                 try:
                     with _tx.atomic():
                         self.entry_number = candidate
@@ -1486,7 +1497,7 @@ class JournalEntry(AuditModel):
                 except Exception:
                     self.entry_number = ''
                     continue
-            raise RuntimeError('Unable to generate unique entry_number after 20 attempts')
+            raise RuntimeError('Unable to generate unique entry_number after 50 attempts')
         super().save(*args, **kwargs)
 
     @property
