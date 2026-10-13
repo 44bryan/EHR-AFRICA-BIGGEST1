@@ -24,56 +24,54 @@
 
 {% block content %}
 <!-- ── Filters ───────────────────────────────────────────────────────────────── -->
-<form method="get" id="tbForm" class="mb-3">
+<form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
 
-  <!-- Row 1: Always visible — normal balance filters -->
-  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
-    <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
-    <select name="balance_type" class="form-select form-select-sm" style="width:165px">
-      <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
-      <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
-    </select>
-    <select name="classe" class="form-select form-select-sm" style="width:200px">
-      <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
-      {% for cls, lbl in ohada_classes %}
-      <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
+
+  <select name="balance_type" class="form-select form-select-sm" style="width:165px">
+    <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
+    <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
+  </select>
+
+  <select name="classe" class="form-select form-select-sm" style="width:200px">
+    <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
+    {% for cls, lbl in ohada_classes %}
+    <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+    {% endfor %}
+  </select>
+
+  <!-- Cost Center checkbox — reveals dropdown inline -->
+  <div class="form-check mb-0 border rounded px-2 py-1 {% if cc_mode %}bg-primary bg-opacity-10 border-primary{% else %}border-secondary{% endif %}">
+    <input class="form-check-input" type="checkbox" name="cc_mode" value="1"
+           id="chkCCMode" {% if cc_mode %}checked{% endif %}
+           onchange="document.getElementById('ccSelectWrap').classList.toggle('d-none', !this.checked); if(!this.checked){document.getElementById('ccSelectDrop').value='';} this.form.submit();">
+    <label class="form-check-label small fw-semibold {% if cc_mode %}text-primary{% endif %}" for="chkCCMode">
+      <i class="bi bi-building me-1"></i>Cost Center
+    </label>
+  </div>
+  <div id="ccSelectWrap" class="{% if not cc_mode %}d-none{% endif %}">
+    <select name="cc_select" id="ccSelectDrop" class="form-select form-select-sm" style="width:220px"
+            onchange="this.form.submit();">
+      <option value="" {% if cc_breakdown %}selected{% endif %}>— All Cost Centers —</option>
+      {% for cc in cost_centers %}
+      <option value="{{ cc.pk }}" {% if cc_select_val == cc.pk|stringformat:"s" %}selected{% endif %}>
+        {{ cc.code }} — {{ cc.name }}
+      </option>
       {% endfor %}
     </select>
-    <div class="form-check mb-0">
-      <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
-             id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
-      <label class="form-check-label small" for="chkMvt">With movements only</label>
-    </div>
-    <button type="submit" class="btn btn-sm btn-primary">
-      <i class="bi bi-funnel me-1"></i>Filter
-    </button>
-    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
   </div>
 
-  <!-- Row 2: Cost Center filter — checkbox reveals department selector -->
-  <div class="d-flex flex-wrap gap-2 align-items-center">
-    <div class="form-check mb-0 border rounded px-3 py-1 {% if cc_mode %}bg-primary bg-opacity-10 border-primary{% else %}border-secondary{% endif %}">
-      <input class="form-check-input" type="checkbox" name="cc_mode" value="1"
-             id="chkCCMode" {% if cc_mode %}checked{% endif %}
-             onchange="document.getElementById('ccSelectWrap').classList.toggle('d-none', !this.checked); if(!this.checked){document.getElementById('ccSelectDrop').value='';} this.form.submit();">
-      <label class="form-check-label small fw-semibold {% if cc_mode %}text-primary{% endif %}" for="chkCCMode">
-        <i class="bi bi-building me-1"></i>Cost Center Balance
-      </label>
-    </div>
-    <!-- Dropdown: only visible when checkbox is ticked -->
-    <div id="ccSelectWrap" class="{% if not cc_mode %}d-none{% endif %}">
-      <select name="cc_select" id="ccSelectDrop" class="form-select form-select-sm" style="width:240px"
-              onchange="this.form.submit();">
-        <option value="" {% if cc_breakdown %}selected{% endif %}>— All Cost Centers —</option>
-        {% for cc in cost_centers %}
-        <option value="{{ cc.pk }}" {% if cc_select_val == cc.pk|stringformat:"s" %}selected{% endif %}>
-          {{ cc.code }} — {{ cc.name }}
-        </option>
-        {% endfor %}
-      </select>
-    </div>
+  <div class="form-check mb-0">
+    <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
+           id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
+    <label class="form-check-label small" for="chkMvt">With movements only</label>
   </div>
+
+  <button type="submit" class="btn btn-sm btn-primary">
+    <i class="bi bi-funnel me-1"></i>Filter
+  </button>
+  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
 
 </form>
 
