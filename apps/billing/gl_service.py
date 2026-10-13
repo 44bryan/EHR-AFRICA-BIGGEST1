@@ -84,33 +84,33 @@ _mapping_cache = None
 
 # ── Cost center auto-tagging for billing operations ───────────────────────────
 
-# ServiceCategory → CostCenter code (codes are now 0001-0012 format)
+# ServiceCategory → CostCenter code (real AEF codes from TurboClinic)
 _SERVICE_CAT_TO_CC = {
-    'CONSULT':     '0003',   # OPD consultations
-    'CLINICAL':    '0003',   # Clinical procedures (OPD)
-    'INVEST':      '0004',   # Investigations / Lab
-    'LAB':         '0004',   # Laboratory
-    'PHARMACY':    '0001',   # Pharmacy dispensary
-    'OPTICAL':     '0005',   # Optical dispensary
-    'REFRACTION':  '0005',   # Refraction → Optical
-    'SURGICAL':    '0002',   # Theatre / Surgery
-    'ADMISSION':   '0006',   # IPD / Ward
-    'REG':         '0008',   # Registration / Administration
-    'OTHER':       '0008',   # Default → Administration
+    'CONSULT':     '001',   # Ophthalmology
+    'CLINICAL':    '001',   # Ophthalmology (clinical procedures)
+    'INVEST':      '004',   # Laboratory
+    'LAB':         '004',   # Laboratory
+    'PHARMACY':    '008',   # Pharmacy
+    'OPTICAL':     '009',   # Optical Shop
+    'REFRACTION':  '009',   # Optical Shop
+    'SURGICAL':    '001',   # Ophthalmology (surgery/theatre)
+    'ADMISSION':   '006',   # Accommodation (IPD/Ward)
+    'REG':         '007',   # Patient Affairs
+    'OTHER':       '012',   # Finance & Administration (default)
 }
 
 # ExpenseCategory → CostCenter code
 _EXPENSE_CAT_TO_CC = {
-    'SUPPLIES':   '0008',  # Administration
-    'UTILITIES':  '0008',
-    'SALARY':     '0008',
-    'RENT':       '0008',
-    'EQUIPMENT':  '0012',  # Maintenance
-    'DRUGS':      '0001',  # Pharmacy
-    'TRANSPORT':  '0008',
-    'ADMIN':      '0008',
-    'MARKETING':  '0008',
-    'EXP_OTHER':  '0008',
+    'SUPPLIES':   '012',  # Finance & Administration
+    'UTILITIES':  '016',  # General Admin Expenses
+    'SALARY':     '012',  # Finance & Administration
+    'RENT':       '016',  # General Admin Expenses
+    'EQUIPMENT':  '013',  # Other Support Services (maintenance)
+    'DRUGS':      '008',  # Pharmacy
+    'TRANSPORT':  '012',  # Finance & Administration
+    'ADMIN':      '012',  # Finance & Administration
+    'MARKETING':  '014',  # Partnership, Marketing & Dev't
+    'EXP_OTHER':  '012',  # Finance & Administration
 }
 
 
@@ -141,7 +141,7 @@ def _cc_for_service_category(category_code):
             return row.cost_center
     except Exception:
         pass
-    return _billing_cc(_SERVICE_CAT_TO_CC.get(category_code, '0008'))
+    return _billing_cc(_SERVICE_CAT_TO_CC.get(category_code, '012'))
 
 
 def _cc_for_expense_category(category_code):
@@ -158,23 +158,23 @@ def _cc_for_expense_category(category_code):
             return row.cost_center
     except Exception:
         pass
-    return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, '0008'))
+    return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, '012'))
 
 
-# CashDesk.desk_type → cost-center code mapping (no migration needed)
+# CashDesk.desk_type → cost-center code mapping (real AEF codes)
 _DESK_TYPE_TO_CC = {
-    'TIER':      '0003',  # OPD / Consultations
-    'PHARMACY':  '0001',  # Pharmacy
-    'OPTICAL':   '0005',  # Optical
-    'INSURANCE': '0009',  # Finance / Insurance
+    'TIER':      '001',  # Ophthalmology (consultations)
+    'PHARMACY':  '008',  # Pharmacy
+    'OPTICAL':   '009',  # Optical Shop
+    'INSURANCE': '007',  # Patient Affairs
 }
 
 
 def _cc_for_desk(cash_desk):
     """Return the CostCenter for a CashDesk based on its desk_type field."""
     if not cash_desk:
-        return _billing_cc('0008')  # Administration fallback
-    return _billing_cc(_DESK_TYPE_TO_CC.get(getattr(cash_desk, 'desk_type', ''), '0008'))
+        return _billing_cc('012')  # Finance & Administration fallback
+    return _billing_cc(_DESK_TYPE_TO_CC.get(getattr(cash_desk, 'desk_type', ''), '012'))
 
 
 def _op_for_key(category_key, group=None):
@@ -553,7 +553,7 @@ def post_ap_payment(ap_payment):
             source_id=ap_payment.pk,
             lines=lines,
             user=ap_payment.paid_by,
-            cost_center=_billing_cc('0009'),  # Finance cost center
+            cost_center=_billing_cc('012'),  # Finance & Administration
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for AP payment {ap_payment.pk}: {e}")
@@ -1029,7 +1029,7 @@ def post_wallet_deposit(wallet_txn, user=None):
                 (PATIENT_DEPOSITS, 0, amount, "Patient deposit liability"),
             ],
             user=user,
-            cost_center=_billing_cc('0008'),  # Administration cost center
+            cost_center=_billing_cc('012'),  # Administration cost center
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for wallet deposit {wallet_txn.pk}: {e}")
@@ -1094,7 +1094,7 @@ def post_wallet_deduction(wallet_txn, user=None):
                 (credit_code, 0, amount, credit_desc),
             ],
             user=user,
-            cost_center=_billing_cc('0008'),  # Administration fallback
+            cost_center=_billing_cc('012'),  # Administration fallback
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for wallet deduction {wallet_txn.pk}: {e}")
@@ -1138,7 +1138,7 @@ def post_petty_cash_entry(entry, user=None):
             operation=_op_for_key(entry.category, 'EXPENSE') if entry.entry_type == 'DEBIT'
                       else _op_for_key('CASH_FLOAT', 'CASH'),
             cost_center=_cc_for_expense_category(entry.category) if entry.entry_type == 'DEBIT'
-                        else _billing_cc('0008'),
+                        else _billing_cc('012'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for petty cash entry {entry.pk}: {e}")
@@ -1165,7 +1165,7 @@ def post_petty_cash_fund_creation(fund, user=None):
                 (CASH_ACCOUNT, 0, amount, "Cash allocated to petty cash"),
             ],
             user=user,
-            cost_center=_billing_cc('0008'),  # Administration cost center
+            cost_center=_billing_cc('012'),  # Administration cost center
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for petty cash fund {fund.pk}: {e}")
