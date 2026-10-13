@@ -3633,19 +3633,30 @@ def stock_validation_approve(request, validation_id):
                 amt = _D(str(live_total))
                 lines_direct = [
                     (op_type.debit_account.code, amt, 0,
-                     f"{sv.get_validation_type_display()} — {sv.reference}"),
+                     f"{sv.get_validation_type_display()} - {sv.reference}"),
                     (op_type.credit_account.code, 0, amt,
-                     f"{sv.get_validation_type_display()} — {sv.reference}"),
+                     f"{sv.get_validation_type_display()} - {sv.reference}"),
                 ]
+                # Auto-tag cost center from the item's store location
+                _store_cc = None
+                if m_ref and m_ref.item and m_ref.item.store_location_id:
+                    try:
+                        _sl = StoreLocation.objects.select_related('cost_center').get(
+                            pk=m_ref.item.store_location_id
+                        )
+                        _store_cc = _sl.cost_center if _sl.cost_center_id else None
+                    except Exception:
+                        pass
                 journal_entry = _create_entry(
                     date=timezone.localdate(),
-                    description=sv.description or f"Stock {sv.validation_type} — {sv.reference}",
+                    description=sv.description or f"Stock {sv.validation_type} - {sv.reference}",
                     reference=sv.reference,
                     source_type=f'stock_{sv.validation_type.lower()}',
                     source_id=sv.pk,
                     lines=lines_direct,
                     user=request.user,
                     operation=_op_for_code(op_type.code),
+                    cost_center=_store_cc,
                 )
             elif m_ref and live_total > 0:
                 # Fallback: no operation type — use item-level GL mapping
