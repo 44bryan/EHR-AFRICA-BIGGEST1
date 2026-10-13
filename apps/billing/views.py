@@ -7079,18 +7079,50 @@ def trial_balance(request):
                 open_data[r['entry__cost_center_id']][r['account_id']] = (
                     r['total_dr'] or D0, r['total_cr'] or D0)
 
+        # Determine which accounts to display per CC based on balance_type
+        # General: summary + standalone leaf accounts (rolled-up, same as General Balance)
+        # Auxiliary: raw leaf posting accounts (same as Auxiliary Balance)
+        _cc_display_ids = None  # None = all (auxiliaire); set = restricted (general)
+        if balance_type != 'auxiliaire':
+            _cc_display_ids = {
+                a.id for a in all_accounts
+                if a.is_summary or (not a.parent_id and not a.is_summary)
+            }
+
         for cc in all_ccs_q:
             cc_id = cc.pk
-            mv = move_data.get(cc_id, {})
-            op = open_data.get(cc_id, {})
-            if not mv and not op:
+            mv_raw = move_data.get(cc_id, {})
+            op_raw = open_data.get(cc_id, {})
+            if not mv_raw and not op_raw:
                 continue
-            all_acct_ids = set(mv.keys()) | set(op.keys())
-            # Build rows grouped by OHADA class (first digit of account code)
+
+            # For General CC balance: roll up leaf totals to summary level
+            if balance_type != 'auxiliaire':
+                def _cc_rollup(raw):
+                    totals = {a.id: raw.get(a.id, (D0, D0)) for a in all_accounts}
+                    for acct in sorted(all_accounts, key=lambda a: -depth_cache[a.id]):
+                        if acct.parent_id and acct.parent_id in acct_by_id:
+                            dr, cr = totals[acct.id]
+                            p_dr, p_cr = totals[acct.parent_id]
+                            totals[acct.parent_id] = (p_dr + dr, p_cr + cr)
+                    return totals
+                mv = _cc_rollup(mv_raw)
+                op = _cc_rollup(op_raw)
+                candidate_ids = sorted(
+                    _cc_display_ids,
+                    key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'
+                )
+            else:
+                mv = mv_raw
+                op = op_raw
+                candidate_ids = sorted(
+                    set(mv.keys()) | set(op.keys()),
+                    key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'
+                )
+
             rows_by_cls = defaultdict(list)
             tt = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
-            for acct_id in sorted(all_acct_ids,
-                                  key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'):
+            for acct_id in candidate_ids:
                 if acct_id not in acct_by_id:
                     continue
                 acct = acct_by_id[acct_id]
