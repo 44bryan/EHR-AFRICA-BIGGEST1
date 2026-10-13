@@ -161,6 +161,22 @@ def _cc_for_expense_category(category_code):
     return _billing_cc(_EXPENSE_CAT_TO_CC.get(category_code, '0008'))
 
 
+# CashDesk.desk_type → cost-center code mapping (no migration needed)
+_DESK_TYPE_TO_CC = {
+    'TIER':      '0003',  # OPD / Consultations
+    'PHARMACY':  '0001',  # Pharmacy
+    'OPTICAL':   '0005',  # Optical
+    'INSURANCE': '0009',  # Finance / Insurance
+}
+
+
+def _cc_for_desk(cash_desk):
+    """Return the CostCenter for a CashDesk based on its desk_type field."""
+    if not cash_desk:
+        return _billing_cc('0008')  # Administration fallback
+    return _billing_cc(_DESK_TYPE_TO_CC.get(getattr(cash_desk, 'desk_type', ''), '0008'))
+
+
 def _op_for_key(category_key, group=None):
     """
     Resolve a BillingOperationCC row from category_key (and optional group).
@@ -537,6 +553,7 @@ def post_ap_payment(ap_payment):
             source_id=ap_payment.pk,
             lines=lines,
             user=ap_payment.paid_by,
+            cost_center=_billing_cc('0009'),  # Finance cost center
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for AP payment {ap_payment.pk}: {e}")
@@ -1012,6 +1029,7 @@ def post_wallet_deposit(wallet_txn, user=None):
                 (PATIENT_DEPOSITS, 0, amount, "Patient deposit liability"),
             ],
             user=user,
+            cost_center=_billing_cc('0008'),  # Administration cost center
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for wallet deposit {wallet_txn.pk}: {e}")
@@ -1049,6 +1067,9 @@ def post_wallet_deduction(wallet_txn, user=None):
                     if item_amount > 0:
                         lines.append((rev_code, 0, item_amount, item.description))
 
+                # Derive cost center from invoice dominant category
+                _inv_items = list(wallet_txn.invoice.items.filter(is_deleted=False))
+                _inv_cc = _cc_for_service_category(_inv_items[0].category if _inv_items else 'OTHER')
                 _create_entry(
                     date=wallet_txn.created_at.date(),
                     description=f"Wallet payment — {wallet_txn.wallet.patient.full_name} — Inv {wallet_txn.invoice.invoice_number}",
@@ -1057,6 +1078,7 @@ def post_wallet_deduction(wallet_txn, user=None):
                     source_id=wallet_txn.pk,
                     lines=lines,
                     user=user,
+                    cost_center=_inv_cc,
                 )
                 return
 
@@ -1072,6 +1094,7 @@ def post_wallet_deduction(wallet_txn, user=None):
                 (credit_code, 0, amount, credit_desc),
             ],
             user=user,
+            cost_center=_billing_cc('0008'),  # Administration fallback
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for wallet deduction {wallet_txn.pk}: {e}")
@@ -1114,6 +1137,8 @@ def post_petty_cash_entry(entry, user=None):
             user=user or entry.created_by,
             operation=_op_for_key(entry.category, 'EXPENSE') if entry.entry_type == 'DEBIT'
                       else _op_for_key('CASH_FLOAT', 'CASH'),
+            cost_center=_cc_for_expense_category(entry.category) if entry.entry_type == 'DEBIT'
+                        else _billing_cc('0008'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for petty cash entry {entry.pk}: {e}")
@@ -1140,6 +1165,7 @@ def post_petty_cash_fund_creation(fund, user=None):
                 (CASH_ACCOUNT, 0, amount, "Cash allocated to petty cash"),
             ],
             user=user,
+            cost_center=_billing_cc('0008'),  # Administration cost center
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for petty cash fund {fund.pk}: {e}")
@@ -1809,6 +1835,7 @@ def post_cash_withdrawal(withdrawal, user=None):
             lines=lines,
             user=user,
             operation=_op_for_key('CASH_WITHDRAW', 'CASH'),
+            cost_center=_cc_for_desk(getattr(withdrawal, 'cash_desk', None)),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for cash withdrawal {withdrawal.pk}: {e}")
@@ -1860,6 +1887,7 @@ def post_desk_supply(supply, user=None):
             lines=lines,
             user=user,
             operation=_op_for_key('CASH_FLOAT', 'CASH'),
+            cost_center=_cc_for_desk(getattr(supply, 'cash_desk', None)),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for desk supply {supply.pk}: {e}")
