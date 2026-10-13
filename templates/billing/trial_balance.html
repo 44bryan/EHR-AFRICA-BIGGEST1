@@ -24,102 +24,54 @@
 
 {% block content %}
 <!-- ── Filters ───────────────────────────────────────────────────────────────── -->
-<form method="get" id="tbForm">
-  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+<form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
 
-    <!-- Step 1: Pick the report type -->
-    <div class="btn-group btn-group-sm" role="group" id="modeGroup">
-      <input type="radio" class="btn-check" name="_mode" id="modeGeneral"    value="general"    autocomplete="off"
-             {% if not cc_breakdown and balance_type != 'auxiliaire' %}checked{% endif %}
-             onchange="switchMode('general')">
-      <label class="btn btn-outline-primary" for="modeGeneral">
-        <i class="bi bi-list-columns me-1"></i>General Balance
-      </label>
+  <!-- Always visible: date range -->
+  <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
+  <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
 
-      <input type="radio" class="btn-check" name="_mode" id="modeAux"       value="auxiliaire" autocomplete="off"
-             {% if not cc_breakdown and balance_type == 'auxiliaire' %}checked{% endif %}
-             onchange="switchMode('auxiliaire')">
-      <label class="btn btn-outline-primary" for="modeAux">
-        <i class="bi bi-diagram-3 me-1"></i>Auxiliary Balance
-      </label>
+  <!-- Checkbox: tick to see ALL departments at once -->
+  <div class="form-check mb-0 border rounded px-3 py-1 {% if cc_breakdown %}bg-success bg-opacity-10 border-success{% else %}border-secondary{% endif %}">
+    <input class="form-check-input" type="checkbox" name="cc_breakdown" value="1"
+           id="chkCC" {% if cc_breakdown %}checked{% endif %}
+           onchange="document.getElementById('normalFilters').classList.toggle('d-none', this.checked); this.form.submit();">
+    <label class="form-check-label small fw-semibold {% if cc_breakdown %}text-success{% endif %}" for="chkCC">
+      <i class="bi bi-building me-1"></i>All Departments Balance
+    </label>
+  </div>
 
-      <input type="radio" class="btn-check" name="_mode" id="modeDept"      value="depts"      autocomplete="off"
-             {% if cc_breakdown %}checked{% endif %}
-             onchange="switchMode('depts')">
-      <label class="btn btn-outline-success" for="modeDept">
-        <i class="bi bi-building me-1"></i>All Departments
-      </label>
+  <!-- Normal filters — hidden when checkbox is ticked -->
+  <div id="normalFilters" class="d-flex flex-wrap gap-2 align-items-center {% if cc_breakdown %}d-none{% endif %}">
+    <select name="balance_type" class="form-select form-select-sm" style="width:165px">
+      <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
+      <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
+    </select>
+    <select name="classe" class="form-select form-select-sm" style="width:200px">
+      <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
+      {% for cls, lbl in ohada_classes %}
+      <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+    <select name="cost_center" class="form-select form-select-sm {% if selected_cc %}border-warning fw-semibold{% endif %}" style="width:210px">
+      <option value="">All Departments</option>
+      {% for cc in cost_centers %}
+      <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
+        {{ cc.code }} — {{ cc.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
+             id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
+      <label class="form-check-label small" for="chkMvt">With movements only</label>
     </div>
-
-    <!-- Hidden fields carry the real values on submit -->
-    <input type="hidden" name="balance_type"  id="hBalance"  value="{{ balance_type }}">
-    <input type="hidden" name="cc_breakdown"  id="hCCBreak"  value="{% if cc_breakdown %}1{% endif %}">
-
-    <!-- Step 2: Date range (always visible) -->
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
-    <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
-
-    <!-- Step 3: Extra filters (only for General / Auxiliary) -->
-    <div id="extraFilters" class="d-flex flex-wrap gap-2 align-items-center {% if cc_breakdown %}d-none{% endif %}">
-      <select name="classe" class="form-select form-select-sm" style="width:200px" title="OHADA Class">
-        <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
-        {% for cls, lbl in ohada_classes %}
-        <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
-        {% endfor %}
-      </select>
-      <select name="cost_center" class="form-select form-select-sm {% if selected_cc %}border-warning fw-semibold{% endif %}"
-              style="width:215px" title="Limit to one department">
-        <option value="">— One Department (optional) —</option>
-        {% for cc in cost_centers %}
-        <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
-          {{ cc.code }} — {{ cc.name }}
-        </option>
-        {% endfor %}
-      </select>
-      <div class="form-check mb-0">
-        <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
-               id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
-        <label class="form-check-label small" for="chkMvt">With movements only</label>
-      </div>
-    </div>
-
-    <button type="submit" class="btn btn-sm btn-primary px-3">
-      <i class="bi bi-funnel me-1"></i>Run Report
+    <button type="submit" class="btn btn-sm btn-primary">
+      <i class="bi bi-funnel me-1"></i>Filter
     </button>
-    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+    <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
   </div>
 
-  <!-- Context hint -->
-  <div id="modeHint" class="text-muted small mb-2" style="padding-left:2px">
-    {% if cc_breakdown %}
-      <i class="bi bi-info-circle me-1 text-success"></i>
-      <strong>All Departments:</strong> Shows a separate balance for each of the {{ cost_centers|length }} cost centers — open one at a time to drill into accounts.
-    {% elif balance_type == 'auxiliaire' %}
-      <i class="bi bi-info-circle me-1 text-primary"></i>
-      <strong>Auxiliary Balance:</strong> Expands each summary account into its sub-accounts. Use this to see patient AR, supplier AP, or stock detail.
-    {% else %}
-      <i class="bi bi-info-circle me-1 text-primary"></i>
-      <strong>General Balance:</strong> Summary accounts only — the standard OHADA trial balance. Use "One Department" filter to see one cost center.
-    {% endif %}
-  </div>
 </form>
-
-<script>
-function switchMode(m) {
-  var hb = document.getElementById('hBalance');
-  var hc = document.getElementById('hCCBreak');
-  var ef = document.getElementById('extraFilters');
-  if (m === 'depts') {
-    hb.value = 'general';
-    hc.value = '1';
-    ef.classList.add('d-none');
-  } else {
-    hb.value = m;
-    hc.value = '';
-    ef.classList.remove('d-none');
-  }
-}
-</script>
 
 {% if selected_cc %}
 <div class="alert alert-warning border-warning d-flex align-items-center py-2 mb-3">
