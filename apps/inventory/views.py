@@ -1207,7 +1207,7 @@ def requisition_issue(request, req_id):
 def store_location_list(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
-    locations = StoreLocation.objects.filter(is_deleted=False)
+    locations = StoreLocation.objects.filter(is_deleted=False).select_related('cost_center').order_by('store_code')
     return render(request, 'inventory/store_location_list.html', {'locations': locations})
 
 
@@ -1215,23 +1215,30 @@ def store_location_list(request):
 def store_location_create(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import CostCenter
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
     if request.method == 'POST':
+        cc_id = request.POST.get('cost_center') or None
+        cc = CostCenter.objects.filter(pk=cc_id).first() if cc_id else None
         StoreLocation.objects.create(
             store_code=request.POST.get('store_code', '').strip() or '',
             name=request.POST.get('name', '').strip(),
             location_type=request.POST.get('location_type', 'CENTRAL'),
             address=request.POST.get('address', '').strip(),
+            cost_center=cc,
             created_by=request.user,
         )
         messages.success(request, 'Store location created.')
         return redirect('inventory:store_location_list')
-    return render(request, 'inventory/store_location_form.html', {'action': 'Create'})
+    return render(request, 'inventory/store_location_form.html', {'action': 'Create', 'cost_centers': cost_centers})
 
 
 @login_required
 def store_location_edit(request, loc_id):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    from apps.billing.models import CostCenter
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
     loc = get_object_or_404(StoreLocation, pk=loc_id, is_deleted=False)
     if request.method == 'POST':
         code = request.POST.get('store_code', '').strip()
@@ -1241,10 +1248,14 @@ def store_location_edit(request, loc_id):
         loc.location_type = request.POST.get('location_type', loc.location_type)
         loc.address = request.POST.get('address', '').strip()
         loc.is_active = 'is_active' in request.POST
+        cc_id = request.POST.get('cost_center') or None
+        loc.cost_center = CostCenter.objects.filter(pk=cc_id).first() if cc_id else None
         loc.save()
         messages.success(request, f'Location "{loc.name}" updated.')
         return redirect('inventory:store_location_list')
-    return render(request, 'inventory/store_location_form.html', {'location': loc, 'action': 'Edit'})
+    return render(request, 'inventory/store_location_form.html', {
+        'location': loc, 'action': 'Edit', 'cost_centers': cost_centers,
+    })
 
 
 @login_required
