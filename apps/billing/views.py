@@ -6938,6 +6938,11 @@ def trial_balance(request):
     code_to       = request.GET.get('code_to', '').strip()
     avec_mouvement = request.GET.get('avec_mouvement', '1')       # '1' = only with movement (default)
     cc_filter     = request.GET.get('cost_center', '')            # '' = all cost centers
+    # New unified CC selector: cc_mode=1 + cc_select='' → all-CC breakdown; cc_select=<pk> → single CC
+    cc_mode   = request.GET.get('cc_mode') == '1'
+    cc_select = request.GET.get('cc_select', '')
+    if cc_mode and cc_select:
+        cc_filter = cc_select   # specific CC pk chosen from dropdown
 
     # ── OHADA SYCEBNL classes 1–8 ─────────────────────────────────────────────
     OHADA_CLASSES = [
@@ -7032,7 +7037,8 @@ def trial_balance(request):
         return True
 
     # ── CC Breakdown mode — one section per cost center ───────────────────────
-    cc_breakdown = request.GET.get('cc_breakdown') == '1'
+    # Triggered by: legacy cc_breakdown=1  OR  cc_mode=1 with no specific CC selected
+    cc_breakdown = (request.GET.get('cc_breakdown') == '1') or (cc_mode and not cc_select)
     cc_sections  = []
     sections     = []
     tot_open_dr  = D0; tot_open_cr = D0
@@ -7450,6 +7456,9 @@ def trial_balance(request):
         'cost_centers':   cost_centers,
         'cc_filter':      cc_filter,
         'selected_cc':    selected_cc,
+        # For new CC filter UI: cc_mode=True when any CC filter active
+        'cc_mode':        cc_breakdown or bool(cc_filter),
+        'cc_select_val':  '' if cc_breakdown else cc_filter,
     })
 
 
