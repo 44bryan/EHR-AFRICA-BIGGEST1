@@ -23,7 +23,34 @@
 {% endblock %}
 
 {% block content %}
-<!-- ── Filters (no card wrapper — flat like other pages) ──────────────────── -->
+<!-- ── Mode selector ─────────────────────────────────────────────────────────── -->
+<div class="d-flex gap-2 mb-3">
+  <a href="?balance_type={{ balance_type }}&date_from={{ date_from }}&date_to={{ date_to }}&avec_mouvement={{ avec_mouvement }}&tb_mode=general"
+     class="btn {% if not selected_cc %}btn-primary{% else %}btn-outline-secondary{% endif %} btn-sm fw-semibold">
+    <i class="bi bi-hospital me-1"></i>General Balance — Entire Hospital
+  </a>
+  <a href="#" id="deptModeBtn"
+     class="btn {% if selected_cc %}btn-warning text-dark{% else %}btn-outline-warning{% endif %} btn-sm fw-semibold">
+    <i class="bi bi-building me-1"></i>By Department / Cost Center
+  </a>
+</div>
+
+<!-- ── Active scope banner ─────────────────────────────────────────────────── -->
+{% if selected_cc %}
+<div class="alert alert-warning border-warning d-flex align-items-center py-2 mb-3">
+  <i class="bi bi-building-fill fs-5 me-2 text-warning"></i>
+  <div>
+    <strong class="d-block">Department Trial Balance — {{ selected_cc.name }} ({{ selected_cc.code }})</strong>
+    <span class="small text-muted">Only journal entries tagged to this cost center are included. Other departments are excluded.</span>
+  </div>
+  <a href="{% url 'billing:trial_balance' %}?balance_type={{ balance_type }}&date_from={{ date_from }}&date_to={{ date_to }}&avec_mouvement={{ avec_mouvement }}"
+     class="btn btn-sm btn-outline-secondary ms-auto">
+    <i class="bi bi-x me-1"></i>Back to General Balance
+  </a>
+</div>
+{% endif %}
+
+<!-- ── Filters ───────────────────────────────────────────────────────────────── -->
 <form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:165px">
     <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
@@ -37,14 +64,18 @@
     <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
     {% endfor %}
   </select>
-  <select name="cost_center" class="form-select form-select-sm" title="Cost Center" style="width:200px">
-    <option value="" {% if not cc_filter %}selected{% endif %}>All Cost Centers</option>
-    {% for cc in cost_centers %}
-    <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
-      {{ cc.code }} — {{ cc.name }}
-    </option>
-    {% endfor %}
-  </select>
+  {# Cost center selector — hidden by default, shown when dept mode is active #}
+  <div id="ccSelectWrap" {% if not selected_cc %}style="display:none"{% endif %}>
+    <select name="cost_center" id="ccSelect" class="form-select form-select-sm" title="Department / Cost Center" style="width:220px">
+      <option value="">— Pick a Department —</option>
+      {% for cc in cost_centers %}
+      <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
+        {{ cc.code }} — {{ cc.name }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if selected_cc %}<input type="hidden" name="cost_center" value="{{ cc_filter }}">{% endif %}
   <div class="form-check mb-0">
     <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
            id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
@@ -53,17 +84,43 @@
   <button type="submit" class="btn btn-sm btn-primary">
     <i class="bi bi-funnel me-1"></i>Filter
   </button>
-  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+  <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
 </form>
 
-{% if selected_cc %}
-<div class="alert alert-info border-0 py-2 small mb-3">
-  <i class="bi bi-building me-1"></i>
-  Showing movements for cost center <strong>{{ selected_cc.code }} — {{ selected_cc.name }}</strong> only.
-  Journal entries not tagged to this cost center are excluded.
-  <a href="{% url 'billing:trial_balance' %}?date_from={{ date_from }}&date_to={{ date_to }}" class="ms-2">Clear filter</a>
-</div>
-{% endif %}
+<script>
+(function(){
+  var deptBtn = document.getElementById('deptModeBtn');
+  var ccWrap  = document.getElementById('ccSelectWrap');
+  var ccSel   = document.getElementById('ccSelect');
+  var hiddenCc = document.querySelector('input[name="cost_center"][type="hidden"]');
+
+  deptBtn.addEventListener('click', function(e){
+    e.preventDefault();
+    // Show the cost center picker inline
+    if (ccWrap.style.display === 'none') {
+      ccWrap.style.display = '';
+      // Remove hidden input so the select drives the value
+      if (hiddenCc) hiddenCc.remove();
+      deptBtn.classList.remove('btn-outline-warning');
+      deptBtn.classList.add('btn-warning', 'text-dark');
+      ccSel.focus();
+    } else {
+      ccWrap.style.display = 'none';
+      deptBtn.classList.remove('btn-warning', 'text-dark');
+      deptBtn.classList.add('btn-outline-warning');
+    }
+  });
+
+  // Auto-submit when a cost center is picked
+  if (ccSel) {
+    ccSel.addEventListener('change', function(){
+      if (ccSel.value) {
+        document.getElementById('tbForm').submit();
+      }
+    });
+  }
+})();
+</script>
 
 <script>
 (function(){
@@ -97,7 +154,15 @@
 <div class="card shadow-sm">
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
     <span class="fw-semibold small">
-      {% if balance_type == 'auxiliaire' %}Auxiliary Balance — Control Accounts + Detail Breakdown{% else %}General Balance — Summary Accounts{% endif %}
+      {% if balance_type == 'auxiliaire' %}Auxiliary Balance — Control Accounts + Detail{% else %}General Balance — Summary Accounts{% endif %}
+      {% if selected_cc %}
+        &nbsp;·&nbsp;
+        <span class="badge bg-warning text-dark fs-6 py-1 px-2">
+          <i class="bi bi-building me-1"></i>{{ selected_cc.name }} ({{ selected_cc.code }})
+        </span>
+      {% else %}
+        &nbsp;·&nbsp; <span class="text-muted">All Departments</span>
+      {% endif %}
       {% if classe_filter %}&nbsp;·&nbsp; Class {{ classe_filter }}{% endif %}
       &nbsp;·&nbsp; {{ date_from }} to {{ date_to }}
     </span>
@@ -333,9 +398,15 @@
     <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f;letter-spacing:0.5px">
       {% if balance_type == 'auxiliaire' %}BALANCE AUXILIAIRE — COMPTES COLLECTIFS + DÉTAIL{% else %}BALANCE GÉNÉRALE — COMPTES COLLECTIFS{% endif %}
     </div>
+    {% if selected_cc %}
+    <div style="font-size:11pt;font-weight:700;color:#92400e;background:#fef3c7;padding:3px 10px;border-radius:4px;display:inline-block;margin-top:4px">
+      DÉPARTEMENT: {{ selected_cc.name|upper }} ({{ selected_cc.code }})
+    </div>
+    {% endif %}
     <div style="font-size:9pt;color:#444;margin-top:3px">
       Period: <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>
       {% if classe_filter %} &nbsp;|&nbsp; Class {{ classe_filter }}{% endif %}
+      {% if not selected_cc %} &nbsp;|&nbsp; All Departments{% endif %}
       &nbsp;|&nbsp; Prepared by: {{ request.user.full_name }}
     </div>
   </div>

@@ -7208,15 +7208,21 @@ def trial_balance(request):
     clos_diff = tot_clos_dr - tot_clos_cr
 
     export_fmt = request.GET.get('export', '').lower()
+    # Resolve cost center early (needed for export titles)
+    _exp_cc = CostCenter.objects.filter(pk=cc_filter).first() if cc_filter else None
+    _cc_label = f' — {_exp_cc.name} ({_exp_cc.code})' if _exp_cc else ' — All Departments'
+    _cc_slug  = f'_{_exp_cc.code}' if _exp_cc else ''
 
     if export_fmt == 'csv':
         import csv
         from django.http import HttpResponse
         resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
         resp['Content-Disposition'] = (
-            f'attachment; filename="balance_{balance_type}_{date_from}_{date_to}.csv"'
+            f'attachment; filename="balance_{balance_type}{_cc_slug}_{date_from}_{date_to}.csv"'
         )
         w = csv.writer(resp)
+        bal_lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
+        w.writerow([f'{bal_lbl}{_cc_label}  |  Period: {date_from} to {date_to}'])
         w.writerow(['Code', 'Account Name',
                     'Opening Debit', 'Opening Credit',
                     'Movement Debit', 'Movement Credit',
@@ -7264,30 +7270,36 @@ def trial_balance(request):
         thin      = Side(style='thin')
         border    = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        # Title
+        # Title rows — row 1: report name, row 2: department scope
         ws.merge_cells('A1:H1')
         lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
         cls_lbl = f' · Classe {classe_filter}' if classe_filter else ''
         ws['A1'] = f'{lbl}{cls_lbl} — Du {date_from} au {date_to}'
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center')
+        ws.merge_cells('A2:H2')
+        cc_scope = f'Department: {_exp_cc.name} ({_exp_cc.code})' if _exp_cc else 'Scope: All Departments — Entire Hospital'
+        ws['A2'] = cc_scope
+        ws['A2'].font = Font(bold=True, size=10, color='92400E' if _exp_cc else '374151')
+        ws['A2'].fill = PatternFill('solid', fgColor='FEF3C7' if _exp_cc else 'F3F4F6')
+        ws['A2'].alignment = Alignment(horizontal='center')
 
-        # Group header row 2
+        # Group header row 3
         headers_top = ['', '', 'Opening Balances', '', 'Period Movements', '', 'Closing Balances', '']
         for col, val in enumerate(headers_top, 1):
-            c = ws.cell(row=2, column=col, value=val)
+            c = ws.cell(row=3, column=col, value=val)
             c.fill = hdr_fill; c.font = hdr_font
             c.alignment = Alignment(horizontal='center')
-        ws.merge_cells('C2:D2'); ws.merge_cells('E2:F2'); ws.merge_cells('G2:H2')
+        ws.merge_cells('C3:D3'); ws.merge_cells('E3:F3'); ws.merge_cells('G3:H3')
 
-        # Sub-header row 3
+        # Sub-header row 4
         headers_sub = ['Code', 'Account Name', 'Debit', 'Credit', 'Debit', 'Credit', 'Debit', 'Credit']
         for col, val in enumerate(headers_sub, 1):
-            c = ws.cell(row=3, column=col, value=val)
+            c = ws.cell(row=4, column=col, value=val)
             c.fill = hdr_fill; c.font = hdr_font
             c.alignment = Alignment(horizontal='right' if col > 2 else 'left')
 
-        row_num = 4
+        row_num = 5
         for sec in sections:
             # Section header
             ws.merge_cells(f'A{row_num}:H{row_num}')
@@ -7345,7 +7357,7 @@ def trial_balance(request):
         resp = HR(buf.read(),
                   content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp['Content-Disposition'] = (
-            f'attachment; filename="balance_comptes_{date_from}_{date_to}.xlsx"'
+            f'attachment; filename="balance_comptes{_cc_slug}_{date_from}_{date_to}.xlsx"'
         )
         return resp
 
