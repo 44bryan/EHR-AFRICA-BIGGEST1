@@ -715,11 +715,9 @@ const itemSummary     = document.getElementById('item-summary-text');
 const itemsBtbody     = document.getElementById('items-tbody');
 const itemsTfoot      = document.getElementById('items-tfoot');
 const itemCountBadge  = document.getElementById('item-count-badge');
-const amtReceived     = document.getElementById('amount-received');
-const changeDueDisp   = document.getElementById('change-due-display');
-const changePanel     = document.getElementById('change-panel');
-const interPanel      = document.getElementById('interaction-panel');
-const payMethodInput  = document.getElementById('payment-method-input');
+// Modal elements resolved lazily in DOMContentLoaded (modal HTML is after this script)
+let amtReceived = null, changeDueDisp = null, changePanel = null,
+    interPanel = null, payMethodInput = null;
 
 // ── Barcode Scanning ──────────────────────────────────────────────────────
 const barcodeInput    = document.getElementById('barcode-scan-input');
@@ -1112,10 +1110,8 @@ document.querySelectorAll('.remove-item-form').forEach(function (form) {
 });
 
 // ── Discount + Change calculator ──────────────────────────────────────────
-const discPctInput  = document.getElementById('discount-pct');
-const discFlatInput = document.getElementById('discount-flat');
-const subtotalDisp  = document.getElementById('subtotal-display');
-const netDisp       = document.getElementById('net-display');
+// Also in modal — resolved lazily
+let discPctInput = null, discFlatInput = null, subtotalDisp = null, netDisp = null;
 
 function getNetTotal() {
   let net = runningTotal;
@@ -1149,58 +1145,70 @@ function calcChange() {
     if (label) label.style.color = change < 0 ? '#dc2626' : '#16a34a';
   }
 }
-if (amtReceived) amtReceived.addEventListener('input', calcChange);
-if (discPctInput)  discPctInput.addEventListener('input', recalcDiscount);
-if (discFlatInput) discFlatInput.addEventListener('input', recalcDiscount);
-calcChange();
-
-// ── FCFA denomination buttons — accumulate amount by tapping bills ─────────
-document.querySelectorAll('.denom-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    if (!amtReceived) return;
-    var cur = parseFloat(amtReceived.value) || 0;
-    amtReceived.value = Math.round(cur + parseInt(this.dataset.val));
-    calcChange();
-  });
-});
-var denomExact = document.getElementById('denom-exact');
-if (denomExact) denomExact.addEventListener('click', function() {
-  if (amtReceived) { amtReceived.value = getNetTotal(); calcChange(); }
-});
-var denomClear = document.getElementById('denom-clear');
-if (denomClear) denomClear.addEventListener('click', function() {
-  if (amtReceived) { amtReceived.value = 0; calcChange(); }
-});
-
-// ── Payment method toggle ──────────────────────────────────────────────────
-document.querySelectorAll('.pay-method-btn').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active', 'btn-secondary'));
-    this.classList.add('active');
-    if (payMethodInput) payMethodInput.value = this.dataset.value;
-  });
-});
-// Activate Cash by default
-const cashBtn = document.querySelector('.pay-method-btn[data-value="CASH"]');
-if (cashBtn) cashBtn.classList.add('active');
-
 // ── Enable/disable "Collect Payment" button as items change ────────────────
 function syncPayBtn() {
   const btn = document.getElementById('openPayModalBtn');
   if (btn) btn.disabled = (itemCount === 0);
 }
 
-// ── Sync running total into modal header when modal opens ─────────────────
-const payModalEl = document.getElementById('payModal');
-if (payModalEl) {
-  payModalEl.addEventListener('show.bs.modal', function () {
-    // Refresh the grand total display inside the modal header
-    const modalGt = document.getElementById('modal-grand-total');
-    if (modalGt) modalGt.textContent = Math.round(runningTotal).toLocaleString();
-    // Re-run discount calc so net/amount-received are current
-    recalcDiscount();
+// ── All modal-element wiring — deferred until DOM is fully parsed ──────────
+// (The #payModal div is rendered AFTER this <script> tag, so getElementById
+//  calls for elements inside it return null at parse time.)
+document.addEventListener('DOMContentLoaded', function() {
+  amtReceived   = document.getElementById('amount-received');
+  changeDueDisp = document.getElementById('change-due-display');
+  changePanel   = document.getElementById('change-panel');
+  interPanel    = document.getElementById('interaction-panel');
+  payMethodInput= document.getElementById('payment-method-input');
+  discPctInput  = document.getElementById('discount-pct');
+  discFlatInput = document.getElementById('discount-flat');
+  subtotalDisp  = document.getElementById('subtotal-display');
+  netDisp       = document.getElementById('net-display');
+
+  if (amtReceived)  amtReceived.addEventListener('input', calcChange);
+  if (discPctInput)  discPctInput.addEventListener('input', recalcDiscount);
+  if (discFlatInput) discFlatInput.addEventListener('input', recalcDiscount);
+  calcChange();
+
+  // Denomination buttons
+  document.querySelectorAll('.denom-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (!amtReceived) return;
+      var cur = parseFloat(amtReceived.value) || 0;
+      amtReceived.value = Math.round(cur + parseInt(this.dataset.val));
+      calcChange();
+    });
   });
-}
+  var denomExact = document.getElementById('denom-exact');
+  if (denomExact) denomExact.addEventListener('click', function() {
+    if (amtReceived) { amtReceived.value = getNetTotal(); calcChange(); }
+  });
+  var denomClear = document.getElementById('denom-clear');
+  if (denomClear) denomClear.addEventListener('click', function() {
+    if (amtReceived) { amtReceived.value = 0; calcChange(); }
+  });
+
+  // Payment method toggle
+  document.querySelectorAll('.pay-method-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.pay-method-btn').forEach(b => b.classList.remove('active', 'btn-secondary'));
+      this.classList.add('active');
+      if (payMethodInput) payMethodInput.value = this.dataset.value;
+    });
+  });
+  var cashBtn = document.querySelector('.pay-method-btn[data-value="CASH"]');
+  if (cashBtn) cashBtn.classList.add('active');
+
+  // Sync totals + re-run discount when modal opens
+  var payModalEl = document.getElementById('payModal');
+  if (payModalEl) {
+    payModalEl.addEventListener('show.bs.modal', function() {
+      var modalGt = document.getElementById('modal-grand-total');
+      if (modalGt) modalGt.textContent = Math.round(runningTotal).toLocaleString();
+      recalcDiscount();
+    });
+  }
+});
 
 // ── Payment validation ─────────────────────────────────────────────────────
 function validatePayment() {
@@ -1568,30 +1576,14 @@ document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
               <label class="form-label fw-semibold">Cash Denominations (FCFA)</label>
               <div class="d-grid gap-2" id="denom-buttons">
                 <div class="row g-2">
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="100">100</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="500">500</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="1000">1,000</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="2000">2,000</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-success fw-bold w-100 denom-btn" data-val="5000">5,000</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-success fw-bold w-100 denom-btn" data-val="10000">10,000</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-warning fw-bold w-100 denom-btn" data-val="25000">25,000</button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn btn-outline-warning fw-bold w-100 denom-btn" data-val="50000">50,000</button>
-                  </div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="100">100</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="500">500</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="1000">1,000</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-secondary fw-bold w-100 denom-btn" data-val="2000">2,000</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="5000">5,000</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-outline-primary fw-bold w-100 denom-btn" data-val="10000">10,000</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-primary fw-bold w-100 denom-btn" data-val="25000">25,000</button></div>
+                  <div class="col-6"><button type="button" class="btn btn-primary fw-bold w-100 denom-btn" data-val="50000">50,000</button></div>
                 </div>
               </div>
               <div class="d-flex gap-2 mt-2">
