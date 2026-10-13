@@ -7031,13 +7031,74 @@ def trial_balance(request):
             return False
         return True
 
-    # ── Build sections grouped by OHADA class (first digit of code) ───────────
-    sections = []
-    tot_open_dr = D0; tot_open_cr = D0
-    tot_move_dr = D0; tot_move_cr = D0
-    tot_clos_dr = D0; tot_clos_cr = D0
+    # ── CC Breakdown mode — one section per cost center ───────────────────────
+    cc_breakdown = request.GET.get('cc_breakdown') == '1'
+    cc_sections  = []
+    sections     = []
+    tot_open_dr  = D0; tot_open_cr = D0
+    tot_move_dr  = D0; tot_move_cr = D0
+    tot_clos_dr  = D0; tot_clos_cr = D0
 
-    if balance_type == 'general':
+    if cc_breakdown:
+        from collections import defaultdict
+        all_ccs_q = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+        move_by_cc = (
+            move_base
+            .values('entry__cost_center_id', 'account_id')
+            .annotate(total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount'))
+        )
+        open_by_cc = (
+            open_base
+            .values('entry__cost_center_id', 'account_id')
+            .annotate(total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount'))
+        )
+        move_data = defaultdict(dict)
+        for r in move_by_cc:
+            if r['entry__cost_center_id']:
+                move_data[r['entry__cost_center_id']][r['account_id']] = (
+                    r['total_dr'] or D0, r['total_cr'] or D0)
+        open_data = defaultdict(dict)
+        for r in open_by_cc:
+            if r['entry__cost_center_id']:
+                open_data[r['entry__cost_center_id']][r['account_id']] = (
+                    r['total_dr'] or D0, r['total_cr'] or D0)
+
+        for cc in all_ccs_q:
+            cc_id = cc.pk
+            mv = move_data.get(cc_id, {})
+            op = open_data.get(cc_id, {})
+            if not mv and not op:
+                continue
+            all_acct_ids = set(mv.keys()) | set(op.keys())
+            rows = []
+            tt = {k: D0 for k in ('open_dr','open_cr','move_dr','move_cr','clos_dr','clos_cr')}
+            for acct_id in sorted(all_acct_ids,
+                                  key=lambda aid: acct_by_id[aid].code if aid in acct_by_id else '~'):
+                if acct_id not in acct_by_id:
+                    continue
+                acct = acct_by_id[acct_id]
+                o_dr_r, o_cr_r = op.get(acct_id, (D0, D0))
+                m_dr,   m_cr   = mv.get(acct_id, (D0, D0))
+                open_net = o_dr_r - o_cr_r
+                o_dr2 = max(D0, open_net);  o_cr2 = max(D0, -open_net)
+                clos_net = open_net + m_dr - m_cr
+                c_dr = max(D0, clos_net);   c_cr  = max(D0, -clos_net)
+                rows.append({
+                    'code': acct.code, 'name': acct.name, 'pk': acct.pk,
+                    'open_dr': o_dr2, 'open_cr': o_cr2,
+                    'move_dr': m_dr,  'move_cr': m_cr,
+                    'clos_dr': c_dr,  'clos_cr': c_cr,
+                })
+                tt['open_dr'] += o_dr2; tt['open_cr'] += o_cr2
+                tt['move_dr'] += m_dr;  tt['move_cr'] += m_cr
+                tt['clos_dr'] += c_dr;  tt['clos_cr'] += c_cr
+            if rows:
+                cc_sections.append({'cc': cc, 'rows': rows, **tt})
+                tot_open_dr += tt['open_dr']; tot_open_cr += tt['open_cr']
+                tot_move_dr += tt['move_dr']; tot_move_cr += tt['move_cr']
+                tot_clos_dr += tt['clos_dr']; tot_clos_cr += tt['clos_cr']
+
+    elif balance_type == 'general':
         gen_open = _full_rollup(open_map)
         gen_move = _full_rollup(move_map)
 
@@ -7086,7 +7147,7 @@ def trial_balance(request):
             tot_move_dr += sub['move_dr']; tot_move_cr += sub['move_cr']
             tot_clos_dr += sub['clos_dr']; tot_clos_cr += sub['clos_cr']
 
-    else:  # auxiliaire — control account header + indented children + subtotal
+    elif balance_type != 'general':  # auxiliaire — control account header + indented children + subtotal
         # Map each summary to its DIRECT leaf children only.
         # Multi-level summaries (705200 → 7052000 → 7052001) are handled by
         # iterating ALL summaries; 705200 will have no direct leaf children
@@ -7369,6 +7430,8 @@ def trial_balance(request):
 
     return render(request, 'billing/trial_balance.html', {
         'sections':       sections,
+        'cc_sections':    cc_sections,
+        'cc_breakdown':   cc_breakdown,
         'date_from':      date_from,
         'date_to':        date_to,
         'balance_type':   balance_type,

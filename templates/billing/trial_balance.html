@@ -25,37 +25,63 @@
 {% block content %}
 <!-- ── Filters ───────────────────────────────────────────────────────────────── -->
 <form method="get" id="tbForm" class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:165px">
-    <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
-    <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
-  </select>
   <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From date" style="width:140px">
   <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   title="To date"   style="width:140px">
-  <select name="classe" class="form-select form-select-sm" title="OHADA Class" style="width:205px">
-    <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
-    {% for cls, lbl in ohada_classes %}
-    <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
-    {% endfor %}
-  </select>
-  <select name="cost_center" class="form-select form-select-sm {% if selected_cc %}border-warning{% endif %}"
-          title="Filter by Cost Center (leave blank for all)" style="width:215px">
-    <option value="" {% if not cc_filter %}selected{% endif %}>All Cost Centers</option>
-    {% for cc in cost_centers %}
-    <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
-      {{ cc.code }} — {{ cc.name }}
-    </option>
-    {% endfor %}
-  </select>
-  <div class="form-check mb-0">
-    <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
-           id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
-    <label class="form-check-label small fw-semibold" for="chkMvt">With movements only</label>
+
+  <!-- CC Breakdown checkbox — when ticked, show all cost centers at once -->
+  <div class="form-check mb-0 ms-1 me-1">
+    <input class="form-check-input" type="checkbox" name="cc_breakdown" value="1"
+           id="chkCCBreakdown" {% if cc_breakdown %}checked{% endif %}
+           onchange="toggleCCMode(this)">
+    <label class="form-check-label small fw-semibold text-primary" for="chkCCBreakdown">
+      <i class="bi bi-building me-1"></i>All Cost Centers
+    </label>
   </div>
+
+  <!-- Normal-mode controls — hidden when cc_breakdown is on -->
+  <div id="normalModeControls" class="d-flex flex-wrap gap-2 align-items-center {% if cc_breakdown %}d-none{% endif %}">
+    <select name="balance_type" class="form-select form-select-sm" title="Balance type" style="width:165px">
+      <option value="general"    {% if balance_type != 'auxiliaire' %}selected{% endif %}>General Balance</option>
+      <option value="auxiliaire" {% if balance_type == 'auxiliaire' %}selected{% endif %}>Auxiliary Balance</option>
+    </select>
+    <select name="classe" class="form-select form-select-sm" title="OHADA Class" style="width:205px">
+      <option value="" {% if not classe_filter %}selected{% endif %}>All OHADA Classes</option>
+      {% for cls, lbl in ohada_classes %}
+      <option value="{{ cls }}" {% if classe_filter == cls %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+    <select name="cost_center" class="form-select form-select-sm {% if selected_cc %}border-warning{% endif %}"
+            title="Filter by single Cost Center" style="width:215px">
+      <option value="" {% if not cc_filter %}selected{% endif %}>All Cost Centers</option>
+      {% for cc in cost_centers %}
+      <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>
+        {{ cc.code }} — {{ cc.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" name="avec_mouvement" value="1"
+             id="chkMvt" {% if avec_mouvement == '1' %}checked{% endif %}>
+      <label class="form-check-label small fw-semibold" for="chkMvt">With movements only</label>
+    </div>
+  </div>
+
   <button type="submit" class="btn btn-sm btn-primary">
-    <i class="bi bi-funnel me-1"></i>Filter
+    <i class="bi bi-funnel me-1"></i>Apply
   </button>
   <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
 </form>
+
+<script>
+function toggleCCMode(cb) {
+  var div = document.getElementById('normalModeControls');
+  if (cb.checked) {
+    div.classList.add('d-none');
+  } else {
+    div.classList.remove('d-none');
+  }
+}
+</script>
 
 {% if selected_cc %}
 <div class="alert alert-warning border-warning d-flex align-items-center py-2 mb-3">
@@ -100,6 +126,114 @@
   </div>
 </div>
 
+{% if cc_breakdown %}
+<!-- ══ COST CENTER BREAKDOWN ═══════════════════════════════════════════════ -->
+<div class="mb-2 d-flex align-items-center gap-2">
+  <span class="badge bg-primary fs-6 px-3 py-2">
+    <i class="bi bi-building me-1"></i>{{ cc_sections|length }} Cost Center{{ cc_sections|length|pluralize }} with activity
+  </span>
+  <span class="text-muted small">{{ date_from }} to {{ date_to }} &mdash; click any department header to expand accounts</span>
+</div>
+
+<div class="accordion" id="ccAccordion">
+{% for ccs in cc_sections %}
+<div class="card border-0 shadow-sm mb-2">
+  <div class="card-header py-2 px-3 d-flex align-items-center justify-content-between"
+       style="cursor:pointer;background:#f0f4ff"
+       data-bs-toggle="collapse" data-bs-target="#cc{{ forloop.counter }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
+    <div class="d-flex align-items-center gap-3">
+      <span class="badge bg-primary px-2 py-1" style="font-size:.82rem;min-width:42px">{{ ccs.cc.code }}</span>
+      <span class="fw-bold">{{ ccs.cc.name }}</span>
+      <span class="text-muted small">({{ ccs.rows|length }} account{{ ccs.rows|length|pluralize }})</span>
+    </div>
+    <div class="d-flex gap-3 align-items-center small">
+      <span class="text-danger fw-semibold">Dr&nbsp;{{ ccs.move_dr|floatformat:0|intcomma }}</span>
+      <span class="text-success fw-semibold">Cr&nbsp;{{ ccs.move_cr|floatformat:0|intcomma }}</span>
+      <span class="fw-bold {% if ccs.clos_dr > ccs.clos_cr %}text-danger{% else %}text-success{% endif %}">
+        Net&nbsp;{% if ccs.clos_dr > ccs.clos_cr %}Dr {{ ccs.clos_dr|floatformat:0|intcomma }}{% else %}Cr {{ ccs.clos_cr|floatformat:0|intcomma }}{% endif %}
+      </span>
+      <i class="bi bi-chevron-down text-muted"></i>
+    </div>
+  </div>
+  <div id="cc{{ forloop.counter }}" class="collapse {% if forloop.first %}show{% endif %}">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle" style="font-size:.8rem">
+        <thead class="table-light">
+          <tr>
+            <th style="width:90px">Code</th>
+            <th>Account Name</th>
+            <th class="text-end text-muted" style="border-left:1px solid #ddd">Open Dr</th>
+            <th class="text-end text-muted">Open Cr</th>
+            <th class="text-end text-danger fw-bold" style="border-left:2px solid #ccc">Move Dr</th>
+            <th class="text-end text-success fw-bold">Move Cr</th>
+            <th class="text-end fw-bold" style="border-left:2px solid #ccc">Close Dr</th>
+            <th class="text-end fw-bold">Close Cr</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in ccs.rows %}
+          <tr>
+            <td class="font-monospace text-muted small">{{ row.code }}</td>
+            <td>
+              <a href="{% url 'billing:general_ledger' %}?account={{ row.pk }}&date_from={{ date_from }}&date_to={{ date_to }}"
+                 class="text-decoration-none text-dark small">{{ row.name }}</a>
+            </td>
+            <td class="text-end small {% if row.open_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:1px solid #ddd">
+              {% if row.open_dr %}{{ row.open_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small {% if row.open_cr %}text-success{% else %}text-muted{% endif %}">
+              {% if row.open_cr %}{{ row.open_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small {% if row.move_dr %}text-danger{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
+              {% if row.move_dr %}{{ row.move_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small {% if row.move_cr %}text-success{% else %}text-muted{% endif %}">
+              {% if row.move_cr %}{{ row.move_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small {% if row.clos_dr %}text-dark fw-semibold{% else %}text-muted{% endif %}" style="border-left:2px solid #ccc">
+              {% if row.clos_dr %}{{ row.clos_dr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small {% if row.clos_cr %}text-dark fw-semibold{% else %}text-muted{% endif %}">
+              {% if row.clos_cr %}{{ row.clos_cr|floatformat:0|intcomma }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-semibold" style="border-top:2px solid #bbb">
+          <tr>
+            <td colspan="2" class="text-end pe-2 small text-muted">{{ ccs.cc.code }} — {{ ccs.cc.name }} Total</td>
+            <td class="text-end text-danger" style="border-left:1px solid #ddd">{{ ccs.open_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success">{{ ccs.open_cr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-danger" style="border-left:2px solid #ccc">{{ ccs.move_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-success">{{ ccs.move_cr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-dark" style="border-left:2px solid #ccc">{{ ccs.clos_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end text-dark">{{ ccs.clos_cr|floatformat:0|intcomma }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+{% empty %}
+<div class="alert alert-info">No cost center activity found for the selected period.</div>
+{% endfor %}
+</div>
+
+<!-- Grand total bar -->
+<div class="card border-0 shadow-sm mt-3">
+  <div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
+    <span class="fw-bold text-uppercase small text-muted">Grand Totals — All Cost Centers</span>
+    <span class="fw-bold text-danger">Opening Dr: {{ tot_open_dr|floatformat:0|intcomma }}</span>
+    <span class="fw-bold text-success">Opening Cr: {{ tot_open_cr|floatformat:0|intcomma }}</span>
+    <span class="fw-bold text-danger">Period Dr: {{ tot_move_dr|floatformat:0|intcomma }}</span>
+    <span class="fw-bold text-success">Period Cr: {{ tot_move_cr|floatformat:0|intcomma }}</span>
+    <span class="fw-bold">Closing Dr: {{ tot_clos_dr|floatformat:0|intcomma }}</span>
+    <span class="fw-bold">Closing Cr: {{ tot_clos_cr|floatformat:0|intcomma }}</span>
+  </div>
+</div>
+
+{% else %}
+<!-- ══ NORMAL TRIAL BALANCE ════════════════════════════════════════════════ -->
 <div class="card shadow-sm">
   <div class="card-header py-2 d-flex justify-content-between align-items-center">
     <span class="fw-semibold small">
@@ -315,6 +449,7 @@
     </table>
   </div>
 </div>
+{% endif %}{# end cc_breakdown else #}
 
 <div id="printHeader" style="display:none">
   <!-- Top letterhead bar -->
