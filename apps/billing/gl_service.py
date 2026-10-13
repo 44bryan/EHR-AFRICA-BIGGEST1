@@ -688,6 +688,7 @@ def post_cash_to_bank(deposit, user=None):
                 (get_system_account('CASH_SAFE'), 0, deposit.amount, "Cash withdrawn from safe"),
             ],
             user=user,
+            cost_center=_billing_cc('012'),
             operation=_op_for_key('CASH_DEPOSIT', 'CASH'),
         )
     except Exception as e:
@@ -717,6 +718,7 @@ def post_advance_disbursement(advance, user=None):
                 (cr_code, 0, amount, "Cash/bank disbursement"),
             ],
             user=user,
+            cost_center=_billing_cc('012'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for advance {advance.pk}: {e}")
@@ -741,6 +743,7 @@ def post_advance_settlement(advance, user=None):
                 (staff_adv, 0, amount, f"Settlement of advance by {advance.staff.get_full_name()}"),
             ],
             user=user,
+            cost_center=_billing_cc('012'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for advance settlement {advance.pk}: {e}")
@@ -807,6 +810,7 @@ def post_asset_addition(asset, user=None):
                  f"Supplier payable — {asset.supplier or 'N/A'}"),
             ],
             user=user,
+            cost_center=_billing_cc('013'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for asset addition {asset.pk}: {e}")
@@ -862,6 +866,7 @@ def post_asset_disposal(disposal, user=None):
             source_id=disposal.pk,
             lines=lines,
             user=user,
+            cost_center=_billing_cc('013'),
             operation=_op_for_key('ASSET_DISPOSAL', 'ASSET'),
         )
         if entry:
@@ -1001,6 +1006,7 @@ def post_waiver(invoice, user=None):
             source_id=invoice.pk,
             lines=lines,
             user=user,
+            cost_center=_cc_for_service_category('OTHER'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for waiver {invoice.pk}: {e}")
@@ -1210,6 +1216,7 @@ def post_cash_transfer(transfer, user=None):
             source_type='cash_transfer',
             source_id=transfer.pk,
             lines=lines,
+            cost_center=_billing_cc('012'),
             user=user or transfer.confirmed_by,
             operation=_op_for_key('CASH_TRANSFER', 'CASH'),
         )
@@ -1329,6 +1336,7 @@ def post_insurance_batch_payment(batch, user=None):
             source_id=batch.pk,
             lines=lines,
             user=user,
+            cost_center=_billing_cc('007'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for insurance batch payment {batch.pk}: {e}")
@@ -1366,6 +1374,7 @@ def post_insurance_claim_rejection(claim, user=None):
             source_id=claim.pk,
             lines=lines,
             user=user,
+            cost_center=_billing_cc('007'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for claim rejection {claim.pk}: {e}")
@@ -1399,6 +1408,7 @@ def post_insurance_write_off(claim, user=None):
             source_id=claim.pk,
             lines=lines,
             user=user,
+            cost_center=_billing_cc('007'),
         )
     except Exception as e:
         logger.exception(f"GL auto-post failed for insurance write-off {claim.pk}: {e}")
@@ -1437,6 +1447,7 @@ def post_cash_variance(variance, user=None):
             source_id=variance.pk,
             lines=lines,
             user=user or variance.resolved_by,
+            cost_center=_billing_cc('012'),
             operation=_op_for_key('ADJUSTMENT', 'YEAR_END'),
         )
     except Exception as e:
@@ -1514,6 +1525,7 @@ def post_pharmacy_cogs(dispensing_item, user=None):
                  f"Stock reduction — {drug.name} x{qty}"),
             ],
             user=user,
+            cost_center=_billing_cc('001') if _loc_type == 'THEATRE' else _billing_cc('008'),
             operation=_op_for_key(_pharma_stock_op_key, 'STOCK'),
         )
     except Exception as e:
@@ -1568,6 +1580,7 @@ def post_pharmacy_transfer(transfer, user=None):
                  f"Transfer OUT to {transfer.to_location.name}"),
             ],
             user=user,
+            cost_center=getattr(getattr(transfer, 'to_location', None), 'cost_center', None) or _billing_cc('008'),
             operation=_op_for_key('STOCK_TRANSFER', 'STOCK'),
         )
     except Exception as e:
@@ -1605,6 +1618,7 @@ def post_otc_sale(dispensing, user=None):
                  f"Pharmacy revenue — {dispensing.customer_name or 'Walk-in'}"),
             ],
             user=user,
+            cost_center=_billing_cc('008'),
             operation=_op_for_key('PHARMACY', 'REVENUE'),
         )
     except Exception as e:
@@ -1668,6 +1682,7 @@ def post_stock_adjustment(adjustment, user=None):
             source_id=adjustment.pk,
             lines=lines,
             user=user or adjustment.created_by,
+            cost_center=_billing_cc('008'),
             operation=_op_for_key('EXPIRED_STOCK', 'STOCK') if adjustment.quantity_change < 0
                       else _op_for_key('STOCK_IN_PHARMACY', 'STOCK'),
         )
@@ -1733,6 +1748,7 @@ def post_optical_cogs(order, user=None):
             source_id=order.pk,
             lines=lines_debit + lines_credit,
             user=user,
+            cost_center=_billing_cc('009'),
             operation=_op_for_key('STOCK_OUT_OPTICAL', 'STOCK'),
         )
     except Exception as e:
@@ -1769,6 +1785,7 @@ def post_optical_stock_receipt(frame, quantity, unit_cost, supplier_ref='', user
                  f"Payable to supplier — {supplier_ref or 'N/A'}"),
             ],
             user=user,
+            cost_center=_billing_cc('009'),
             operation=_op_for_key('STOCK_IN_OPTICAL', 'STOCK'),
         )
     except Exception as e:
