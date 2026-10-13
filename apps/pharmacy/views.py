@@ -2155,6 +2155,25 @@ def patient_typeahead_ajax(request):
             patient__in=patients, is_dispensed=False, is_deleted=False,
         ).values_list('patient_id').annotate(cnt=Count('id')).values_list('patient_id', 'cnt')
     )
+    # Fetch current visit tier for each patient in one query
+    from apps.patients.models import Visit
+    patient_ids = [p.id for p in patients]
+    # Get most recent visit per patient
+    from django.db.models import Max
+    latest_visit_dates = dict(
+        Visit.objects.filter(patient_id__in=patient_ids, is_deleted=False)
+        .values('patient_id').annotate(latest=Max('visit_date'))
+        .values_list('patient_id', 'latest')
+    )
+    visit_tiers = {}
+    for v in Visit.objects.filter(
+        patient_id__in=patient_ids, is_deleted=False,
+        visit_date__in=latest_visit_dates.values()
+    ).values('patient_id', 'service_tier', 'visit_date'):
+        # Only keep the one matching this patient's latest date
+        if latest_visit_dates.get(v['patient_id']) == v['visit_date']:
+            visit_tiers[v['patient_id']] = v['service_tier'] or 'STANDARD'
+
     results = []
     for p in patients:
         results.append({
@@ -2164,6 +2183,7 @@ def patient_typeahead_ajax(request):
             'age': calculate_age(p.date_of_birth) if p.date_of_birth else None,
             'gender': p.get_gender_display() if p.gender else '',
             'pending_rx': rx_counts.get(p.id, 0),
+            'tier': visit_tiers.get(p.id, 'STANDARD'),
         })
     return JsonResponse({'results': results})
 
@@ -2383,10 +2403,20 @@ def direct_sale(request):
             messages.error(request, 'Please select a patient or enter a walk-in customer name.')
             return redirect('pharmacy:direct_sale')
 
-        # Walk-in tier selection — defaults to STANDARD
-        otc_tier = request.POST.get('service_tier', 'STANDARD').strip()
-        if otc_tier not in ('STANDARD', 'EXPRESS', 'VIP'):
-            otc_tier = 'STANDARD'
+        # Tier resolution — for registered patients, use their current visit tier (not form submission)
+        if patient:
+            from apps.patients.models import Visit
+            current_visit = Visit.objects.filter(
+                patient=patient, is_deleted=False,
+            ).order_by('-visit_date').first()
+            otc_tier = (current_visit.service_tier if current_visit and current_visit.service_tier
+                        else 'STANDARD')
+            stored_tier = ''  # _get_dispensing_tier_info will resolve from visit
+        else:
+            otc_tier = request.POST.get('service_tier', 'STANDARD').strip()
+            if otc_tier not in ('STANDARD', 'EXPRESS', 'VIP'):
+                otc_tier = 'STANDARD'
+            stored_tier = otc_tier  # walk-in: store directly on dispensing
 
         dispensing = Dispensing.objects.create(
             patient=patient,
@@ -2394,7 +2424,7 @@ def direct_sale(request):
             prescription=None,
             dispensed_by=request.user,
             is_otc=True,
-            service_tier=otc_tier if not patient else '',
+            service_tier=stored_tier,
             notes=request.POST.get('notes', '') or 'OTC / Walk-in sale',
             created_by=request.user,
         )

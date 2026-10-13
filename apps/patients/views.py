@@ -1021,16 +1021,21 @@ def tier_change_log_view(request, visit_number):
     })
 
 
+def _can_approve_tier_change(user):
+    """Only Finance Director, Senior Accountant, Admin Director, Medical Director, Super Admin can directly change tiers."""
+    return (user.is_finance_director or user.is_senior_accountant or user.is_admin_director
+            or user.is_medical_director or user.is_super_admin or user.is_ceo)
+
+
 @login_required
 @require_POST
 def change_visit_tier_view(request, visit_number):
-    """Allow cashiers, Chief Cashier or Medical Director to change the service tier of an open visit."""
+    """Finance Director / Senior Accountant / Admin Director directly change the service tier of an open visit.
+    Cashiers and pharmacists must submit a TierChangeRequest instead."""
     u = request.user
     _next = request.POST.get('next', '').strip()
-    if not (u.is_cashier or u.is_chief_cashier or u.is_medical_director or u.is_super_admin
-            or u.is_admin_director or u.is_ceo or u.is_finance_director
-            or u.is_accountant or u.is_senior_accountant):
-        messages.error(request, "You do not have permission to change a patient's service tier.")
+    if not _can_approve_tier_change(u):
+        messages.error(request, "Only Finance Director or Senior Accountant can directly change a patient's service tier. Use the Tier Change Request instead.")
         return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
 
     visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
@@ -1109,6 +1114,114 @@ def change_visit_tier_view(request, visit_number):
     )
     _next = request.POST.get('next', '').strip()
     return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+
+
+@login_required
+@require_POST
+def tier_change_request_view(request, visit_number):
+    """Cashiers / pharmacists submit a tier change request with a reason.
+    Finance staff will review and approve/reject."""
+    visit = get_object_or_404(Visit, visit_number=visit_number, is_deleted=False)
+    from .models import ServiceTier, TierChangeRequest
+    new_tier = request.POST.get('requested_tier', '').strip()
+    reason = request.POST.get('reason', '').strip()
+    _next = request.POST.get('next', '').strip()
+
+    if new_tier not in dict(ServiceTier.choices):
+        messages.error(request, "Invalid tier selected.")
+        return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+    if not reason:
+        messages.error(request, "Please provide a reason for the tier change request.")
+        return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+    if visit.service_tier == new_tier:
+        messages.info(request, "The requested tier is the same as the current tier.")
+        return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+
+    # Prevent duplicate pending requests for the same visit+tier
+    existing = TierChangeRequest.objects.filter(
+        visit=visit, requested_tier=new_tier, status='PENDING'
+    ).first()
+    if existing:
+        messages.warning(request, f"A pending request to change to {new_tier} already exists (#{existing.pk}). Please wait for Finance review.")
+        return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+
+    TierChangeRequest.objects.create(
+        visit=visit,
+        requested_by=request.user,
+        current_tier=visit.service_tier or 'STANDARD',
+        requested_tier=new_tier,
+        reason=reason,
+    )
+    messages.success(request, f"Tier change request submitted — Finance staff will review and approve.")
+    return redirect(_next) if _next else redirect('patients:visit_detail', visit_number=visit_number)
+
+
+@login_required
+def tier_change_requests_list(request):
+    """Finance Director / Senior Accountant view all pending (and recent) tier change requests."""
+    u = request.user
+    if not _can_approve_tier_change(u):
+        messages.error(request, "Access restricted to Finance staff.")
+        return redirect('dashboard:home')
+
+    from .models import TierChangeRequest
+    status_filter = request.GET.get('status', 'PENDING')
+    qs = TierChangeRequest.objects.select_related(
+        'visit__patient', 'requested_by', 'reviewed_by'
+    )
+    if status_filter in ('PENDING', 'APPROVED', 'REJECTED'):
+        qs = qs.filter(status=status_filter)
+    else:
+        status_filter = 'ALL'
+
+    return render(request, 'patients/tier_change_requests.html', {
+        'requests': qs[:100],
+        'status_filter': status_filter,
+        'pending_count': TierChangeRequest.objects.filter(status='PENDING').count(),
+    })
+
+
+@login_required
+@require_POST
+def tier_change_review_view(request, request_id):
+    """Finance Director / Senior Accountant approve or reject a tier change request."""
+    u = request.user
+    if not _can_approve_tier_change(u):
+        messages.error(request, "Access restricted to Finance staff.")
+        return redirect('patients:tier_change_requests')
+
+    from .models import TierChangeRequest, VisitTierChange
+    from django.utils import timezone as tz
+    tcr = get_object_or_404(TierChangeRequest, pk=request_id, status='PENDING')
+    action = request.POST.get('action', '').strip()
+    review_notes = request.POST.get('review_notes', '').strip()
+
+    if action not in ('approve', 'reject'):
+        messages.error(request, "Invalid action.")
+        return redirect('patients:tier_change_requests')
+
+    tcr.reviewed_by = u
+    tcr.reviewed_at = tz.now()
+    tcr.review_notes = review_notes
+
+    if action == 'approve':
+        visit = tcr.visit
+        old_tier = visit.service_tier
+        visit.service_tier = tcr.requested_tier
+        visit.save(update_fields=['service_tier'])
+        VisitTierChange.objects.create(
+            visit=visit, old_tier=old_tier, new_tier=tcr.requested_tier,
+            changed_by=u, reason=f'[Approved request #{tcr.pk}] {tcr.reason}',
+        )
+        tcr.status = 'APPROVED'
+        tcr.save()
+        messages.success(request, f"Tier change approved — visit {visit.visit_number} is now {tcr.requested_tier}.")
+    else:
+        tcr.status = 'REJECTED'
+        tcr.save()
+        messages.info(request, f"Tier change request rejected.")
+
+    return redirect('patients:tier_change_requests')
 
 
 @login_required

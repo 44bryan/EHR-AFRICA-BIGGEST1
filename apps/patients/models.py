@@ -664,6 +664,40 @@ class VisitTierChange(TimeStampedModel):
         return f'{self.visit.visit_number}: {self.old_tier} → {self.new_tier} ({self.changed_by})'
 
 
+class TierChangeRequest(TimeStampedModel):
+    """
+    Tier change workflow — cashiers and pharmacists request a tier change;
+    Finance Director or Senior Accountant approves/rejects.
+    Only approved requests trigger the actual Visit.service_tier change.
+    """
+    class Status(models.TextChoices):
+        PENDING  = 'PENDING',  'Pending Review'
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    visit           = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name='tier_requests')
+    requested_by    = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, related_name='tier_requests_made'
+    )
+    current_tier    = models.CharField(max_length=12)
+    requested_tier  = models.CharField(max_length=12)
+    reason          = models.TextField(help_text='Why this tier change is needed')
+    status          = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    reviewed_by     = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='tier_requests_reviewed'
+    )
+    reviewed_at     = models.DateTimeField(null=True, blank=True)
+    review_notes    = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Tier Change Request'
+        verbose_name_plural = 'Tier Change Requests'
+
+    def __str__(self):
+        return f'{self.visit.visit_number}: {self.current_tier}→{self.requested_tier} [{self.status}]'
+
+
 class VisitStop(TimeStampedModel):
     """
     Patient journey tracking — records every station a patient visits.

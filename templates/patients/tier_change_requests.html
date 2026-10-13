@@ -1,0 +1,163 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}Tier Change Requests{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Tier Change Requests</h4>
+    <div class="text-muted small">Review and approve cashier-submitted tier change requests</div>
+  </div>
+  {% if pending_count %}
+  <span class="badge bg-danger fs-6">{{ pending_count }} Pending</span>
+  {% endif %}
+</div>
+
+{# ── Filter tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'PENDING' %}active{% endif %}" href="?status=PENDING">
+      Pending {% if pending_count %}<span class="badge bg-danger ms-1">{{ pending_count }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'APPROVED' %}active{% endif %}" href="?status=APPROVED">Approved</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'REJECTED' %}active{% endif %}" href="?status=REJECTED">Rejected</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'ALL' %}active{% endif %}" href="?status=ALL">All</a>
+  </li>
+</ul>
+
+{% if requests %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Visit</th>
+          <th>Patient</th>
+          <th>Current Tier</th>
+          <th>Requested Tier</th>
+          <th>Reason</th>
+          <th>Requested By</th>
+          <th>Date</th>
+          <th>Status</th>
+          {% if status_filter == 'PENDING' %}<th>Action</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td>
+            <a href="{% url 'patients:visit_detail' r.visit.visit_number %}" class="fw-semibold text-decoration-none">
+              {{ r.visit.visit_number }}
+            </a>
+          </td>
+          <td>{{ r.visit.patient.full_name }}</td>
+          <td>
+            <span class="badge {% if r.current_tier == 'VIP' %}bg-warning text-dark{% elif r.current_tier == 'EXPRESS' %}bg-info text-dark{% else %}bg-secondary{% endif %}">
+              {{ r.current_tier }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {% if r.requested_tier == 'VIP' %}bg-warning text-dark{% elif r.requested_tier == 'EXPRESS' %}bg-info text-dark{% else %}bg-secondary{% endif %}">
+              {{ r.requested_tier }}
+            </span>
+          </td>
+          <td class="text-wrap" style="max-width:220px;">{{ r.reason }}</td>
+          <td>{{ r.requested_by.get_full_name|default:r.requested_by.username }}</td>
+          <td>{{ r.created_at|date:"d M Y H:i" }}</td>
+          <td>
+            {% if r.status == 'PENDING' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif r.status == 'APPROVED' %}
+              <span class="badge bg-success">Approved</span>
+              <div class="text-muted small">by {{ r.reviewed_by.get_full_name|default:"—" }}</div>
+            {% else %}
+              <span class="badge bg-danger">Rejected</span>
+              <div class="text-muted small">by {{ r.reviewed_by.get_full_name|default:"—" }}</div>
+            {% endif %}
+          </td>
+          {% if status_filter == 'PENDING' %}
+          <td>
+            <button class="btn btn-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#reviewModal{{ r.pk }}" title="Approve">
+              <i class="bi bi-check-lg"></i> Approve
+            </button>
+            <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#rejectModal{{ r.pk }}" title="Reject">
+              <i class="bi bi-x-lg"></i> Reject
+            </button>
+
+            {# Approve Modal #}
+            <div class="modal fade" id="reviewModal{{ r.pk }}" tabindex="-1">
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">Approve Tier Change — {{ r.visit.visit_number }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                  </div>
+                  <div class="modal-body">
+                    <p>Change <strong>{{ r.visit.patient.full_name }}</strong> from
+                      <span class="badge bg-secondary">{{ r.current_tier }}</span> to
+                      <span class="badge bg-warning text-dark">{{ r.requested_tier }}</span>?
+                    </p>
+                    <p class="text-muted small"><strong>Reason:</strong> {{ r.reason }}</p>
+                    <form method="post" action="{% url 'patients:tier_change_review' r.pk %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="approve">
+                      <div class="mb-3">
+                        <label class="form-label fw-semibold">Notes (optional)</label>
+                        <textarea name="review_notes" class="form-control" rows="2" placeholder="Any remarks for the record"></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">Confirm Approval</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Reject Modal #}
+            <div class="modal fade" id="rejectModal{{ r.pk }}" tabindex="-1">
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Reject Tier Change — {{ r.visit.visit_number }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                  </div>
+                  <div class="modal-body">
+                    <p>Reject the request to change <strong>{{ r.visit.patient.full_name }}</strong> to <strong>{{ r.requested_tier }}</strong>?</p>
+                    <form method="post" action="{% url 'patients:tier_change_review' r.pk %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="reject">
+                      <div class="mb-3">
+                        <label class="form-label fw-semibold">Reason for rejection <span class="text-danger">*</span></label>
+                        <textarea name="review_notes" class="form-control" rows="2" required placeholder="Explain why the request is rejected"></textarea>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger">Confirm Rejection</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-check2-circle fs-1 d-block mb-2 opacity-50"></i>
+  No {{ status_filter|lower }} tier change requests.
+</div>
+{% endif %}
+{% endblock %}

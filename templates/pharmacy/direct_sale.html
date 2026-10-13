@@ -77,12 +77,15 @@
       {# ── Service Tier (pricing) ── #}
       <div class="mb-3">
         <label class="form-label fw-semibold">Service Tier <span class="text-muted fw-normal">(pricing)</span></label>
-        <select name="service_tier" class="form-select">
+        <select name="service_tier" id="otcTierSelect" class="form-select">
           <option value="STANDARD" selected>Standard</option>
           <option value="EXPRESS">Express</option>
           <option value="VIP">VIP</option>
         </select>
-        <div class="form-text text-muted">Determines drug pricing. Registered patients use their visit tier automatically.</div>
+        <div id="otcTierNote" class="form-text text-muted">Walk-in customers: select tier manually. Registered patients have their tier applied automatically.</div>
+        <div id="otcTierLocked" class="form-text text-primary fw-semibold" style="display:none;">
+          <i class="bi bi-lock-fill me-1"></i>Tier auto-applied from patient's active visit. Only Finance staff can change.
+        </div>
       </div>
 
       <div class="mb-4">
@@ -114,19 +117,41 @@
   var walkSection = document.getElementById('walkInSection');
   var ctRegistered = document.getElementById('ctRegistered');
   var ctWalkIn = document.getElementById('ctWalkIn');
+  var tierSelect = document.getElementById('otcTierSelect');
+  var tierNote = document.getElementById('otcTierNote');
+  var tierLocked = document.getElementById('otcTierLocked');
   var timer;
+  var TIER_LABELS = {STANDARD: 'Standard', EXPRESS: 'Express', VIP: 'VIP'};
+
+  function lockTier(tier) {
+    tier = tier || 'STANDARD';
+    tierSelect.value = tier;
+    tierSelect.disabled = true;
+    tierNote.style.display = 'none';
+    tierLocked.style.display = 'block';
+    tierLocked.innerHTML = '<i class="bi bi-lock-fill me-1"></i>Tier auto-applied: <strong>' + (TIER_LABELS[tier] || tier) + '</strong> — from patient\'s active visit. Only Finance staff can change.';
+  }
+
+  function unlockTier() {
+    tierSelect.value = 'STANDARD';
+    tierSelect.disabled = false;
+    tierNote.style.display = 'block';
+    tierLocked.style.display = 'none';
+  }
 
   // Toggle between registered and walk-in
   ctRegistered.addEventListener('change', function() {
     regSection.style.display = 'block';
     walkSection.style.display = 'none';
     walkInInput.value = '';
+    unlockTier();
     updateSubmitState();
   });
   ctWalkIn.addEventListener('change', function() {
     regSection.style.display = 'none';
     walkSection.style.display = 'block';
     clearOtcPatient();
+    unlockTier();
     walkInInput.focus();
     updateSubmitState();
   });
@@ -154,9 +179,11 @@
           var list = data.results || [];
           if (!list.length) { results.style.display='none'; return; }
           results.innerHTML = list.map(function(p) {
-            return '<a class="dropdown-item small py-2" href="#" data-id="'+p.id+'" data-name="'+p.name+' ('+p.patient_id+')">' +
+            var tc = p.tier === 'VIP' ? 'bg-warning text-dark' : (p.tier === 'EXPRESS' ? 'bg-info text-dark' : 'bg-secondary');
+            return '<a class="dropdown-item small py-2" href="#" data-id="'+p.id+'" data-name="'+p.name+' ('+p.patient_id+')" data-tier="'+(p.tier||'STANDARD')+'">' +
               '<strong>'+p.name+'</strong> <span class="text-muted ms-2">'+p.patient_id+'</span>' +
-              (p.pending_rx ? ' <span class=\"badge bg-warning text-dark ms-1\">'+p.pending_rx+' Rx</span>' : '') + '</a>';
+              ' <span class="badge '+tc+' ms-1">'+(TIER_LABELS[p.tier]||'Standard')+'</span>' +
+              (p.pending_rx ? ' <span class="badge bg-warning text-dark ms-1">'+p.pending_rx+' Rx</span>' : '') + '</a>';
           }).join('');
           results.style.display = 'block';
           results.querySelectorAll('a').forEach(function(a) {
@@ -167,6 +194,7 @@
               badge.style.display = 'block';
               input.style.display = 'none';
               results.style.display = 'none';
+              lockTier(this.dataset.tier);
               updateSubmitState();
             });
           });
@@ -181,6 +209,7 @@
     badge.style.display = 'none';
     input.style.display = 'block';
     input.value = '';
+    unlockTier();
     updateSubmitState();
   };
 })();
