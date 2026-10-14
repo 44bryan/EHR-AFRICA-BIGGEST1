@@ -2431,10 +2431,13 @@ def _bridge_work_order_to_clinical(wo, user):
                         is_deleted=False,
                     ).select_related('investigation_type').first()
                     if _paid_order:
-                        _cat = _paid_order.investigation_type.category
-                        # Fallback: if category is generic INVEST but visit was dispatched
-                        # to optometry department (REFRAC), override to REFRACTION so the
-                        # patient ends up in the optometrist queue, not investigation queue.
+                        from apps.investigations.models import get_category_for_code as _get_cat
+                        _inv_type = _paid_order.investigation_type
+                        # Use the authoritative code map first — this fixes legacy InvestigationType
+                        # records that were stored with 'INVEST' or 'OTHER' before the mapping existed.
+                        _cat = _get_cat(_inv_type.code, default=_inv_type.category)
+                        # Last-resort fallback: if category still doesn't route to optometry,
+                        # check whether the visit was dispatched to an optometry department.
                         _OPTOM_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
                         if _cat not in _OPTOM_CATS:
                             _v_dept_code = getattr(getattr(_visit, 'department', None), 'code', '')

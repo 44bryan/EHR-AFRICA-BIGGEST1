@@ -1675,12 +1675,16 @@ def triage_view(request, visit_number):
                     _needs_payment = False
                     _already_paid_names = []
                     _skipped_dupes = []
-                    # Category to assign to InvestigationType — determines post-payment routing.
-                    # REFRACTION dispatch → category REFRACTION → bridge routes to optometrist queue
-                    # INVEST dispatch     → category INVEST     → bridge routes to investigation queue
-                    _inv_type_cat = 'REFRACTION' if direct_service == 'REFRACTION' else 'INVEST'
+                    from apps.investigations.models import get_category_for_code as _get_cat
 
                     for _sp in _selected_sps:
+                        # Resolve the correct InvestigationCategory for this specific billing code.
+                        # Priority: 1) SERVICE_CODE_CATEGORY_MAP  2) dispatch type  3) fallback OTHER
+                        _inv_type_cat = _get_cat(
+                            _sp.code,
+                            default='REFRACTION' if direct_service == 'REFRACTION' else 'OTHER',
+                        )
+
                         # Get or create a matching InvestigationType (needed for InvestigationOrder FK)
                         _et, _ = InvestigationType.objects.get_or_create(
                             code=_sp.code,

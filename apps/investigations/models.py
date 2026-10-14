@@ -37,6 +37,115 @@ class InvestigationCategory(models.TextChoices):
     OTHER = 'OTHER', _('Other')
 
 
+# ── Charge-code → InvestigationCategory mapping ─────────────────────────────
+# Derived from the hospital's price list (Price List_Services.xlsx).
+# Any code listed here gets the specified category when the InvestigationType
+# record is auto-created / synced from a ServicePrice. Everything else falls
+# back to the caller's default (typically 'OTHER' or 'INVEST').
+#
+# ROUTING impact (apps/core/patient_flow.py):
+#   REFRACTION / ORTHOPTICS / LOW_VISION  →  Optometrist / orthoptist queue
+#   All others                            →  Generic INVESTIGATION queue
+# ─────────────────────────────────────────────────────────────────────────────
+SERVICE_CODE_CATEGORY_MAP: dict[str, str] = {
+    # ── Refraction (routes to REFRACTION queue) ──────────────────────────────
+    'INV-16': 'REFRACTION',   # Refractometry with cycloplegia
+    'INV-17': 'REFRACTION',   # Refractometry without cycloplegia
+    'INV-18': 'REFRACTION',   # Retinoscopy
+    'INV-23': 'REFRACTION',   # V3M (visual acuity for refraction)
+    'INV-24': 'REFRACTION',   # Visual Acuity
+    'INV-28': 'REFRACTION',   # Wavescan Aberrometry
+
+    # ── Orthoptics (routes to REFRACTION queue — same optometrist/orthoptist) ─
+    'INV-13': 'ORTHOPTICS',   # Lancaster Red-Green Test
+    'ORT-01': 'ORTHOPTICS',   # Color Vision (Ishihara)
+    'ORT-02': 'ORTHOPTICS',   # Color Vision 15 Hue
+    'ORT-04': 'ORTHOPTICS',   # Orthoptic Assessment
+    'ORT-05': 'ORTHOPTICS',   # Amblyopia Treatment
+    'ORT-06': 'ORTHOPTICS',   # Hess Chart Evaluation
+    'ORT-07': 'ORTHOPTICS',   # Diplopia Chart
+    'ORT-08': 'ORTHOPTICS',   # Orthoptic Assessment FT
+    'ORT-09': 'ORTHOPTICS',   # Office Base Exercise FT
+    'ORT-10': 'ORTHOPTICS',   # Office Base Exercise
+    'ORT-11': 'ORTHOPTICS',   # Transparent (Life Sever Card)
+    'ORT-12': 'ORTHOPTICS',   # Eccentric Circles Opaque Plastified
+    'ORT-13': 'ORTHOPTICS',   # Cat Card Plastified
+    'ORT-14': 'ORTHOPTICS',   # Coloured Eccentric Circles
+    'ORT-15': 'ORTHOPTICS',   # Transparent Large Circles
+    'ORT-16': 'ORTHOPTICS',   # Micky
+    'ORT-17': 'ORTHOPTICS',   # Dora
+    'ORT-18': 'ORTHOPTICS',   # Transparent Large Eccentric Circles
+    'ORT-19': 'ORTHOPTICS',   # Hard Chart
+    'ORT-20': 'ORTHOPTICS',   # Dot Card
+    'ORT-21': 'ORTHOPTICS',   # Life Sever Card Opaque
+    'ORT-22': 'ORTHOPTICS',   # Strabismus Assessment
+    'ORT-23': 'ORTHOPTICS',   # Strabismus Assessment FT
+    'ORT-24': 'ORTHOPTICS',   # Complete Binocular Vision Evaluation
+    'ORT-25': 'ORTHOPTICS',   # Glare Test / Dark Adaptation
+
+    # ── Low Vision (routes to REFRACTION queue) ───────────────────────────────
+    'ORT-03': 'LOW_VISION',   # Low Vision Assessment
+
+    # ── Visual Field (stays in INVESTIGATION queue) ───────────────────────────
+    'INV-26': 'VISUAL_FIELD', # Visual Field (Octopus)
+    'INV-27': 'VISUAL_FIELD', # Visual Field (Goldmann)
+    'INV-29': 'VISUAL_FIELD', # Visual Field (Humphrey)
+
+    # ── Tonometry ─────────────────────────────────────────────────────────────
+    'INV-11': 'TONOMETRY',    # IOP Phasing 24h
+    'INV-19': 'TONOMETRY',    # Tonometry + Pachymetry
+    'INV-32': 'TONOMETRY',    # Applanation Tonometry
+    'INV-35': 'TONOMETRY',    # Intra-Ocular Pressure
+
+    # ── Biometry ──────────────────────────────────────────────────────────────
+    'INV-04': 'BIOMETRY',     # Biometry / IOL Calculation
+
+    # ── Topography / Keratometry ──────────────────────────────────────────────
+    'INV-05': 'TOPOGRAPHY',   # Corneal Topography
+    'INV-12': 'TOPOGRAPHY',   # Keratometry
+
+    # ── OCT ───────────────────────────────────────────────────────────────────
+    'INV-14': 'OCT',          # OCT (Optical Coherence Tomography)
+
+    # ── Angiography ───────────────────────────────────────────────────────────
+    'INV-01': 'ANGIOGRAPHY',  # FFA (Fluorescein Angiography)
+    'INV-02': 'ANGIOGRAPHY',  # ICG Angiography
+
+    # ── Fundus Photography ────────────────────────────────────────────────────
+    'INV-08': 'FUNDUS_PHOTO', # Fundus Photography
+    'INV-09': 'FUNDUS_PHOTO', # Funduscopy
+    'INV-30': 'FUNDUS_PHOTO', # Funduscopy with Indentation
+    'INV-33': 'FUNDUS_PHOTO', # Dilated Fundus Examination
+
+    # ── Anterior Segment ──────────────────────────────────────────────────────
+    'INV-03': 'ANT_SEG',      # Anterior Segment Photography
+    'INV-10': 'ANT_SEG',      # Gonioscopy
+
+    # ── Electrophysiology ─────────────────────────────────────────────────────
+    'INV-06': 'ELECTROPHYSIOLOGY',  # Electro-Oculography (EOG)
+    'INV-07': 'ELECTROPHYSIOLOGY',  # Electroretinography (ERG)
+    'INV-25': 'ELECTROPHYSIOLOGY',  # Visual Evoked Potential (VEP)
+
+    # ── Ultrasound / Imaging ──────────────────────────────────────────────────
+    'INV-22': 'IMAGING',      # Ultrasound A+B Scan
+    'INV-15': 'IMAGING',      # Orbitometry
+
+    # ── External / Other ──────────────────────────────────────────────────────
+    'INV-31': 'EXTERNAL',     # ECG (sent to cardiologist / internist)
+}
+
+# Codes that should route the patient to the optometrist / orthoptist queue
+_OPTOMETRY_ROUTING_CATS: frozenset[str] = frozenset({'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'})
+
+
+def get_category_for_code(code: str, default: str = 'OTHER') -> str:
+    """
+    Return the correct InvestigationCategory value for a billing service code.
+    Falls back to `default` if the code is not in SERVICE_CODE_CATEGORY_MAP.
+    """
+    return SERVICE_CODE_CATEGORY_MAP.get(code, default)
+
+
 class DilationRequirement(models.TextChoices):
     BEFORE = 'BEFORE', _('Must be done BEFORE dilation')
     AFTER = 'AFTER', _('Requires dilation')
