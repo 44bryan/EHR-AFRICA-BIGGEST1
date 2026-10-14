@@ -920,12 +920,13 @@ def consultation_detail_view(request, pk):
         elif not _refraction_data:
             # Path B: optometrist filled result through investigation workstation
             from apps.investigations.models import InvestigationResult
+            from django.db.models import Q as _Q
             _visit_date = consultation.visit.visit_date
             _vd = _visit_date.date() if hasattr(_visit_date, 'date') else _visit_date
             _EXAM_CATS = ['REFRACTION', 'LOW_VISION', 'ORTHOPTICS']
             _exam_result = InvestigationResult.objects.filter(
-                Q(order__visit=consultation.visit) |
-                Q(order__visit__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd),
+                _Q(order__visit=consultation.visit) |
+                _Q(order__visit__isnull=True, order__patient=consultation.patient, order__created_at__date=_vd),
                 order__is_deleted=False,
                 order__investigation_type__category__in=_EXAM_CATS,
             ).select_related('order__investigation_type').order_by('-result_date').first()
