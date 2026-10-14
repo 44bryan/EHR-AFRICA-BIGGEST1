@@ -293,6 +293,18 @@ def consultation_create_view(request, patient_id):
     if _pending_exam:
         _exam_dept_override = _EXAM_CAT_TO_DEPT.get(_pending_exam.investigation_type.category, '')
 
+    # Build ordered exam codes set — used by investigation form to show only
+    # the sections relevant to what the nurse ordered (e.g. OCT only, not VF+Biometry+etc)
+    _ordered_inv_codes = set()
+    for _ord in InvestigationOrder.objects.filter(
+        patient=patient,
+        is_deleted=False,
+        status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        created_at__date=timezone.localdate(),
+    ).select_related('investigation_type'):
+        if _ord.investigation_type and _ord.investigation_type.code:
+            _ordered_inv_codes.add(_ord.investigation_type.code)
+
     if request.method == 'POST':
         _dept = request.user.department
         if _dept is None:
@@ -806,6 +818,7 @@ def consultation_create_view(request, patient_id):
         'patient_allergies': patient_allergies,
         'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
         'exam_dept_override': _exam_dept_override,
+        'ordered_inv_codes': list(_ordered_inv_codes),
         'latest_diagnoses_re': latest_diagnoses_re[:5],
         'latest_diagnoses_le': latest_diagnoses_le[:5],
         'latest_diagnoses_be': latest_diagnoses_be[:5],
@@ -1251,6 +1264,17 @@ def consultation_edit_view(request, pk):
             latest_diagnoses_be.append(ld)
             _seen_be.add(desc)
 
+    # Ordered exam codes for dynamic investigation form sections
+    _ordered_inv_codes_e = set()
+    for _ord_e in InvestigationOrder.objects.filter(
+        patient=consultation.patient,
+        is_deleted=False,
+        status__in=['ORDERED', 'SCHEDULED', 'IN_PROGRESS'],
+        created_at__date=timezone.localdate(),
+    ).select_related('investigation_type'):
+        if _ord_e.investigation_type and _ord_e.investigation_type.code:
+            _ordered_inv_codes_e.add(_ord_e.investigation_type.code)
+
     return render(request, 'consultations/edit.html', {
         'form': form,
         'consultation': consultation,
@@ -1260,6 +1284,7 @@ def consultation_edit_view(request, pk):
         'refraction_consult': refraction_consult,
         'refraction_data': refraction_data,
         'can_do_refraction': getattr(request.user, 'can_do_refraction', False),
+        'ordered_inv_codes': list(_ordered_inv_codes_e),
         'latest_diagnoses_re': latest_diagnoses_re[:5],
         'latest_diagnoses_le': latest_diagnoses_le[:5],
         'latest_diagnoses_be': latest_diagnoses_be[:5],

@@ -1,117 +1,355 @@
 {% load ehr_tags %}
+{% comment %}
+Dynamic investigation form — only shows sections for exams that were actually ordered.
+If no specific orders exist (ordered_inv_codes is empty), ALL sections are shown.
+Code-to-section mapping:
+  Visual Field   : INV-26, INV-27, INV-29
+  OCT/RNFL       : INV-14
+  Biometry       : INV-04
+  Fundus/Photo   : INV-01, INV-02, INV-03, INV-08, INV-09, INV-30, INV-33
+  B-Scan         : INV-22
+  Keratometry    : INV-05, INV-12
+  Tonometry/IOP  : INV-11, INV-19, INV-32, INV-35
+  Electrophysiol : INV-06, INV-07, INV-25
+  Gonioscopy     : INV-10
+  Misc           : INV-13, INV-15, INV-20, INV-21, INV-23, INV-24, INV-28, INV-31, INV-34
+{% endcomment %}
 {% with d=consultation.department_specific_data %}
-<div class="row g-3">
+{% with oc=ordered_inv_codes %}
 
-  <div class="col-12">
-    <div class="alert alert-info py-2 px-3 small mb-0">
-      <i class="bi bi-info-circle me-1"></i>
-      Fill only the tests that have been performed. The referring specialist will see these results as read-only in their consultation.
-    </div>
-  </div>
-
-  {# Visual Field #}
-  <div class="col-12">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-bullseye me-1"></i>Visual Field (Humphrey / Goldmann)
-    </div>
-  </div>
-  <div class="col-md-3">
-    <label class="form-label small fw-semibold">VF Type</label>
-    <select name="dept_vf_type" class="form-select form-select-sm">
-      <option value="">— Not done —</option>
-      {% for t in "Humphrey 24-2,Humphrey 30-2,Goldmann,FDT,Esterman"|split:"," %}
-      <option value="{{ t }}" {% if d.vf_type == t %}selected{% endif %}>{{ t }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">MD OD (dB)</label><input type="text" name="dept_vf_md_od" class="form-control form-control-sm" placeholder="-3.5" value="{{ d.vf_md_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">MD OS (dB)</label><input type="text" name="dept_vf_md_os" class="form-control form-control-sm" placeholder="-3.5" value="{{ d.vf_md_os|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">PSD OD (dB)</label><input type="text" name="dept_vf_psd_od" class="form-control form-control-sm" placeholder="2.1" value="{{ d.vf_psd_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">PSD OS (dB)</label><input type="text" name="dept_vf_psd_os" class="form-control form-control-sm" placeholder="2.1" value="{{ d.vf_psd_os|default:'' }}"></div>
-  <div class="col-md-3">
-    <label class="form-label small fw-semibold">GHT OD</label>
-    <select name="dept_vf_ght_od" class="form-select form-select-sm">
-      <option value="">—</option>
-      {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
-      <option value="{{ g }}" {% if d.vf_ght_od == g %}selected{% endif %}>{{ g }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-md-3">
-    <label class="form-label small fw-semibold">GHT OS</label>
-    <select name="dept_vf_ght_os" class="form-select form-select-sm">
-      <option value="">—</option>
-      {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
-      <option value="{{ g }}" {% if d.vf_ght_os == g %}selected{% endif %}>{{ g }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-md-3">
-    <label class="form-label small fw-semibold">VF Progression</label>
-    <select name="dept_vf_progression" class="form-select form-select-sm">
-      <option value="">—</option>
-      {% for p in "Stable,Progressing — Slow,Progressing — Fast,Improved,First test,Not assessed"|split:"," %}
-      <option value="{{ p }}" {% if d.vf_progression == p %}selected{% endif %}>{{ p }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-12"><label class="form-label small fw-semibold">VF Comments</label><textarea name="dept_vf_comments" class="form-control form-control-sm" rows="2" placeholder="Arcuate scotoma OD, paracentral loss...">{{ d.vf_comments|default:'' }}</textarea></div>
-
-  {# OCT / RNFL #}
-  <div class="col-12 mt-1">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-layers me-1"></i>OCT — RNFL &amp; ONH
-    </div>
-  </div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OD (µm)</label><input type="number" name="dept_rnfl_avg_od" class="form-control form-control-sm" placeholder="95" value="{{ d.rnfl_avg_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OS (µm)</label><input type="number" name="dept_rnfl_avg_os" class="form-control form-control-sm" placeholder="95" value="{{ d.rnfl_avg_os|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OD (µm)</label><input type="number" name="dept_rnfl_inf_od" class="form-control form-control-sm" placeholder="120" value="{{ d.rnfl_inf_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OS (µm)</label><input type="number" name="dept_rnfl_inf_os" class="form-control form-control-sm" placeholder="120" value="{{ d.rnfl_inf_os|default:'' }}"></div>
-  <div class="col-md-6"><label class="form-label small fw-semibold">RNFL Interpretation</label><input type="text" name="dept_rnfl_interp" class="form-control form-control-sm" placeholder="Within normal limits / Superior thinning OD" value="{{ d.rnfl_interp|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OD (mm²)</label><input type="text" name="dept_rim_area_od" class="form-control form-control-sm" value="{{ d.rim_area_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OS (mm²)</label><input type="text" name="dept_rim_area_os" class="form-control form-control-sm" value="{{ d.rim_area_os|default:'' }}"></div>
-
-  {# Fundus Photography #}
-  <div class="col-12 mt-1">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-camera me-1"></i>Fundus Photography
-    </div>
-  </div>
-  <div class="col-md-6"><label class="form-label small fw-semibold">Fundus Photo OD</label><input type="text" name="dept_fundus_photo_od" class="form-control form-control-sm" placeholder="Normal / Disc pallor / CNVM / Haemorrhage..." value="{{ d.fundus_photo_od|default:'' }}"></div>
-  <div class="col-md-6"><label class="form-label small fw-semibold">Fundus Photo OS</label><input type="text" name="dept_fundus_photo_os" class="form-control form-control-sm" placeholder="Normal / Disc pallor / CNVM / Haemorrhage..." value="{{ d.fundus_photo_os|default:'' }}"></div>
-
-  {# B-Scan #}
-  <div class="col-12 mt-1">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-soundwave me-1"></i>B-Scan Ultrasonography
-    </div>
-  </div>
-  <div class="col-md-6"><label class="form-label small fw-semibold">B-Scan OD</label><textarea name="dept_bscan_od" class="form-control form-control-sm" rows="2" placeholder="Vitreous clear, retina attached, normal posterior pole...">{{ d.bscan_od|default:'' }}</textarea></div>
-  <div class="col-md-6"><label class="form-label small fw-semibold">B-Scan OS</label><textarea name="dept_bscan_os" class="form-control form-control-sm" rows="2" placeholder="Vitreous clear, retina attached, normal posterior pole...">{{ d.bscan_os|default:'' }}</textarea></div>
-
-  {# Biometry #}
-  <div class="col-12 mt-1">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-rulers me-1"></i>Biometry (IOL Calculation)
-    </div>
-  </div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OD (mm)</label><input type="text" name="dept_axial_length_od" class="form-control form-control-sm" placeholder="23.5" value="{{ d.axial_length_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OS (mm)</label><input type="text" name="dept_axial_length_os" class="form-control form-control-sm" placeholder="23.5" value="{{ d.axial_length_os|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">K1 OD</label><input type="text" name="dept_k1_od" class="form-control form-control-sm" placeholder="43.5" value="{{ d.k1_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">K1 OS</label><input type="text" name="dept_k1_os" class="form-control form-control-sm" placeholder="43.5" value="{{ d.k1_os|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">K2 OD</label><input type="text" name="dept_k2_od" class="form-control form-control-sm" placeholder="44.0" value="{{ d.k2_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">K2 OS</label><input type="text" name="dept_k2_os" class="form-control form-control-sm" placeholder="44.0" value="{{ d.k2_os|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OD (D)</label><input type="text" name="dept_iol_od" class="form-control form-control-sm" placeholder="21.0" value="{{ d.iol_od|default:'' }}"></div>
-  <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OS (D)</label><input type="text" name="dept_iol_os" class="form-control form-control-sm" placeholder="21.0" value="{{ d.iol_os|default:'' }}"></div>
-  <div class="col-12"><label class="form-label small fw-semibold">Biometry Notes</label><textarea name="dept_biometry_notes" class="form-control form-control-sm" rows="2" placeholder="Formula used, lens model, special considerations...">{{ d.biometry_notes|default:'' }}</textarea></div>
-
-  {# General remarks #}
-  <div class="col-12 mt-1">
-    <div class="fw-bold text-uppercase text-secondary mb-2 border-bottom pb-1" style="font-size:.85rem;letter-spacing:.04em;">
-      <i class="bi bi-clipboard-check me-1"></i>Technician Remarks
-    </div>
-  </div>
-  <div class="col-12"><label class="form-label small fw-semibold">Additional Notes / Observations</label><textarea name="dept_tech_remarks" class="form-control form-control-sm" rows="3" placeholder="Any technical observations, patient cooperation, machine calibration notes...">{{ d.tech_remarks|default:'' }}</textarea></div>
-
+<div class="alert alert-info py-2 px-3 small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  Fill only the tests that have been performed. Leave blank sections that were not done.
+  {% if oc %}
+    <span class="ms-2 badge bg-info text-dark">{{ oc|length }} exam{{ oc|length|pluralize }} ordered</span>
+  {% endif %}
 </div>
+
+{# ─────────────────────── VISUAL FIELD ─────────────────────── #}
+{% if not oc or 'INV-26' in oc or 'INV-27' in oc or 'INV-29' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-bullseye text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Visual Field</span>
+    {% if 'INV-26' in oc %}<span class="badge bg-warning text-dark ms-auto">Octopus ordered</span>
+    {% elif 'INV-27' in oc %}<span class="badge bg-warning text-dark ms-auto">Goldmann ordered</span>
+    {% elif 'INV-29' in oc %}<span class="badge bg-warning text-dark ms-auto">Humphrey ordered</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">VF Type</label>
+        <select name="dept_vf_type" class="form-select form-select-sm">
+          <option value="">— Not done —</option>
+          {% for t in "Humphrey 24-2,Humphrey 30-2,Goldmann,Octopus,FDT,Esterman"|split:"," %}
+          <option value="{{ t }}" {% if d.vf_type == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">MD OD (dB)</label><input type="text" name="dept_vf_md_od" class="form-control form-control-sm" placeholder="-3.5" value="{{ d.vf_md_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">MD OS (dB)</label><input type="text" name="dept_vf_md_os" class="form-control form-control-sm" placeholder="-3.5" value="{{ d.vf_md_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">PSD OD (dB)</label><input type="text" name="dept_vf_psd_od" class="form-control form-control-sm" placeholder="2.1" value="{{ d.vf_psd_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">PSD OS (dB)</label><input type="text" name="dept_vf_psd_os" class="form-control form-control-sm" placeholder="2.1" value="{{ d.vf_psd_os|default:'' }}"></div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">GHT OD</label>
+        <select name="dept_vf_ght_od" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
+          <option value="{{ g }}" {% if d.vf_ght_od == g %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">GHT OS</label>
+        <select name="dept_vf_ght_os" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Within Normal Limits,Outside Normal Limits,Borderline,General Reduction of Sensitivity,Abnormally High Sensitivity"|split:"," %}
+          <option value="{{ g }}" {% if d.vf_ght_os == g %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Progression</label>
+        <select name="dept_vf_progression" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for p in "Stable,Progressing — Slow,Progressing — Fast,Improved,First test,Not assessed"|split:"," %}
+          <option value="{{ p }}" {% if d.vf_progression == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12"><label class="form-label small fw-semibold">VF Comments</label><textarea name="dept_vf_comments" class="form-control form-control-sm" rows="2" placeholder="Arcuate scotoma OD, paracentral loss...">{{ d.vf_comments|default:'' }}</textarea></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── OCT / RNFL ─────────────────────── #}
+{% if not oc or 'INV-14' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-layers text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">OCT — RNFL &amp; ONH</span>
+    {% if 'INV-14' in oc %}<span class="badge bg-warning text-dark ms-auto">Ordered</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OD (µm)</label><input type="number" name="dept_rnfl_avg_od" class="form-control form-control-sm" placeholder="95" value="{{ d.rnfl_avg_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Avg RNFL OS (µm)</label><input type="number" name="dept_rnfl_avg_os" class="form-control form-control-sm" placeholder="95" value="{{ d.rnfl_avg_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OD (µm)</label><input type="number" name="dept_rnfl_inf_od" class="form-control form-control-sm" placeholder="120" value="{{ d.rnfl_inf_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Inf RNFL OS (µm)</label><input type="number" name="dept_rnfl_inf_os" class="form-control form-control-sm" placeholder="120" value="{{ d.rnfl_inf_os|default:'' }}"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">RNFL Interpretation</label><input type="text" name="dept_rnfl_interp" class="form-control form-control-sm" placeholder="Within normal limits / Superior thinning OD" value="{{ d.rnfl_interp|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OD (mm²)</label><input type="text" name="dept_rim_area_od" class="form-control form-control-sm" value="{{ d.rim_area_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Rim Area OS (mm²)</label><input type="text" name="dept_rim_area_os" class="form-control form-control-sm" value="{{ d.rim_area_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">GCC OD (µm)</label><input type="number" name="dept_gcc_od" class="form-control form-control-sm" placeholder="85" value="{{ d.gcc_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">GCC OS (µm)</label><input type="number" name="dept_gcc_os" class="form-control form-control-sm" placeholder="85" value="{{ d.gcc_os|default:'' }}"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Macular OCT OD</label><input type="text" name="dept_macula_oct_od" class="form-control form-control-sm" placeholder="Normal foveal contour, no SRF/IRF..." value="{{ d.macula_oct_od|default:'' }}"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Macular OCT OS</label><input type="text" name="dept_macula_oct_os" class="form-control form-control-sm" placeholder="Normal foveal contour, no SRF/IRF..." value="{{ d.macula_oct_os|default:'' }}"></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── KERATOMETRY / TOPOGRAPHY ─────────────────────── #}
+{% if not oc or 'INV-05' in oc or 'INV-12' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-circle-half text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Keratometry / Corneal Topography</span>
+    {% if 'INV-05' in oc %}<span class="badge bg-warning text-dark ms-auto">Topography ordered</span>
+    {% elif 'INV-12' in oc %}<span class="badge bg-warning text-dark ms-auto">Keratometry ordered</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OD (D)</label><input type="text" name="dept_kerat_k1_od" class="form-control form-control-sm" placeholder="43.50" value="{{ d.kerat_k1_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OD (D)</label><input type="text" name="dept_kerat_k2_od" class="form-control form-control-sm" placeholder="44.25" value="{{ d.kerat_k2_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OS (D)</label><input type="text" name="dept_kerat_k1_os" class="form-control form-control-sm" placeholder="43.50" value="{{ d.kerat_k1_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OS (D)</label><input type="text" name="dept_kerat_k2_os" class="form-control form-control-sm" placeholder="44.25" value="{{ d.kerat_k2_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axis K1 OD (°)</label><input type="number" name="dept_kerat_axis_od" class="form-control form-control-sm" placeholder="180" value="{{ d.kerat_axis_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axis K1 OS (°)</label><input type="number" name="dept_kerat_axis_os" class="form-control form-control-sm" placeholder="180" value="{{ d.kerat_axis_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">SimK OD</label><input type="text" name="dept_simk_od" class="form-control form-control-sm" placeholder="43.75 @ 90" value="{{ d.simk_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">SimK OS</label><input type="text" name="dept_simk_os" class="form-control form-control-sm" placeholder="43.75 @ 90" value="{{ d.simk_os|default:'' }}"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Topography Pattern OD</label>
+        <select name="dept_topo_pattern_od" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for p in "Round,Oval,Symmetric Bow-tie,Asymmetric Bow-tie,Inferior Steepening,Keratoconus,Pellucid Marginal Degeneration,Post-LASIK,Irregular"|split:"," %}
+          <option value="{{ p }}" {% if d.topo_pattern_od == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Topography Pattern OS</label>
+        <select name="dept_topo_pattern_os" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for p in "Round,Oval,Symmetric Bow-tie,Asymmetric Bow-tie,Inferior Steepening,Keratoconus,Pellucid Marginal Degeneration,Post-LASIK,Irregular"|split:"," %}
+          <option value="{{ p }}" {% if d.topo_pattern_os == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12"><label class="form-label small fw-semibold">Keratometry / Topography Notes</label><textarea name="dept_kerat_notes" class="form-control form-control-sm" rows="2" placeholder="Mild keratoconus OD (Amsler I), normal OS...">{{ d.kerat_notes|default:'' }}</textarea></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── TONOMETRY / IOP ─────────────────────── #}
+{% if not oc or 'INV-11' in oc or 'INV-19' in oc or 'INV-32' in oc or 'INV-35' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-activity text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Tonometry / IOP</span>
+    {% if 'INV-19' in oc %}<span class="badge bg-warning text-dark ms-auto">Tono + Pachy ordered</span>
+    {% elif 'INV-32' in oc %}<span class="badge bg-warning text-dark ms-auto">Applanation ordered</span>
+    {% elif 'INV-11' in oc %}<span class="badge bg-warning text-dark ms-auto">IOP Phasing ordered</span>
+    {% elif 'INV-35' in oc %}<span class="badge bg-warning text-dark ms-auto">IOP ordered</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small fw-semibold">IOP OD (mmHg)</label><input type="number" step="0.1" name="dept_iop_od" class="form-control form-control-sm" placeholder="14" value="{{ d.iop_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">IOP OS (mmHg)</label><input type="number" step="0.1" name="dept_iop_os" class="form-control form-control-sm" placeholder="14" value="{{ d.iop_os|default:'' }}"></div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Method</label>
+        <select name="dept_iop_method" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for m in "Goldmann Applanation,Non-Contact (Air Puff),Tonopen,iCare,Perkins,Schiotz"|split:"," %}
+          <option value="{{ m }}" {% if d.iop_method == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Time</label><input type="time" name="dept_iop_time" class="form-control form-control-sm" value="{{ d.iop_time|default:'' }}"></div>
+      {% if 'INV-19' in oc or not oc %}
+      <div class="col-md-3"><label class="form-label small fw-semibold">Pachymetry OD (µm)</label><input type="number" name="dept_pachy_od" class="form-control form-control-sm" placeholder="545" value="{{ d.pachy_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Pachymetry OS (µm)</label><input type="number" name="dept_pachy_os" class="form-control form-control-sm" placeholder="545" value="{{ d.pachy_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Corrected IOP OD</label><input type="number" step="0.1" name="dept_iop_corrected_od" class="form-control form-control-sm" placeholder="15.5" value="{{ d.iop_corrected_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Corrected IOP OS</label><input type="number" step="0.1" name="dept_iop_corrected_os" class="form-control form-control-sm" placeholder="15.5" value="{{ d.iop_corrected_os|default:'' }}"></div>
+      {% endif %}
+      {% if 'INV-11' in oc or not oc %}
+      <div class="col-12"><label class="form-label small fw-semibold">IOP Phasing Results (24h)</label><textarea name="dept_iop_phasing" class="form-control form-control-sm" rows="3" placeholder="08:00 OD 18 / OS 17 &#10;12:00 OD 22 / OS 21 &#10;16:00 OD 19 / OS 18 &#10;20:00 OD 16 / OS 15...">{{ d.iop_phasing|default:'' }}</textarea></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── BIOMETRY ─────────────────────── #}
+{% if not oc or 'INV-04' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-rulers text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Biometry (IOL Calculation)</span>
+    {% if 'INV-04' in oc %}<span class="badge bg-warning text-dark ms-auto">Ordered</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OD (mm)</label><input type="text" name="dept_axial_length_od" class="form-control form-control-sm" placeholder="23.50" value="{{ d.axial_length_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Axial Length OS (mm)</label><input type="text" name="dept_axial_length_os" class="form-control form-control-sm" placeholder="23.50" value="{{ d.axial_length_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OD (D)</label><input type="text" name="dept_bio_k1_od" class="form-control form-control-sm" placeholder="43.5" value="{{ d.bio_k1_od|default:d.k1_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OD (D)</label><input type="text" name="dept_bio_k2_od" class="form-control form-control-sm" placeholder="44.0" value="{{ d.bio_k2_od|default:d.k2_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K1 OS (D)</label><input type="text" name="dept_bio_k1_os" class="form-control form-control-sm" placeholder="43.5" value="{{ d.bio_k1_os|default:d.k1_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">K2 OS (D)</label><input type="text" name="dept_bio_k2_os" class="form-control form-control-sm" placeholder="44.0" value="{{ d.bio_k2_os|default:d.k2_os|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OD (D)</label><input type="text" name="dept_iol_od" class="form-control form-control-sm" placeholder="21.0" value="{{ d.iol_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">Recommended IOL OS (D)</label><input type="text" name="dept_iol_os" class="form-control form-control-sm" placeholder="21.0" value="{{ d.iol_os|default:'' }}"></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">IOL Formula Used</label>
+        <select name="dept_iol_formula" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for f in "SRK/T,Hoffer Q,Holladay 1,Holladay 2,Haigis,Barrett Universal II,Kane,Hill-RBF"|split:"," %}
+          <option value="{{ f }}" {% if d.iol_formula == f %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Lens Model</label><input type="text" name="dept_lens_model" class="form-control form-control-sm" placeholder="Alcon AcrySof IQ / Hoya Vivinex..." value="{{ d.lens_model|default:'' }}"></div>
+      <div class="col-12"><label class="form-label small fw-semibold">Biometry Notes</label><textarea name="dept_biometry_notes" class="form-control form-control-sm" rows="2" placeholder="Special considerations, target refraction...">{{ d.biometry_notes|default:'' }}</textarea></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── FUNDUS / PHOTOGRAPHY ─────────────────────── #}
+{% if not oc or 'INV-01' in oc or 'INV-02' in oc or 'INV-03' in oc or 'INV-08' in oc or 'INV-09' in oc or 'INV-30' in oc or 'INV-33' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-camera text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Fundus / Photography / Angiography</span>
+    {% if 'INV-01' in oc %}<span class="badge bg-warning text-dark ms-auto">FFA ordered</span>
+    {% elif 'INV-02' in oc %}<span class="badge bg-warning text-dark ms-auto">ICG ordered</span>
+    {% elif 'INV-08' in oc %}<span class="badge bg-warning text-dark ms-auto">Fundus photo ordered</span>
+    {% elif 'INV-09' in oc or 'INV-30' in oc or 'INV-33' in oc %}<span class="badge bg-warning text-dark ms-auto">Funduscopy ordered</span>
+    {% elif 'INV-03' in oc %}<span class="badge bg-warning text-dark ms-auto">Anterior segment photo ordered</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-6"><label class="form-label small fw-semibold">Fundus / Photo OD</label><textarea name="dept_fundus_photo_od" class="form-control form-control-sm" rows="2" placeholder="Normal disc, C/D 0.3, flat macula, normal vessels...">{{ d.fundus_photo_od|default:'' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Fundus / Photo OS</label><textarea name="dept_fundus_photo_os" class="form-control form-control-sm" rows="2" placeholder="Normal disc, C/D 0.3, flat macula, normal vessels...">{{ d.fundus_photo_os|default:'' }}</textarea></div>
+      {% if 'INV-01' in oc or 'INV-02' in oc or not oc %}
+      <div class="col-md-6"><label class="form-label small fw-semibold">Angiography OD Findings</label><textarea name="dept_angio_od" class="form-control form-control-sm" rows="2" placeholder="Hyperfluorescence, leakage, NVD/NVE...">{{ d.angio_od|default:'' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">Angiography OS Findings</label><textarea name="dept_angio_os" class="form-control form-control-sm" rows="2" placeholder="Hyperfluorescence, leakage, NVD/NVE...">{{ d.angio_os|default:'' }}</textarea></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── B-SCAN / ULTRASOUND ─────────────────────── #}
+{% if not oc or 'INV-22' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-soundwave text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Ultrasound A+B Scan</span>
+    {% if 'INV-22' in oc %}<span class="badge bg-warning text-dark ms-auto">Ordered</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-6"><label class="form-label small fw-semibold">B-Scan OD</label><textarea name="dept_bscan_od" class="form-control form-control-sm" rows="3" placeholder="Vitreous clear, retina attached, posterior pole normal...">{{ d.bscan_od|default:'' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">B-Scan OS</label><textarea name="dept_bscan_os" class="form-control form-control-sm" rows="3" placeholder="Vitreous clear, retina attached, posterior pole normal...">{{ d.bscan_os|default:'' }}</textarea></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">A-Scan AL OD (mm)</label><input type="text" name="dept_ascan_al_od" class="form-control form-control-sm" placeholder="23.50" value="{{ d.ascan_al_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small fw-semibold">A-Scan AL OS (mm)</label><input type="text" name="dept_ascan_al_os" class="form-control form-control-sm" placeholder="23.50" value="{{ d.ascan_al_os|default:'' }}"></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── ELECTROPHYSIOLOGY ─────────────────────── #}
+{% if not oc or 'INV-06' in oc or 'INV-07' in oc or 'INV-25' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-lightning text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Electrophysiology</span>
+    {% if 'INV-07' in oc %}<span class="badge bg-warning text-dark ms-auto">ERG ordered</span>
+    {% elif 'INV-06' in oc %}<span class="badge bg-warning text-dark ms-auto">EOG ordered</span>
+    {% elif 'INV-25' in oc %}<span class="badge bg-warning text-dark ms-auto">VEP ordered</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      {% if 'INV-07' in oc or not oc %}
+      <div class="col-12 fw-semibold small text-muted">ERG (Electroretinography)</div>
+      <div class="col-md-4"><label class="form-label small">Scotopic b-wave OD (µV)</label><input type="text" name="dept_erg_scotopic_b_od" class="form-control form-control-sm" value="{{ d.erg_scotopic_b_od|default:'' }}"></div>
+      <div class="col-md-4"><label class="form-label small">Scotopic b-wave OS (µV)</label><input type="text" name="dept_erg_scotopic_b_os" class="form-control form-control-sm" value="{{ d.erg_scotopic_b_os|default:'' }}"></div>
+      <div class="col-md-4"><label class="form-label small">Photopic a-wave OD (µV)</label><input type="text" name="dept_erg_photopic_a_od" class="form-control form-control-sm" value="{{ d.erg_photopic_a_od|default:'' }}"></div>
+      <div class="col-12"><label class="form-label small">ERG Interpretation</label><textarea name="dept_erg_interp" class="form-control form-control-sm" rows="2" placeholder="Normal ERG / Reduced rod response / Extinguished scotopic ERG...">{{ d.erg_interp|default:'' }}</textarea></div>
+      {% endif %}
+      {% if 'INV-06' in oc or not oc %}
+      <div class="col-md-3"><label class="form-label small">EOG Arden Ratio OD</label><input type="text" name="dept_eog_arden_od" class="form-control form-control-sm" placeholder="≥1.85" value="{{ d.eog_arden_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small">EOG Arden Ratio OS</label><input type="text" name="dept_eog_arden_os" class="form-control form-control-sm" placeholder="≥1.85" value="{{ d.eog_arden_os|default:'' }}"></div>
+      {% endif %}
+      {% if 'INV-25' in oc or not oc %}
+      <div class="col-md-3"><label class="form-label small">VEP P100 Latency OD (ms)</label><input type="text" name="dept_vep_p100_od" class="form-control form-control-sm" placeholder="100" value="{{ d.vep_p100_od|default:'' }}"></div>
+      <div class="col-md-3"><label class="form-label small">VEP P100 Latency OS (ms)</label><input type="text" name="dept_vep_p100_os" class="form-control form-control-sm" placeholder="100" value="{{ d.vep_p100_os|default:'' }}"></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── GONIOSCOPY ─────────────────────── #}
+{% if not oc or 'INV-10' in oc %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-eye text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Gonioscopy</span>
+    {% if 'INV-10' in oc %}<span class="badge bg-warning text-dark ms-auto">Ordered</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="form-label small fw-semibold">Angle Grade OD (Shaffer)</label>
+        <select name="dept_gonio_grade_od" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Grade 0 (closed),Grade 1 (very narrow),Grade 2 (narrow),Grade 3 (moderately open),Grade 4 (wide open)"|split:"," %}
+          <option value="{{ g }}" {% if d.gonio_grade_od == g %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small fw-semibold">Angle Grade OS (Shaffer)</label>
+        <select name="dept_gonio_grade_os" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for g in "Grade 0 (closed),Grade 1 (very narrow),Grade 2 (narrow),Grade 3 (moderately open),Grade 4 (wide open)"|split:"," %}
+          <option value="{{ g }}" {% if d.gonio_grade_os == g %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">OD Findings</label><textarea name="dept_gonio_od" class="form-control form-control-sm" rows="2" placeholder="Open angle, no PAS, normal trabecular pigmentation...">{{ d.gonio_od|default:'' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label small fw-semibold">OS Findings</label><textarea name="dept_gonio_os" class="form-control form-control-sm" rows="2" placeholder="Open angle, no PAS, normal trabecular pigmentation...">{{ d.gonio_os|default:'' }}</textarea></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─────────────────────── TECHNICIAN REMARKS ─────────────────────── #}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header py-2 bg-light d-flex align-items-center gap-2">
+    <i class="bi bi-clipboard-check text-primary"></i>
+    <span class="fw-semibold small text-uppercase" style="letter-spacing:.04em;">Technician Remarks</span>
+  </div>
+  <div class="card-body">
+    <label class="form-label small fw-semibold">Additional Notes / Observations</label>
+    <textarea name="dept_tech_remarks" class="form-control form-control-sm" rows="3"
+      placeholder="Patient cooperation, machine calibration, special observations...">{{ d.tech_remarks|default:'' }}</textarea>
+  </div>
+</div>
+
+{% endwith %}
 {% endwith %}
