@@ -6942,6 +6942,7 @@ def cost_center_pl_report(request):
         'grand_margin':   grand_revenue - grand_expense,
         'cost_centers':   CostCenter.objects.filter(is_deleted=False, is_active=True).order_by('code'),
         'cc_filter':      cc_filter,
+        'today':          str(today),
     })
 
 
@@ -7771,6 +7772,7 @@ def trial_balance(request):
         # For new CC filter UI: cc_mode=True when any CC filter active
         'cc_mode':        cc_breakdown or bool(cc_filter),
         'cc_select_val':  '' if cc_breakdown else cc_filter,
+        'today':          str(today),
     })
 
 
