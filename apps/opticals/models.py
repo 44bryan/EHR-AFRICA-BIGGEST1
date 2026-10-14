@@ -53,12 +53,28 @@ class Lens(AuditModel):
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
+    # Link to general inventory for real-time stock tracking and FEFO deduction.
+    # Null when the lens is a pure-catalogue entry (no physical stock tracked here).
+    inventory_item = models.OneToOneField(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='optical_lens',
+        help_text='Linked inventory item — stock level shown in optical dispenser',
+    )
 
     class Meta:
         ordering = ['name']
 
     def __str__(self):
         return f"{self.name} ({self.get_lens_type_display()})"
+
+    @property
+    def stock_available(self):
+        """Current stock from linked inventory item, or None if not tracked."""
+        if self.inventory_item_id:
+            return self.inventory_item.current_stock
+        return None
 
 
 class OpticalOrderStatus(models.TextChoices):

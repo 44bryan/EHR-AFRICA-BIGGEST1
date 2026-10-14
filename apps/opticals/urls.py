@@ -15,6 +15,7 @@ urlpatterns = [
     path('lenses/', views.lens_list, name='lens_list'),
     path('lenses/export/', views.lens_export_csv, name='lens_export_csv'),
     path('lenses/import/', views.lens_import_csv, name='lens_import_csv'),
+    path('lenses/sync-inventory/', views.lens_sync_from_inventory, name='lens_sync_inventory'),
     path('lenses/new/', views.lens_create, name='lens_create'),
     path('lenses/<uuid:lens_id>/edit/', views.lens_edit, name='lens_edit'),
     path('lenses/<uuid:lens_id>/delete/', views.lens_delete, name='lens_delete'),

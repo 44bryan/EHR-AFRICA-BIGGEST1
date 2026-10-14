@@ -464,8 +464,87 @@ def frame_delete(request, frame_id):
 
 @login_required
 def lens_list(request):
-    lenses = Lens.objects.filter(is_deleted=False).order_by('name')
+    lenses = Lens.objects.filter(is_deleted=False).select_related('inventory_item').order_by('name')
     return render(request, 'opticals/lens_list.html', {'lenses': lenses})
+
+
+@login_required
+def lens_sync_from_inventory(request):
+    """
+    Sync inventory items with category=LENS into the optical lens catalogue.
+    Creates a Lens record for each InventoryItem(category='LENS') that doesn't
+    already have one. Links them via Lens.inventory_item for live stock tracking.
+    Guess lens_type from item name keywords.
+    """
+    if not _can_manage_optical_stock(request.user):
+        return HttpResponseForbidden()
+
+    if request.method != 'POST':
+        from apps.inventory.models import InventoryItem
+        total_inv = InventoryItem.objects.filter(category='LENS', is_deleted=False).count()
+        already_linked = Lens.objects.filter(inventory_item__isnull=False, is_deleted=False).count()
+        return render(request, 'opticals/lens_sync.html', {
+            'total_inv': total_inv,
+            'already_linked': already_linked,
+        })
+
+    from apps.inventory.models import InventoryItem
+
+    def _guess_lens_type(name):
+        n = name.upper()
+        if 'PROG' in n or 'VARI' in n or 'PAL' in n:
+            return LensType.PROGRESSIVE
+        if 'BIF' in n:
+            return LensType.BIFOCAL
+        if 'OCC' in n or 'OFFICE' in n or 'OCCUP' in n:
+            return LensType.OCCUPATIONAL
+        if 'CONTACT' in n or 'CL' in n:
+            return LensType.CONTACT
+        return LensType.SINGLE_VISION  # default
+
+    inv_lenses = InventoryItem.objects.filter(
+        category='LENS', is_deleted=False
+    ).select_related('optical_lens')
+
+    created = updated = skipped = 0
+    for item in inv_lenses:
+        # Check if already linked
+        existing = Lens.objects.filter(inventory_item=item, is_deleted=False).first()
+        if existing:
+            # Keep selling_price and cost in sync
+            changed = []
+            if item.unit_cost and existing.cost_price != item.unit_cost:
+                existing.cost_price = item.unit_cost
+                changed.append('cost_price')
+            if changed:
+                changed.append('updated_at')
+                existing.save(update_fields=changed)
+                updated += 1
+            else:
+                skipped += 1
+            continue
+
+        # Try to find a Lens by name match
+        lens = Lens.objects.filter(name__iexact=item.name, is_deleted=False).first()
+        if lens:
+            if not lens.inventory_item_id:
+                lens.inventory_item = item
+                lens.save(update_fields=['inventory_item', 'updated_at'])
+            updated += 1
+        else:
+            Lens.objects.create(
+                name=item.name,
+                lens_type=_guess_lens_type(item.name),
+                cost_price=item.unit_cost or 0,
+                selling_price=0,  # Finance team can set prices later
+                is_active=item.is_active,
+                inventory_item=item,
+                created_by=request.user,
+            )
+            created += 1
+
+    messages.success(request, f'Sync complete: {created} new lenses created, {updated} updated, {skipped} already in sync.')
+    return redirect('opticals:lens_list')
 
 
 @login_required
