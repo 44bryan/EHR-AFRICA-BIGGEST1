@@ -12,6 +12,22 @@
 <form method="post">
   {% csrf_token %}
   {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+
+  {# Optical shop context banner — shown when category=FRAME or LENS is prefilled #}
+  {% if prefill_category == 'FRAME' or prefill_category == 'LENS' %}
+  <div class="alert alert-info border-0 small mb-3" id="optical-banner">
+    <i class="bi bi-eyeglasses me-2"></i>
+    <strong>Optical Store Item</strong> —
+    {% if prefill_category == 'FRAME' %}Optical Frame{% else %}Ophthalmic Lens{% endif %}
+    will be automatically added to the Optical Dispenser catalogue after saving.
+    Recommended GL accounts:
+    <strong>Stock GL → 322xxx</strong> (Merchandise — Optical),
+    <strong>Purchase GL → 603xxx</strong> (COGS — Optical goods),
+    <strong>Sales GL → 7xxx</strong> (Revenue).
+    Set <strong>Store Location → Optical Store</strong>.
+  </div>
+  {% endif %}
+
   <div class="row g-3">
 
     {# ── LEFT COLUMN: Inventory / Physical Details ── #}
@@ -280,5 +296,50 @@ function calcTTC() {
 }
 ht.addEventListener('input', calcTTC);
 tax.addEventListener('input', calcTTC);
+
+/* ── Optical GL auto-suggest ─────────────────────────────────────────────
+   When category = FRAME or LENS, auto-select the first 322xxx account
+   in the Stock GL dropdown and the first 603xxx in the Purchase (COGS) GL.
+   Sales GL defaults to the first 7xxxxx account (already listed first).
+   If the user has already chosen a value we leave it alone.
+───────────────────────────────────────────────────────────────────────── */
+(function () {
+  const catSel  = document.querySelector('select[name="category"]');
+  const stockSel = document.querySelector('select[name="stock_gl_account"]');
+  const purchSel = document.querySelector('select[name="purchase_gl_account"]');
+  const banner   = document.getElementById('optical-banner');
+
+  function firstOptionMatching(sel, prefix) {
+    for (const opt of sel.options) {
+      if (opt.value && opt.text.trim().startsWith(prefix)) return opt.value;
+    }
+    return null;
+  }
+
+  function applyOpticalGL() {
+    const isOptical = catSel && (catSel.value === 'FRAME' || catSel.value === 'LENS');
+    if (banner) banner.style.display = isOptical ? '' : 'none';
+    if (!isOptical) return;
+    // Stock GL → 322xxx
+    if (stockSel && !stockSel.value) {
+      const v = firstOptionMatching(stockSel, '322');
+      if (v) stockSel.value = v;
+      // Trigger TomSelect refresh if present
+      if (stockSel.tomselect) stockSel.tomselect.setValue(v, true);
+    }
+    // Purchase / COGS GL → 603xxx
+    if (purchSel && !purchSel.value) {
+      const v = firstOptionMatching(purchSel, '603');
+      if (v) purchSel.value = v;
+      if (purchSel.tomselect) purchSel.tomselect.setValue(v, true);
+    }
+  }
+
+  if (catSel) {
+    catSel.addEventListener('change', applyOpticalGL);
+    // Run on page load in case category is pre-filled
+    applyOpticalGL();
+  }
+})();
 </script>
 {% endblock %}
