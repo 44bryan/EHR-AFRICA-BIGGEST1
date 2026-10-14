@@ -6813,7 +6813,7 @@ def cost_center_pl_report(request):
     from django.db.models import Sum
 
     today = timezone.localdate()
-    date_from = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_from = request.GET.get('date_from') or str(today)
     date_to   = request.GET.get('date_to')   or str(today)
     cc_filter = request.GET.get('cc_select', '')
 
@@ -7036,7 +7036,7 @@ def trial_balance(request):
     from django.db.models import Q as _Q
 
     today         = timezone.localdate()
-    date_from     = request.GET.get('date_from') or str(today.replace(month=1, day=1))
+    date_from     = request.GET.get('date_from') or str(today)
     date_to       = request.GET.get('date_to')   or str(today)
     balance_type  = request.GET.get('balance_type', 'general')   # 'general' | 'auxiliaire'
     classe_filter = request.GET.get('classe', '')                 # '' = all, '1'..'8'
