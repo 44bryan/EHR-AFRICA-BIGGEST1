@@ -15,6 +15,7 @@ class ItemCategory(models.TextChoices):
     PHARMACEUTICAL    = 'PHARMACEUTICAL',     'Pharmaceuticals / Reagents'
     IMPLANT           = 'IMPLANT',            'Implants / Prosthetics'
     LENS              = 'LENS',               'Ophthalmic Lenses (Consignment)'
+    FRAME             = 'FRAME',              'Optical Frames'
     OFFICE            = 'OFFICE',             'Office Supplies'
     CLEANING          = 'CLEANING',           'Cleaning / Housekeeping'
     IT                = 'IT',                 'IT Equipment'

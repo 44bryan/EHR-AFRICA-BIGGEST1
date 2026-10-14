@@ -35,6 +35,14 @@ class Frame(AuditModel):
     quantity_in_stock = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     image = models.ImageField(upload_to='frames/', null=True, blank=True)
+    # Link to general inventory for GL/cost-center tracking.
+    inventory_item = models.OneToOneField(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='optical_frame',
+        help_text='Linked inventory item — stock, GL and cost center managed from here',
+    )
 
     class Meta:
         ordering = ['brand', 'model']

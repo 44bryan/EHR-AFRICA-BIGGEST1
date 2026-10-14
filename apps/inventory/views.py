@@ -831,7 +831,13 @@ def item_create(request):
             requires_price_entry='requires_price_entry' in request.POST,
         )
         messages.success(request, f'Item "{item.name}" created + added to billing catalog.')
+        # Support ?next= redirect (e.g. from optical shop "Add Frame" button)
+        next_url = request.POST.get('next') or request.GET.get('next') or ''
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect('inventory:item_detail', item_id=item.id)
+    # Support ?category= pre-selection from optical shop buttons
+    prefill_category = request.GET.get('category', '')
     return render(request, 'inventory/item_form.html', {
         'categories': ItemCategory.choices,
         'vendors': vendors,
@@ -841,6 +847,8 @@ def item_create(request):
         'gl_asset_accounts': gl_asset_accounts,
         'sub_categories': sub_categories,
         'action': 'Create',
+        'prefill_category': prefill_category,
+        'next_url': request.GET.get('next', ''),
     })
 
 

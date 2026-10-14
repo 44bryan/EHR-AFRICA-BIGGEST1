@@ -25,7 +25,8 @@ STOCK_ACCOUNT_MAP = {
     'MEDICAL_CONSUMABLE': '33', # Other supplies
     'DIAGNOSTIC':     '33',     # Other supplies
     'IMPLANT':        '32',     # Merchandise
-    'LENS':           '32',     # Merchandise
+    'LENS':           '32',     # Merchandise — Ophthalmic lenses
+    'FRAME':          '32',     # Merchandise — Optical frames
     'OFFICE':         '33',     # Other supplies
     'CLEANING':       '33',     # Other supplies
     'IT':             '33',     # Other supplies
