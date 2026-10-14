@@ -275,7 +275,7 @@ def lens_export_csv(request):
 
 @login_required
 def lens_import_csv(request):
-    """CSV bulk import/update for lenses."""
+    """Bulk import/update for lenses. Accepts CSV or Excel (.xlsx) files."""
     if not _can_manage_optical_stock(request.user):
         return HttpResponseForbidden()
 
@@ -287,46 +287,69 @@ def lens_import_csv(request):
     import csv, io
     from decimal import Decimal, InvalidOperation
 
-    csv_file = request.FILES.get('csv_file')
-    if not csv_file:
-        messages.error(request, 'Please select a CSV file.')
+    upload = request.FILES.get('csv_file')
+    if not upload:
+        messages.error(request, 'Please select a CSV or Excel file.')
         return render(request, 'opticals/lens_import.html', {'lens_types': LensType.choices})
 
-    try:
-        decoded = csv_file.read().decode('utf-8-sig')
-    except UnicodeDecodeError:
-        csv_file.seek(0)
-        decoded = csv_file.read().decode('latin-1')
+    fname = upload.name.lower()
 
-    reader = csv.DictReader(io.StringIO(decoded))
-
-    def _dec(row, key, default=0):
+    def _dec(val, default=0):
         try:
-            v = str(row.get(key, '') or '').strip().replace(',', '')
+            v = str(val or '').strip().replace(',', '').replace(' ', '')
             return Decimal(v) if v else Decimal(str(default))
         except InvalidOperation:
             return Decimal(str(default))
 
+    # ── Parse rows ────────────────────────────────────────────────────────────
+    rows = []   # list of dicts with lowercase keys
+
+    if fname.endswith('.xlsx') or fname.endswith('.xls'):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(upload, data_only=True)
+            ws = wb.active
+            headers = None
+            for excel_row in ws.iter_rows(values_only=True):
+                if headers is None:
+                    headers = [str(c or '').strip().lower() for c in excel_row]
+                    continue
+                if not any(excel_row):
+                    continue
+                rows.append({headers[i]: (excel_row[i] if i < len(excel_row) else None)
+                             for i in range(len(headers))})
+        except Exception as e:
+            messages.error(request, f'Cannot read Excel file: {e}')
+            return render(request, 'opticals/lens_import.html', {'lens_types': LensType.choices})
+    else:
+        try:
+            decoded = upload.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            upload.seek(0)
+            decoded = upload.read().decode('latin-1')
+        reader = csv.DictReader(io.StringIO(decoded))
+        rows = [{k.strip().lower(): v for k, v in row.items()} for row in reader]
+
     created = updated = skipped = 0
 
-    for row in reader:
+    for row in rows:
         name = str(row.get('name', '') or '').strip()
         lens_type = str(row.get('lens_type', '') or '').strip()
         if not name:
             skipped += 1
             continue
-        lens = Lens.objects.filter(name__iexact=name, is_deleted=False).first()
-        cost = _dec(row, 'cost_price')
-        sell = _dec(row, 'selling_price')
+        cost = _dec(row.get('cost_price'))
+        sell = _dec(row.get('selling_price'))
         material = str(row.get('material', '') or '').strip()
         coating = str(row.get('coating', '') or '').strip()
-        is_active = str(row.get('is_active', '1')).strip() not in ('0', 'false', 'False', 'no')
+        is_active = str(row.get('is_active', '1') or '1').strip() not in ('0', 'false', 'False', 'no')
         idx_str = str(row.get('index', '') or '').strip()
         try:
             idx = Decimal(idx_str) if idx_str else None
         except InvalidOperation:
             idx = None
 
+        lens = Lens.objects.filter(name__iexact=name, is_deleted=False).first()
         if lens:
             lens.cost_price = cost
             lens.selling_price = sell
