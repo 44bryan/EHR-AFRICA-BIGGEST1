@@ -2432,6 +2432,14 @@ def _bridge_work_order_to_clinical(wo, user):
                     ).select_related('investigation_type').first()
                     if _paid_order:
                         _cat = _paid_order.investigation_type.category
+                        # Fallback: if category is generic INVEST but visit was dispatched
+                        # to optometry department (REFRAC), override to REFRACTION so the
+                        # patient ends up in the optometrist queue, not investigation queue.
+                        _OPTOM_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
+                        if _cat not in _OPTOM_CATS:
+                            _v_dept_code = getattr(getattr(_visit, 'department', None), 'code', '')
+                            if _v_dept_code in ('REFRAC', 'PEDS_REFRAC', 'LOW_VIS', 'ORTHO'):
+                                _cat = 'REFRACTION'
                         from apps.core.patient_flow import auto_route_to_investigation
 
                         class _VisitHolder:

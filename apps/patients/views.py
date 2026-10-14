@@ -1675,22 +1675,36 @@ def triage_view(request, visit_number):
                     _needs_payment = False
                     _already_paid_names = []
                     _skipped_dupes = []
+                    # Category to assign to InvestigationType — determines post-payment routing.
+                    # REFRACTION dispatch → category REFRACTION → bridge routes to optometrist queue
+                    # INVEST dispatch     → category INVEST     → bridge routes to investigation queue
+                    _inv_type_cat = 'REFRACTION' if direct_service == 'REFRACTION' else 'INVEST'
+
                     for _sp in _selected_sps:
                         # Get or create a matching InvestigationType (needed for InvestigationOrder FK)
                         _et, _ = InvestigationType.objects.get_or_create(
                             code=_sp.code,
                             defaults={
                                 'name': _sp.name,
-                                'category': 'INVEST',
+                                'category': _inv_type_cat,
                                 'unit_price': _sp.price,
                                 'is_active': True,
                             },
                         )
-                        # Keep name/price in sync with finance catalog
-                        if _et.name != _sp.name or _et.unit_price != _sp.price:
+                        # Keep name/price/category in sync with finance catalog and dispatch intent
+                        _et_update = []
+                        if _et.name != _sp.name:
                             _et.name = _sp.name
+                            _et_update.append('name')
+                        if _et.unit_price != _sp.price:
                             _et.unit_price = _sp.price
-                            _et.save(update_fields=['name', 'unit_price', 'updated_at'])
+                            _et_update.append('unit_price')
+                        if _et.category != _inv_type_cat:
+                            _et.category = _inv_type_cat
+                            _et_update.append('category')
+                        if _et_update:
+                            _et_update.append('updated_at')
+                            _et.save(update_fields=_et_update)
 
                         # ── Duplicate order prevention ──
                         _dup = InvestigationOrder.objects.filter(
