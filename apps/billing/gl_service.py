@@ -88,11 +88,11 @@ _mapping_cache = None
 _SERVICE_CAT_TO_CC = {
     'CONSULT':     '001',   # Ophthalmology
     'CLINICAL':    '001',   # Ophthalmology (clinical procedures)
-    'INVEST':      '004',   # Laboratory
-    'LAB':         '004',   # Laboratory
+    'INVEST':      '001',   # Ophthalmology investigations (refractometry, OCT, visual field, etc.)
+    'LAB':         '004',   # General Laboratory (blood work, non-ophthalmic)
     'PHARMACY':    '008',   # Pharmacy
     'OPTICAL':     '009',   # Optical Shop
-    'REFRACTION':  '009',   # Optical Shop
+    'REFRACTION':  '001',   # Ophthalmology (refraction)
     'SURGICAL':    '001',   # Ophthalmology (surgery/theatre)
     'ADMISSION':   '006',   # Accommodation (IPD/Ward)
     'REG':         '007',   # Patient Affairs
@@ -199,6 +199,7 @@ def _dominant_category(items):
     """
     Return the ServiceCategory that accounts for the most revenue in a list of
     invoice items. Used to tag the journal entry with a single cost center.
+    CONSULT always wins when present — it is the primary clinical service.
     """
     from decimal import Decimal as _D
     totals = {}
@@ -207,6 +208,9 @@ def _dominant_category(items):
         totals[cat] = totals.get(cat, _D('0')) + (getattr(item, 'line_total', None) or _D('0'))
     if not totals:
         return 'OTHER'
+    # CONSULT is always the primary category when present
+    if 'CONSULT' in totals:
+        return 'CONSULT'
     return max(totals, key=totals.get)
 
 
