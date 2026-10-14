@@ -1283,20 +1283,24 @@ def triage_view(request, visit_number):
         {'code': 'EXP_CONSULT', 'label': 'Express Consultation Room'},
     ]
 
-    # ── Exam types + examiners for nurse-initiated exam ordering ─────────
-    from apps.investigations.models import InvestigationType, InvestigationCategory
-    from itertools import groupby as _triage_groupby
-    _OPTOMETRY_CATS = {'REFRACTION', 'ORTHOPTICS', 'LOW_VISION'}
-    _exam_qs = InvestigationType.objects.filter(is_active=True, is_deleted=False)
-    _optom_types = _exam_qs.filter(category__in=_OPTOMETRY_CATS).order_by('category', 'name')
-    _invest_types = _exam_qs.exclude(category__in=_OPTOMETRY_CATS).order_by('category', 'name')
-    _cat_labels = dict(InvestigationCategory.choices)
-    exam_optom_grouped = []
-    for cat, items in _triage_groupby(_optom_types, key=lambda t: t.category):
-        exam_optom_grouped.append((_cat_labels.get(cat, cat), list(items)))
-    exam_invest_grouped = []
-    for cat, items in _triage_groupby(_invest_types, key=lambda t: t.category):
-        exam_invest_grouped.append((_cat_labels.get(cat, cat), list(items)))
+    # ── Exam types for nurse-initiated exam ordering ─────────────────────
+    # Source: ServicePrice(category='INVEST') — finance billing catalog,
+    # one entry per unique code (standard tier price), so triage names
+    # exactly match what cashier sees in POS.
+    from apps.billing.models import ServicePrice as _SP
+    _seen_codes = set()
+    _optom_sp = []
+    for _sp in _SP.objects.filter(
+        category='INVEST', is_deleted=False,
+    ).order_by('code', 'name'):
+        if _sp.code and _sp.code not in _seen_codes:
+            _seen_codes.add(_sp.code)
+            _optom_sp.append(_sp)
+        elif not _sp.code:
+            _optom_sp.append(_sp)
+    # Group all under single label "Eye Investigations"
+    exam_optom_grouped = [('Eye Investigations', _optom_sp)] if _optom_sp else []
+    exam_invest_grouped = []  # unused but kept for template compat
     from apps.accounts.models import User as _ExamUser
     exam_assignees = list(_ExamUser.objects.filter(
         role__in=['optometrist', 'pediatric_refractionist', 'low_vision_specialist',
@@ -1623,32 +1627,32 @@ def triage_view(request, visit_number):
             # examiner. Only route to CASHIER if there are unpaid exams.
             _exam_type_ids = request.POST.getlist('exam_type_ids')
             _exam_assignee_id = request.POST.get('exam_assignee_id', '').strip()
-            # Default to Subjective Refraction when dispatching to optometry
-            # without ticking any specific exam
+            # Default to Refractometry Without Cycloplegia when dispatching to
+            # optometry without ticking any specific exam (INV-17 from finance catalog)
             if not _exam_type_ids and direct_service == 'REFRACTION':
-                from apps.investigations.models import InvestigationType as _IT_default
-                _default_ref = _IT_default.objects.filter(
-                    code='REF', is_active=True,
-                ).first()
-                if _default_ref:
-                    _exam_type_ids = [str(_default_ref.pk)]
+                from apps.billing.models import ServicePrice as _SP_def
+                _default_sp = _SP_def.objects.filter(
+                    code='INV-17', is_deleted=False
+                ).first() or _SP_def.objects.filter(
+                    category='INVEST', is_deleted=False
+                ).order_by('code').first()
+                if _default_sp:
+                    _exam_type_ids = [str(_default_sp.pk)]
             if _exam_type_ids and direct_service in ('REFRACTION', 'INVEST'):
                 try:
-                    from apps.investigations.models import (
-                        InvestigationType, InvestigationOrder, PaymentStatus as _InvPS,
-                    )
                     from apps.billing.models import (
+                        ServicePrice as _SPX,
                         ServiceWorkOrder, WorkOrderStatus as _WOS, ServiceCategory as _SC,
                         Invoice, InvoiceItem, InvoiceStatus as _InvSt,
+                    )
+                    from apps.investigations.models import (
+                        InvestigationType, InvestigationOrder, PaymentStatus as _InvPS,
                     )
                     _exam_assignee = None
                     if _exam_assignee_id:
                         from apps.accounts.models import User as _EU
                         _exam_assignee = _EU.objects.filter(pk=_exam_assignee_id, is_active=True).first()
 
-                    # Check what the patient has already paid for today
-                    # Check ALL categories (INVEST + CONSULT) because refraction
-                    # route fee is billed as CONSULT "Refraction / Optometry"
                     _today_date = timezone.localdate()
                     _paid_invoices = Invoice.objects.filter(
                         patient=visit.patient,
@@ -1665,12 +1669,29 @@ def triage_view(request, visit_number):
                                 is_deleted=False,
                             ).values_list('description', flat=True)
                         )
-                    _exam_types = InvestigationType.objects.filter(pk__in=_exam_type_ids, is_active=True)
+                    # exam_type_ids now hold ServicePrice PKs
+                    _selected_sps = list(_SPX.objects.filter(pk__in=_exam_type_ids, is_deleted=False))
                     _created_names = []
                     _needs_payment = False
                     _already_paid_names = []
                     _skipped_dupes = []
-                    for _et in _exam_types:
+                    for _sp in _selected_sps:
+                        # Get or create a matching InvestigationType (needed for InvestigationOrder FK)
+                        _et, _ = InvestigationType.objects.get_or_create(
+                            code=_sp.code,
+                            defaults={
+                                'name': _sp.name,
+                                'category': 'INVEST',
+                                'unit_price': _sp.price,
+                                'is_active': True,
+                            },
+                        )
+                        # Keep name/price in sync with finance catalog
+                        if _et.name != _sp.name or _et.unit_price != _sp.price:
+                            _et.name = _sp.name
+                            _et.unit_price = _sp.price
+                            _et.save(update_fields=['name', 'unit_price', 'updated_at'])
+
                         # ── Duplicate order prevention ──
                         _dup = InvestigationOrder.objects.filter(
                             patient=visit.patient,
@@ -1682,8 +1703,7 @@ def triage_view(request, visit_number):
                             _skipped_dupes.append(_et.name)
                             continue
 
-                        # Check if this specific exam was already paid for today
-                        # Method 1: existing PAID order for same type
+                        # Check if already paid today
                         _is_paid = InvestigationOrder.objects.filter(
                             patient=visit.patient,
                             investigation_type=_et,
@@ -1691,16 +1711,14 @@ def triage_view(request, visit_number):
                             payment_status=_InvPS.PAID,
                             is_deleted=False,
                         ).exists()
-                        # Method 2: invoice description match (fallback)
                         if not _is_paid:
-                            _et_name_lc = _et.name.lower()
-                            _et_code_lc = (_et.code or '').lower()
+                            _name_lc = _et.name.lower()
+                            _code_lc = (_sp.code or '').lower()
                             _is_paid = any(
-                                _et_name_lc in d.lower() or
-                                (_et_code_lc and _et_code_lc in d.lower())
+                                _name_lc in d.lower() or (_code_lc and _code_lc in d.lower())
                                 for d in _paid_descriptions
                             )
-                        _order = InvestigationOrder.objects.create(
+                        InvestigationOrder.objects.create(
                             patient=visit.patient,
                             visit=visit,
                             ordered_by=request.user,
@@ -1715,15 +1733,11 @@ def triage_view(request, visit_number):
                         if _is_paid:
                             _already_paid_names.append(_et.name)
                         else:
-                            # ServiceWorkOrder for billing — only for unpaid exams
-                            _CLIN_CATS = {'REFRACTION', 'LOW_VISION', 'ORTHOPTICS'}
-                            _wo_cat = _SC.CLINICAL_EXAM if _et.category in _CLIN_CATS else _SC.INVESTIGATION
-                            _wo_lbl = 'Clinical Exam' if _et.category in _CLIN_CATS else 'Exam'
-                            _price_note = f'{_et.unit_price:,.0f} FCFA'
+                            _price_note = f'{_sp.price:,.0f} FCFA'
                             ServiceWorkOrder.objects.create(
                                 patient=visit.patient,
-                                category=_wo_cat,
-                                description=f'{_wo_lbl}: {_et.name} (OU) — {_price_note}',
+                                category=_SC.INVESTIGATION,
+                                description=f'Exam: {_sp.name} (OU) — {_price_note}',
                                 status=_WOS.PENDING_PAYMENT,
                                 notes=_price_note,
                                 created_by=request.user,
