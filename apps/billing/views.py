@@ -616,7 +616,7 @@ def add_payment(request, invoice_id):
         except (InvalidOperation, ValueError):
             messages.error(request, 'Enter a valid positive amount.')
             return redirect('billing:invoice_detail', invoice_id=invoice.id)
-        Payment.objects.create(
+        _new_pmt = Payment.objects.create(
             invoice=invoice,
             payment_method=request.POST.get('payment_method', ''),
             amount=amount,
@@ -626,6 +626,17 @@ def add_payment(request, invoice_id):
             created_by=request.user,
             cashier_session=_get_active_cashier_session(request.user),
         )
+        # ── Explicit GL posting ──────────────────────────────────────────────
+        try:
+            from apps.billing import gl_service as _gl
+            from apps.billing.models import JournalEntry as _JE
+            if not _JE.objects.filter(source_type='payment', source_id=str(_new_pmt.pk)).exists():
+                _gl.post_payment(_new_pmt)
+            invoice.refresh_from_db()
+            if not _JE.objects.filter(source_type='invoice', source_id=str(invoice.pk)).exists():
+                _gl.post_invoice_issued(invoice)
+        except Exception:
+            pass
         from apps.accounts.models import UserAuditLog
         _log_financial(request, UserAuditLog.Action.CREATE_RECORD, invoice,
                        extra={'payment': amount, 'method': request.POST.get('payment_method', '')})
@@ -1728,7 +1739,7 @@ def pos_record_payment(request, invoice_id):
         except Exception as _we:
             return JsonResponse({'success': False, 'error': f'Wallet error: {_we}'}, status=500)
 
-    Payment.objects.create(
+    _new_payment = Payment.objects.create(
         invoice=invoice,
         payment_method=payment_method,
         amount=amount,
@@ -1737,6 +1748,17 @@ def pos_record_payment(request, invoice_id):
         created_by=request.user,
         cashier_session=_get_active_cashier_session(request.user),
     )
+    # ── Explicit GL posting (belt-and-suspenders — signal may miss inside atomic) ──
+    try:
+        from apps.billing import gl_service as _gl
+        from apps.billing.models import JournalEntry as _JE
+        if not _JE.objects.filter(source_type='payment', source_id=str(_new_payment.pk)).exists():
+            _gl.post_payment(_new_payment)
+        invoice.refresh_from_db()
+        if not _JE.objects.filter(source_type='invoice', source_id=str(invoice.pk)).exists():
+            _gl.post_invoice_issued(invoice)
+    except Exception:
+        pass  # GL failure must never block payment confirmation
     from apps.accounts.models import UserAuditLog
     _log_financial(request, UserAuditLog.Action.CREATE_RECORD, invoice,
                    extra={'payment': str(amount), 'method': payment_method})
