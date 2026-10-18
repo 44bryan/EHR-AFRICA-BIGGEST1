@@ -66,9 +66,29 @@ class Bed(AuditModel):
 
 
 class AdmissionStatus(models.TextChoices):
-    ADMITTED = 'ADMITTED', 'Admitted'
-    DISCHARGED = 'DISCHARGED', 'Discharged'
+    ADMITTED    = 'ADMITTED',    'Admitted'
+    POST_OP     = 'POST_OP',     'Post-Operative'
+    DISCHARGED  = 'DISCHARGED',  'Discharged'
     TRANSFERRED = 'TRANSFERRED', 'Transferred'
+
+
+class AdmissionType(models.TextChoices):
+    ELECTIVE  = 'ELECTIVE',  'Elective (Planned)'
+    EMERGENCY = 'EMERGENCY', 'Emergency'
+    DAY_CASE  = 'DAY_CASE',  'Day Case / Same-Day Surgery'
+    TRANSFER  = 'TRANSFER',  'Transfer from Another Facility'
+
+
+class BloodGroup(models.TextChoices):
+    A_POS  = 'A+',  'A+'
+    A_NEG  = 'A-',  'A-'
+    B_POS  = 'B+',  'B+'
+    B_NEG  = 'B-',  'B-'
+    AB_POS = 'AB+', 'AB+'
+    AB_NEG = 'AB-', 'AB-'
+    O_POS  = 'O+',  'O+'
+    O_NEG  = 'O-',  'O-'
+    UNKNOWN = 'UNKNOWN', 'Not Known'
 
 
 class Admission(AuditModel):
@@ -80,16 +100,46 @@ class Admission(AuditModel):
     admitting_doctor = models.ForeignKey(
         'accounts.User', on_delete=models.PROTECT, related_name='admissions_made'
     )
+    primary_nurse = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='primary_nurse_admissions',
+        help_text='Nurse assigned as primary carer for this admission',
+    )
     surgical_booking = models.ForeignKey(
         'SurgicalBooking', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='admissions'
     )
     admission_date = models.DateTimeField(default=timezone.now)
+    expected_discharge_date = models.DateField(
+        null=True, blank=True,
+        help_text='Planned discharge date — JCI ACC.1.1 (Length of Stay planning)'
+    )
     discharge_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=AdmissionStatus.choices, default=AdmissionStatus.ADMITTED)
+    admission_type = models.CharField(
+        max_length=20, choices=AdmissionType.choices, default=AdmissionType.ELECTIVE
+    )
     diagnosis_on_admission = models.TextField()
     discharge_summary = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+
+    # ── Clinical fields required for ophthalmology surgery ─────────────────
+    blood_group = models.CharField(
+        max_length=10, choices=BloodGroup.choices, default=BloodGroup.UNKNOWN,
+        help_text='Blood group + Rhesus — required before theatre (transfusion planning)'
+    )
+    height_cm = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        help_text='Height in cm — used for anaesthesia drug dosing'
+    )
+    weight_kg = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        help_text='Weight in kg — used for anaesthesia drug dosing'
+    )
+    is_readmission = models.BooleanField(
+        default=False,
+        help_text='Readmitted within 30 days for same condition'
+    )
 
     class Meta:
         ordering = ['-admission_date']
@@ -434,18 +484,28 @@ class TheatreSession(AuditModel):
         default=TheatreSessionStatus.SCHEDULED
     )
 
-    # Theatre team
-    lead_surgeon       = models.ForeignKey(
+    # Theatre team — all FK to real User accounts for workload reporting
+    lead_surgeon = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='theatre_sessions_led'
     )
-    anaesthetist_name  = models.CharField(max_length=200, blank=True,
-        help_text='Anaesthetist or anaesthesia provider name')
-    scrub_nurse        = models.ForeignKey(
+    second_surgeon = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theatre_sessions_second_surgeon',
+        help_text='Assistant surgeon / co-surgeon'
+    )
+    anaesthetist = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theatre_sessions_anaesthesia',
+        limit_choices_to={'role': 'anaesthetist'},
+    )
+    anaesthetist_name = models.CharField(max_length=200, blank=True,
+        help_text='Fallback text if anaesthetist has no system account')
+    scrub_nurse = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='theatre_sessions_scrub'
     )
-    circulating_nurse  = models.ForeignKey(
+    circulating_nurse = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='theatre_sessions_circulating'
     )
@@ -1316,6 +1376,418 @@ class PreOpCounsellingChecklist(AuditModel):
 
     def __str__(self):
         return f'Pre-Op Checklist — {self.booking.patient.full_name} ({self.date})'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRE-OPERATIVE INVESTIGATION REQUIREMENTS (JCI ASC.4)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PreOpInvType(models.TextChoices):
+    BIOMETRY        = 'BIOMETRY',        'Biometry (A-scan / IOLMaster)'
+    OCT             = 'OCT',             'OCT — Macula / Optic Nerve'
+    CORNEAL_TOPO    = 'CORNEAL_TOPO',    'Corneal Topography / Pentacam'
+    SPECULAR_MICRO  = 'SPECULAR_MICRO',  'Specular Microscopy'
+    B_SCAN          = 'B_SCAN',          'B-scan Ultrasound'
+    VF              = 'VF',              'Visual Field (Perimetry)'
+    FFA             = 'FFA',             'Fundus Fluorescein Angiography'
+    ELECTRODIAG     = 'ELECTRODIAG',     'Electrodiagnostics (ERG/VEP)'
+    CBC             = 'CBC',             'Full Blood Count (CBC)'
+    RBG             = 'RBG',             'Random Blood Glucose'
+    HBA1C           = 'HBA1C',           'HbA1c'
+    UREA_CREAT      = 'UREA_CREAT',      'Urea & Creatinine'
+    SICKLE_CELL     = 'SICKLE_CELL',     'Sickle-cell Screen'
+    HIV             = 'HIV',             'HIV Screen'
+    COAGULATION     = 'COAGULATION',     'Coagulation Profile (PT/APTT)'
+    ECG             = 'ECG',             'ECG'
+    CXR             = 'CXR',             'Chest X-ray'
+    ANAESTHESIA     = 'ANAESTHESIA',     'Anaesthesia Fitness Assessment'
+    OTHER           = 'OTHER',           'Other'
+
+
+class PreOpInvStatus(models.TextChoices):
+    PENDING     = 'PENDING',     'Pending'
+    ORDERED     = 'ORDERED',     'Ordered'
+    RESULT_IN   = 'RESULT_IN',   'Result Available'
+    CLEARED     = 'CLEARED',     'Cleared by Surgeon'
+    WAIVED      = 'WAIVED',      'Waived (documented reason)'
+
+
+class PreOpInvestigation(AuditModel):
+    """
+    Tracks each required pre-operative investigation for a surgical booking (JCI ASC.4).
+    """
+    booking     = models.ForeignKey('SurgicalBooking', on_delete=models.CASCADE,
+                                    related_name='preop_investigations')
+    inv_type    = models.CharField(max_length=20, choices=PreOpInvType.choices)
+    status      = models.CharField(max_length=15, choices=PreOpInvStatus.choices,
+                                   default=PreOpInvStatus.PENDING)
+    ordered_at  = models.DateTimeField(null=True, blank=True)
+    result_at   = models.DateTimeField(null=True, blank=True)
+    result_summary = models.TextField(blank=True)
+    cleared_by  = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='cleared_preop_invs')
+    cleared_at  = models.DateTimeField(null=True, blank=True)
+    waiver_reason = models.TextField(blank=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Pre-Op Investigation'
+        unique_together = [('booking', 'inv_type')]
+        ordering = ['inv_type']
+
+    def __str__(self):
+        return f'{self.get_inv_type_display()} — {self.booking}'
+
+    @property
+    def is_cleared(self):
+        return self.status in (PreOpInvStatus.CLEARED, PreOpInvStatus.WAIVED)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTRA-OPERATIVE SURGICAL MATERIALS / IMPLANTS (JCI ASC.5.1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SurgicalMaterialType(models.TextChoices):
+    IOL             = 'IOL',            'Intraocular Lens (IOL)'
+    SUTURE          = 'SUTURE',         'Suture'
+    VISCOELASTIC    = 'VISCOELASTIC',   'Viscoelastic / OVD'
+    IRRIGATING_SOL  = 'IRRIGATING_SOL', 'Irrigating Solution (BSS)'
+    TAMPONADE       = 'TAMPONADE',      'Intraocular Tamponade (Gas/Oil)'
+    GLAUCOMA_IMPL   = 'GLAUCOMA_IMPL',  'Glaucoma Implant / Tube Shunt'
+    CORNEAL_RING    = 'CORNEAL_RING',   'Intrastromal Corneal Ring Segment'
+    AMNIOTIC        = 'AMNIOTIC',       'Amniotic Membrane'
+    HAEMOSTATIC     = 'HAEMOSTATIC',    'Haemostatic Agent'
+    ADHESIVE        = 'ADHESIVE',       'Tissue Adhesive / Glue'
+    SPONGE          = 'SPONGE',         'Surgical Sponge / Merocel'
+    PROBE           = 'PROBE',          'Lacrimal Probe / Stent'
+    OTHER           = 'OTHER',          'Other'
+
+
+class SurgicalMaterial(AuditModel):
+    """
+    Records every implant and consumable used during a TheatreProcedure (JCI ASC.5.1).
+    Provides full lot/batch traceability.
+    """
+    procedure       = models.ForeignKey('TheatreProcedure', on_delete=models.CASCADE,
+                                        related_name='surgical_materials')
+    material_type   = models.CharField(max_length=20, choices=SurgicalMaterialType.choices)
+    description     = models.CharField(max_length=200)
+    manufacturer    = models.CharField(max_length=100, blank=True)
+    model_reference = models.CharField(max_length=100, blank=True)
+    lot_number      = models.CharField(max_length=100, blank=True)
+    serial_number   = models.CharField(max_length=100, blank=True)
+    expiry_date     = models.DateField(null=True, blank=True)
+    quantity_used   = models.PositiveSmallIntegerField(default=1)
+    unit_cost       = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    eye             = models.CharField(max_length=5, choices=[
+        ('OD', 'OD — Right Eye'), ('OS', 'OS — Left Eye'), ('OU', 'OU — Both Eyes'), ('NA', 'N/A'),
+    ], default='NA')
+    notes           = models.TextField(blank=True)
+    recorded_by     = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name='recorded_materials')
+
+    class Meta:
+        verbose_name = 'Surgical Material'
+        ordering = ['material_type', 'description']
+
+    def __str__(self):
+        return f'{self.get_material_type_display()} — {self.description} (Proc {self.procedure_id})'
+
+    @property
+    def total_cost(self):
+        return self.unit_cost * self.quantity_used
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPERATIVE REPORT (JCI ASC.7.1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class IncisionType(models.TextChoices):
+    CLEAR_CORNEAL       = 'CLEAR_CORNEAL',      'Clear Corneal Incision'
+    SCLERAL_TUNNEL      = 'SCLERAL_TUNNEL',     'Scleral Tunnel'
+    LIMBAL              = 'LIMBAL',             'Limbal Incision'
+    PARS_PLANA          = 'PARS_PLANA',         'Pars Plana (Vitreoretinal)'
+    STAB_INCISION       = 'STAB_INCISION',      'Stab / Side-port Incision'
+    TRABECULECTOMY      = 'TRABECULECTOMY',     'Trabeculectomy Flap'
+    CANTHOTOMY          = 'CANTHOTOMY',         'Canthotomy'
+    CONJUNCTIVAL_PERITOMY = 'CONJ_PERITOMY',    'Conjunctival Peritomy'
+    OTHER               = 'OTHER',             'Other'
+
+
+class OperativeReport(AuditModel):
+    """
+    Formal operative report completed by the operating surgeon immediately
+    after surgery (JCI ASC.7.1). One report per TheatreProcedure.
+    """
+    procedure           = models.OneToOneField('TheatreProcedure', on_delete=models.CASCADE,
+                                               related_name='operative_report')
+    # ── Timing ──────────────────────────────────────────────────────────────
+    procedure_start     = models.DateTimeField(null=True, blank=True)
+    procedure_end       = models.DateTimeField(null=True, blank=True)
+    # ── Procedure details ────────────────────────────────────────────────────
+    operating_eye       = models.CharField(max_length=5, choices=[
+        ('OD', 'OD — Right Eye'), ('OS', 'OS — Left Eye'), ('OU', 'OU — Both Eyes'),
+    ], blank=True)
+    incision_type       = models.CharField(max_length=25, choices=IncisionType.choices, blank=True)
+    incision_size_mm    = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True,
+                                              verbose_name='Incision size (mm)')
+    anaesthesia_used    = models.CharField(max_length=200, blank=True,
+                                           help_text='e.g. Topical, Peribulbar, General')
+    # ── Intraoperative findings ───────────────────────────────────────────────
+    preop_va            = models.CharField(max_length=20, blank=True,
+                                           verbose_name='Pre-op VA (Snellen / LogMAR)')
+    preop_iop           = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                              verbose_name='Pre-op IOP (mmHg)')
+    lens_status         = models.CharField(max_length=200, blank=True,
+                                           help_text='e.g. Dense NSIII cataract, clear lens, phakic')
+    vitreous_status     = models.CharField(max_length=200, blank=True)
+    fundus_intraop      = models.TextField(blank=True, verbose_name='Intraoperative fundus findings')
+    # ── Procedure narrative ───────────────────────────────────────────────────
+    procedure_description = models.TextField(
+        verbose_name='Procedure Description',
+        help_text='Step-by-step narrative of the surgical technique'
+    )
+    # ── IOL specifics (duplicated from TheatreProcedure for report completeness) ─
+    iol_inserted        = models.BooleanField(default=False)
+    iol_type            = models.CharField(max_length=30, blank=True,
+                                           choices=[
+                                               ('MONOFOCAL', 'Monofocal'), ('TORIC', 'Toric'),
+                                               ('MULTIFOCAL', 'Multifocal'), ('EDOF', 'EDOF'),
+                                               ('PHAKIC', 'Phakic IOL'), ('OTHER', 'Other'),
+                                           ])
+    iol_model           = models.CharField(max_length=100, blank=True)
+    iol_power           = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True,
+                                              verbose_name='IOL power (D)')
+    iol_lot             = models.CharField(max_length=100, blank=True, verbose_name='IOL lot #')
+    # ── Complications ────────────────────────────────────────────────────────
+    intraop_complications = models.TextField(blank=True,
+                                             verbose_name='Intraoperative complications')
+    posterior_capsule_rupture = models.BooleanField(default=False)
+    vitreous_loss       = models.BooleanField(default=False)
+    expulsive_haemorrhage = models.BooleanField(default=False)
+    # ── Closure & End of case ────────────────────────────────────────────────
+    sutures_placed      = models.CharField(max_length=200, blank=True)
+    subconj_injection   = models.CharField(max_length=200, blank=True,
+                                           verbose_name='Sub-conjunctival / intracameral injection')
+    eye_pad_shield      = models.BooleanField(default=True, verbose_name='Eye pad & shield applied')
+    eop_iop             = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                              verbose_name='End-of-procedure IOP (mmHg)')
+    # ── Surgeon sign-off ─────────────────────────────────────────────────────
+    surgeon             = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                            null=True, blank=True, related_name='operative_reports')
+    dictated_at         = models.DateTimeField(auto_now_add=True)
+    is_finalised        = models.BooleanField(default=False)
+    finalised_at        = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Operative Report'
+
+    def __str__(self):
+        return f'Op Report — {self.procedure}'
+
+    @property
+    def duration_minutes(self):
+        if self.procedure_start and self.procedure_end:
+            delta = self.procedure_end - self.procedure_start
+            return int(delta.total_seconds() / 60)
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOVERY ROOM RECORD (JCI ASC.7.2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RecoveryDischargeStatus(models.TextChoices):
+    MONITORING      = 'MONITORING',     'Under Monitoring'
+    READY_FOR_WARD  = 'READY_WARD',     'Ready for Ward Transfer'
+    READY_FOR_HOME  = 'READY_HOME',     'Ready for Discharge Home'
+    TRANSFERRED     = 'TRANSFERRED',    'Transferred to Ward'
+    DISCHARGED      = 'DISCHARGED',     'Discharged Home'
+    ICU_ESCALATED   = 'ICU',            'Escalated to ICU'
+
+
+class RecoveryRoomRecord(AuditModel):
+    """
+    Post-anaesthesia / recovery room monitoring record (JCI ASC.7.2).
+    Tracks Aldrete score and ophthalmology-specific recovery parameters.
+    """
+    procedure           = models.OneToOneField('TheatreProcedure', on_delete=models.CASCADE,
+                                               related_name='recovery_record')
+    arrival_time        = models.DateTimeField(null=True, blank=True)
+    discharge_time      = models.DateTimeField(null=True, blank=True)
+    recovery_nurse      = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                            null=True, blank=True, related_name='recovery_records')
+
+    # ── Aldrete Score (for GA / sedation) ────────────────────────────────────
+    # Each component 0-2; total 0-10; score ≥9 = safe for discharge
+    aldrete_activity        = models.PositiveSmallIntegerField(default=0,
+        help_text='0=none, 1=2 extremities, 2=4 extremities')
+    aldrete_respiration     = models.PositiveSmallIntegerField(default=0,
+        help_text='0=apnoeic, 1=shallow/dyspnoeic, 2=deep/coughs')
+    aldrete_circulation     = models.PositiveSmallIntegerField(default=0,
+        help_text='0=<50% baseline BP, 1=20-50%, 2=<20%')
+    aldrete_consciousness   = models.PositiveSmallIntegerField(default=0,
+        help_text='0=unresponsive, 1=responds to name, 2=fully awake')
+    aldrete_colour          = models.PositiveSmallIntegerField(default=0,
+        help_text='0=cyanotic, 1=pale/dusky, 2=normal')
+
+    # ── Vital signs ──────────────────────────────────────────────────────────
+    bp_systolic         = models.PositiveSmallIntegerField(null=True, blank=True)
+    bp_diastolic        = models.PositiveSmallIntegerField(null=True, blank=True)
+    heart_rate          = models.PositiveSmallIntegerField(null=True, blank=True)
+    spo2                = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                             verbose_name='SpO2 (%)')
+    temperature_c       = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
+    pain_score          = models.PositiveSmallIntegerField(null=True, blank=True,
+                                                           help_text='0-10 NRS pain score')
+    nausea_vomiting     = models.BooleanField(default=False, verbose_name='PONV present')
+
+    # ── Ophthalmic recovery checks ───────────────────────────────────────────
+    eye_shield_in_place = models.BooleanField(default=True)
+    recovery_va         = models.CharField(max_length=20, blank=True,
+                                           verbose_name='Recovery VA (count fingers / LogMAR)')
+    recovery_iop        = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                              verbose_name='Recovery IOP (mmHg)')
+    anterior_segment_check = models.TextField(blank=True,
+                                              verbose_name='Anterior segment recovery observation')
+    eye_drops_given     = models.TextField(blank=True,
+                                           verbose_name='Eye drops / medications given in recovery')
+
+    # ── Status & discharge ───────────────────────────────────────────────────
+    status              = models.CharField(max_length=20, choices=RecoveryDischargeStatus.choices,
+                                           default=RecoveryDischargeStatus.MONITORING)
+    discharge_criteria_met = models.BooleanField(default=False)
+    discharged_by       = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                            null=True, blank=True,
+                                            related_name='recovery_discharges')
+    notes               = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Recovery Room Record'
+
+    def __str__(self):
+        return f'Recovery — {self.procedure}'
+
+    @property
+    def aldrete_total(self):
+        return (self.aldrete_activity + self.aldrete_respiration +
+                self.aldrete_circulation + self.aldrete_consciousness +
+                self.aldrete_colour)
+
+    @property
+    def aldrete_safe_for_discharge(self):
+        return self.aldrete_total >= 9
+
+    @property
+    def time_in_recovery_minutes(self):
+        if self.arrival_time and self.discharge_time:
+            delta = self.discharge_time - self.arrival_time
+            return int(delta.total_seconds() / 60)
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DISCHARGE CHECKLIST (JCI ACC.3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DischargeChecklist(AuditModel):
+    """
+    Discharge planning and readiness checklist (JCI ACC.3).
+    Completed by ward nurse / doctor before patient leaves.
+    """
+    admission       = models.OneToOneField('Admission', on_delete=models.CASCADE,
+                                           related_name='discharge_checklist')
+    completed_by    = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name='discharge_checklists')
+    completed_at    = models.DateTimeField(auto_now_add=True)
+
+    # ── Clinical readiness ────────────────────────────────────────────────────
+    final_va_od             = models.CharField(max_length=20, blank=True,
+                                               verbose_name='Final VA — OD (Right Eye)')
+    final_va_os             = models.CharField(max_length=20, blank=True,
+                                               verbose_name='Final VA — OS (Left Eye)')
+    final_iop_od            = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                                  verbose_name='Final IOP OD (mmHg)')
+    final_iop_os            = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True,
+                                                  verbose_name='Final IOP OS (mmHg)')
+    wound_check_ok          = models.BooleanField(default=False, verbose_name='Wound secure / no leak')
+    anterior_segment_stable = models.BooleanField(default=False, verbose_name='Anterior segment stable')
+    no_active_infection     = models.BooleanField(default=False, verbose_name='No signs of infection/endophthalmitis')
+    pain_controlled         = models.BooleanField(default=False, verbose_name='Pain controlled (score ≤3)')
+
+    # ── Medications & instructions ────────────────────────────────────────────
+    discharge_medications_prescribed = models.BooleanField(default=False,
+                                                           verbose_name='Discharge medications prescribed')
+    eye_drop_schedule_given = models.BooleanField(default=False,
+                                                  verbose_name='Eye drop schedule given (written)')
+    systemic_meds_reconciled = models.BooleanField(default=False,
+                                                   verbose_name='Systemic medications reconciled')
+    medication_counselling   = models.BooleanField(default=False,
+                                                   verbose_name='Medication counselling completed')
+
+    # ── Follow-up planning ────────────────────────────────────────────────────
+    followup_1_date         = models.DateField(null=True, blank=True,
+                                               verbose_name='1st Follow-up (Day 1 / next day)')
+    followup_2_date         = models.DateField(null=True, blank=True,
+                                               verbose_name='2nd Follow-up (Week 1)')
+    followup_3_date         = models.DateField(null=True, blank=True,
+                                               verbose_name='3rd Follow-up (Week 4 / Month 1)')
+    followup_appointment_booked = models.BooleanField(default=False,
+                                                      verbose_name='Follow-up appointment(s) booked')
+    referral_required       = models.BooleanField(default=False)
+    referral_letter_given   = models.BooleanField(default=False)
+
+    # ── Patient education ─────────────────────────────────────────────────────
+    activity_restrictions_explained = models.BooleanField(default=False,
+                                                          verbose_name='Activity restrictions explained (no driving, no rubbing)')
+    protective_shield_given         = models.BooleanField(default=False,
+                                                          verbose_name='Protective eye shield given')
+    sun_protection_advised          = models.BooleanField(default=False,
+                                                          verbose_name='UV protection / sunglasses advised')
+    emergency_signs_explained       = models.BooleanField(default=False,
+                                                          verbose_name='Return-to-hospital red flags explained')
+    patient_discharge_summary_given = models.BooleanField(default=False,
+                                                          verbose_name='Written discharge summary given to patient')
+
+    # ── Administrative ────────────────────────────────────────────────────────
+    final_invoice_settled   = models.BooleanField(default=False,
+                                                  verbose_name='Final invoice settled / billing complete')
+    insurance_forms_completed = models.BooleanField(default=False,
+                                                    verbose_name='Insurance / CNPS forms completed')
+    patient_transport_arranged = models.BooleanField(default=False,
+                                                     verbose_name='Patient transport arranged')
+
+    # ── Signature confirmation ────────────────────────────────────────────────
+    patient_agrees_to_discharge = models.BooleanField(default=False,
+                                                      verbose_name='Patient / guardian consents to discharge')
+    doctor_discharge_order      = models.BooleanField(default=False,
+                                                      verbose_name='Doctor discharge order signed')
+
+    # ── Additional notes ──────────────────────────────────────────────────────
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Discharge Checklist'
+
+    def __str__(self):
+        return f'Discharge Checklist — {self.admission}'
+
+    @property
+    def readiness_score(self):
+        """Count of clinical readiness items ticked (out of 4)."""
+        return sum([
+            self.wound_check_ok, self.anterior_segment_stable,
+            self.no_active_infection, self.pain_controlled,
+        ])
+
+    @property
+    def is_complete(self):
+        return (
+            self.wound_check_ok and self.anterior_segment_stable and
+            self.no_active_infection and self.discharge_medications_prescribed and
+            self.eye_drop_schedule_given and self.followup_appointment_booked and
+            self.doctor_discharge_order
+        )
 
     @property
     def completion_pct(self):

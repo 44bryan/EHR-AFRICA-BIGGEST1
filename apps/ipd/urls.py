@@ -103,4 +103,19 @@ urlpatterns = [
 
     # ── Pre-Op Counselling Checklist G001–G007 ────────────────────────────────
     path('surgical-booking/<uuid:booking_id>/preop-checklist/', views.preop_checklist_view, name='preop_checklist'),
+
+    # ── Pre-Op Investigations (JCI ASC.4) ────────────────────────────────────
+    path('surgical-booking/<uuid:booking_id>/preop-investigations/', views.preop_investigations, name='preop_investigations'),
+
+    # ── Surgical Materials / Implants (JCI ASC.5.1) ──────────────────────────
+    path('procedure/<uuid:procedure_id>/materials/', views.surgical_materials, name='surgical_materials'),
+
+    # ── Operative Report (JCI ASC.7.1) ───────────────────────────────────────
+    path('procedure/<uuid:procedure_id>/operative-report/', views.operative_report, name='operative_report'),
+
+    # ── Recovery Room Record (JCI ASC.7.2) ───────────────────────────────────
+    path('procedure/<uuid:procedure_id>/recovery/', views.recovery_room_record, name='recovery_room_record'),
+
+    # ── Discharge Checklist (JCI ACC.3) ──────────────────────────────────────
+    path('admissions/<uuid:admission_id>/discharge-checklist/', views.discharge_checklist, name='discharge_checklist'),
 ]

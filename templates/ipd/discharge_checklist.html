@@ -1,0 +1,260 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Discharge Checklist — {{ admission }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=admission.patient %}
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm mb-3" style="background:linear-gradient(135deg,#155724,#28a745)">
+  <div class="card-body py-3 px-4 d-flex justify-content-between align-items-center">
+    <div>
+      <h6 class="text-white fw-bold mb-0"><i class="bi bi-person-check me-2"></i>Discharge Checklist</h6>
+      <div class="text-white-50 small">JCI ACC.3 — Admission: <strong class="text-white">{{ admission }}</strong></div>
+    </div>
+    <div>
+      {% if checklist.is_complete %}
+        <span class="badge bg-success fs-6 px-3 py-2 border border-white"><i class="bi bi-check-all me-1"></i>Ready for Discharge</span>
+      {% else %}
+        <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-hourglass me-1"></i>In Progress</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="row g-3">
+
+    <!-- ── Clinical Readiness ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-heart-pulse me-2 text-danger"></i>Clinical Readiness</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Final VA — OD</label>
+              <input type="text" name="final_va_od" class="form-control form-control-sm"
+                     value="{{ checklist.final_va_od }}" placeholder="6/6, 6/9, CF…">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Final VA — OS</label>
+              <input type="text" name="final_va_os" class="form-control form-control-sm"
+                     value="{{ checklist.final_va_os }}" placeholder="6/6, 6/9, CF…">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Final IOP OD (mmHg)</label>
+              <input type="number" name="final_iop_od" class="form-control form-control-sm" step="0.1"
+                     value="{{ checklist.final_iop_od|default:'' }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Final IOP OS (mmHg)</label>
+              <input type="number" name="final_iop_os" class="form-control form-control-sm" step="0.1"
+                     value="{{ checklist.final_iop_os|default:'' }}">
+            </div>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="wound_check_ok" id="wound_check_ok"
+                   {% if checklist.wound_check_ok %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="wound_check_ok">Wound secure / no leak</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="anterior_segment_stable" id="anterior_segment_stable"
+                   {% if checklist.anterior_segment_stable %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="anterior_segment_stable">Anterior segment stable</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="no_active_infection" id="no_active_infection"
+                   {% if checklist.no_active_infection %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="no_active_infection">No signs of infection / endophthalmitis</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="pain_controlled" id="pain_controlled"
+                   {% if checklist.pain_controlled %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="pain_controlled">Pain controlled (score ≤ 3)</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Medications + Education ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-capsule me-2 text-primary"></i>Medications &amp; Eye Drops</h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="discharge_medications_prescribed" id="dmp"
+                   {% if checklist.discharge_medications_prescribed %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="dmp">Discharge medications prescribed</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="eye_drop_schedule_given" id="edsg"
+                   {% if checklist.eye_drop_schedule_given %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="edsg">Eye drop schedule given (written)</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="systemic_meds_reconciled" id="smr"
+                   {% if checklist.systemic_meds_reconciled %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="smr">Systemic medications reconciled</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="medication_counselling" id="mc"
+                   {% if checklist.medication_counselling %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="mc">Medication counselling completed</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-person-raised-hand me-2 text-warning"></i>Patient Education</h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="activity_restrictions_explained" id="are"
+                   {% if checklist.activity_restrictions_explained %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="are">Activity restrictions explained (no driving, no rubbing)</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="protective_shield_given" id="psg"
+                   {% if checklist.protective_shield_given %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="psg">Protective eye shield given</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="sun_protection_advised" id="spa"
+                   {% if checklist.sun_protection_advised %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="spa">UV protection / sunglasses advised</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="emergency_signs_explained" id="ese"
+                   {% if checklist.emergency_signs_explained %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="ese">Return-to-hospital red flags explained</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="patient_discharge_summary_given" id="pdsg"
+                   {% if checklist.patient_discharge_summary_given %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="pdsg">Written discharge summary given</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Follow-up Planning ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-calendar-check me-2 text-info"></i>Follow-up Planning</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-2 mb-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold small">1st Follow-up (Day 1)</label>
+              <input type="date" name="followup_1_date" class="form-control form-control-sm"
+                     value="{{ checklist.followup_1_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">2nd Follow-up (Week 1)</label>
+              <input type="date" name="followup_2_date" class="form-control form-control-sm"
+                     value="{{ checklist.followup_2_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">3rd Follow-up (Month 1)</label>
+              <input type="date" name="followup_3_date" class="form-control form-control-sm"
+                     value="{{ checklist.followup_3_date|date:'Y-m-d'|default:'' }}">
+            </div>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="followup_appointment_booked" id="fab"
+                   {% if checklist.followup_appointment_booked %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="fab">Follow-up appointment(s) booked</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="referral_required" id="rr"
+                   {% if checklist.referral_required %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="rr">Referral required</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="referral_letter_given" id="rlg"
+                   {% if checklist.referral_letter_given %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="rlg">Referral letter given</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Admin + Signatures ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-receipt me-2 text-secondary"></i>Administrative</h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="final_invoice_settled" id="fis"
+                   {% if checklist.final_invoice_settled %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="fis">Final invoice settled / billing complete</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="insurance_forms_completed" id="ifc"
+                   {% if checklist.insurance_forms_completed %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="ifc">Insurance / CNPS forms completed</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="patient_transport_arranged" id="pta"
+                   {% if checklist.patient_transport_arranged %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="pta">Patient transport arranged</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm border-success">
+        <div class="card-header bg-success bg-opacity-10 border-bottom border-success">
+          <h6 class="mb-0 fw-bold text-success"><i class="bi bi-pen me-2"></i>Authorisation Signatures</h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" name="patient_agrees_to_discharge" id="pat_agree"
+                   {% if checklist.patient_agrees_to_discharge %}checked{% endif %}>
+            <label class="form-check-label fw-bold" for="pat_agree">Patient / Guardian consents to discharge</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="doctor_discharge_order" id="doc_order"
+                   {% if checklist.doctor_discharge_order %}checked{% endif %}>
+            <label class="form-check-label fw-bold" for="doc_order">Doctor discharge order signed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes + Submit -->
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <label class="form-label fw-semibold">Additional Notes</label>
+          <textarea name="notes" class="form-control" rows="3">{{ checklist.notes }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card border-0 shadow-sm bg-light">
+        <div class="card-body d-flex justify-content-between align-items-center">
+          <a href="{% url 'ipd:admission_detail' admission.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Admission
+          </a>
+          <button type="submit" class="btn btn-success px-5">
+            <i class="bi bi-save me-1"></i>Save Discharge Checklist
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</form>
+{% endblock %}

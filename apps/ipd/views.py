@@ -12,6 +12,11 @@ from .models import (
     SurgicalOutcome, OutcomeGrade,
     MedicationReconciliation, MedRecItem, MedRecPhase, MedRecAction,
     ProcedureRecord, ProcedureRecordStatus, ProcedureType,
+    PreOpInvestigation, PreOpInvType, PreOpInvStatus,
+    SurgicalMaterial, SurgicalMaterialType,
+    OperativeReport, IncisionType,
+    RecoveryRoomRecord, RecoveryDischargeStatus,
+    DischargeChecklist,
 )
 from django.views.decorators.http import require_POST
 from apps.core.context_processors import qms_active as _qms_active
@@ -3699,4 +3704,403 @@ def journal_of_registrations(request):
         'billing_types': BillingType.choices,
         'departments': departments,
         'today': today,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRE-OPERATIVE INVESTIGATIONS (JCI ASC.4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def preop_investigations(request, booking_id):
+    """List + manage pre-op investigation requirements for a surgical booking."""
+    from apps.accounts.models import UserRole
+    booking = get_object_or_404(SurgicalBooking, pk=booking_id)
+
+    allowed = (
+        request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPHTHALMOLOGIST, UserRole.DOCTOR,
+            UserRole.ANAESTHETIST, UserRole.NURSE,
+        )
+        or request.user.is_staff
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    investigations = booking.preop_investigations.all().order_by('inv_type')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        inv_id = request.POST.get('inv_id')
+
+        if action == 'add':
+            inv_type = request.POST.get('inv_type')
+            if inv_type and not booking.preop_investigations.filter(inv_type=inv_type).exists():
+                PreOpInvestigation.objects.create(
+                    booking=booking,
+                    inv_type=inv_type,
+                    status=PreOpInvStatus.PENDING,
+                    created_by=request.user,
+                )
+                messages.success(request, f'Investigation added: {PreOpInvType(inv_type).label}')
+
+        elif action == 'update' and inv_id:
+            inv = get_object_or_404(PreOpInvestigation, pk=inv_id, booking=booking)
+            new_status = request.POST.get('status', inv.status)
+            inv.status = new_status
+            inv.result_summary = request.POST.get('result_summary', inv.result_summary)
+            inv.notes = request.POST.get('notes', inv.notes)
+            if new_status == PreOpInvStatus.RESULT_IN and not inv.result_at:
+                inv.result_at = timezone.now()
+            if new_status == PreOpInvStatus.CLEARED and not inv.cleared_at:
+                inv.cleared_at = timezone.now()
+                inv.cleared_by = request.user
+            inv.waiver_reason = request.POST.get('waiver_reason', inv.waiver_reason)
+            inv.save()
+            messages.success(request, 'Investigation updated.')
+
+        elif action == 'delete' and inv_id:
+            get_object_or_404(PreOpInvestigation, pk=inv_id, booking=booking).delete()
+            messages.success(request, 'Investigation removed.')
+
+        return redirect('ipd:preop_investigations', booking_id=booking_id)
+
+    all_cleared = investigations.exists() and all(i.is_cleared for i in investigations)
+
+    return render(request, 'ipd/preop_investigations.html', {
+        'booking': booking,
+        'investigations': investigations,
+        'inv_type_choices': PreOpInvType.choices,
+        'inv_status_choices': PreOpInvStatus.choices,
+        'all_cleared': all_cleared,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SURGICAL MATERIALS (JCI ASC.5.1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def surgical_materials(request, procedure_id):
+    """List + record intraoperative materials and implants for a procedure."""
+    from apps.accounts.models import UserRole
+    procedure = get_object_or_404(TheatreProcedure, pk=procedure_id)
+
+    allowed = (
+        request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPHTHALMOLOGIST, UserRole.DOCTOR,
+            UserRole.NURSE, UserRole.ANAESTHETIST,
+        )
+        or request.user.is_staff
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    materials = procedure.surgical_materials.all().order_by('material_type', 'description')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        mat_id = request.POST.get('mat_id')
+
+        if action == 'add':
+            from decimal import Decimal, InvalidOperation
+            try:
+                unit_cost = Decimal(request.POST.get('unit_cost', '0') or '0')
+            except InvalidOperation:
+                unit_cost = Decimal('0')
+            SurgicalMaterial.objects.create(
+                procedure=procedure,
+                material_type=request.POST.get('material_type', 'OTHER'),
+                description=request.POST.get('description', ''),
+                manufacturer=request.POST.get('manufacturer', ''),
+                model_reference=request.POST.get('model_reference', ''),
+                lot_number=request.POST.get('lot_number', ''),
+                serial_number=request.POST.get('serial_number', ''),
+                expiry_date=request.POST.get('expiry_date') or None,
+                quantity_used=int(request.POST.get('quantity_used', 1) or 1),
+                unit_cost=unit_cost,
+                eye=request.POST.get('eye', 'NA'),
+                notes=request.POST.get('notes', ''),
+                recorded_by=request.user,
+                created_by=request.user,
+            )
+            messages.success(request, 'Material recorded.')
+
+        elif action == 'delete' and mat_id:
+            get_object_or_404(SurgicalMaterial, pk=mat_id, procedure=procedure).delete()
+            messages.success(request, 'Material removed.')
+
+        return redirect('ipd:surgical_materials', procedure_id=procedure_id)
+
+    total_cost = sum(m.total_cost for m in materials)
+
+    return render(request, 'ipd/surgical_materials.html', {
+        'procedure': procedure,
+        'materials': materials,
+        'material_type_choices': SurgicalMaterialType.choices,
+        'total_cost': total_cost,
+        'today': timezone.localdate(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OPERATIVE REPORT (JCI ASC.7.1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def operative_report(request, procedure_id):
+    """Create or edit the formal operative report for a TheatreProcedure."""
+    from apps.accounts.models import UserRole
+    procedure = get_object_or_404(TheatreProcedure, pk=procedure_id)
+
+    allowed = (
+        request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPHTHALMOLOGIST, UserRole.DOCTOR,
+        )
+        or request.user.is_staff
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    report, _ = OperativeReport.objects.get_or_create(
+        procedure=procedure,
+        defaults={'surgeon': request.user, 'created_by': request.user},
+    )
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+
+        def _d(key, default=None):
+            val = request.POST.get(key, '')
+            if not val:
+                return default
+            try:
+                return Decimal(val)
+            except InvalidOperation:
+                return default
+
+        report.procedure_start = request.POST.get('procedure_start') or None
+        report.procedure_end   = request.POST.get('procedure_end') or None
+        report.operating_eye   = request.POST.get('operating_eye', '')
+        report.incision_type   = request.POST.get('incision_type', '')
+        report.incision_size_mm = _d('incision_size_mm')
+        report.anaesthesia_used = request.POST.get('anaesthesia_used', '')
+        report.preop_va        = request.POST.get('preop_va', '')
+        report.preop_iop       = _d('preop_iop')
+        report.lens_status     = request.POST.get('lens_status', '')
+        report.vitreous_status = request.POST.get('vitreous_status', '')
+        report.fundus_intraop  = request.POST.get('fundus_intraop', '')
+        report.procedure_description = request.POST.get('procedure_description', '')
+        report.iol_inserted    = 'iol_inserted' in request.POST
+        report.iol_type        = request.POST.get('iol_type', '')
+        report.iol_model       = request.POST.get('iol_model', '')
+        report.iol_power       = _d('iol_power')
+        report.iol_lot         = request.POST.get('iol_lot', '')
+        report.intraop_complications = request.POST.get('intraop_complications', '')
+        report.posterior_capsule_rupture = 'posterior_capsule_rupture' in request.POST
+        report.vitreous_loss   = 'vitreous_loss' in request.POST
+        report.expulsive_haemorrhage = 'expulsive_haemorrhage' in request.POST
+        report.sutures_placed  = request.POST.get('sutures_placed', '')
+        report.subconj_injection = request.POST.get('subconj_injection', '')
+        report.eye_pad_shield  = 'eye_pad_shield' in request.POST
+        report.eop_iop         = _d('eop_iop')
+        report.surgeon         = request.user
+
+        if 'finalise' in request.POST:
+            report.is_finalised = True
+            report.finalised_at = timezone.now()
+
+        report.save()
+        messages.success(request, 'Operative report saved.' + (' (Finalised)' if report.is_finalised else ''))
+        return redirect('ipd:operative_report', procedure_id=procedure_id)
+
+    return render(request, 'ipd/operative_report.html', {
+        'procedure': procedure,
+        'report': report,
+        'incision_choices': IncisionType.choices,
+        'iol_type_choices': [
+            ('MONOFOCAL', 'Monofocal'), ('TORIC', 'Toric'),
+            ('MULTIFOCAL', 'Multifocal'), ('EDOF', 'EDOF'),
+            ('PHAKIC', 'Phakic IOL'), ('OTHER', 'Other'),
+        ],
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECOVERY ROOM RECORD (JCI ASC.7.2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def recovery_room_record(request, procedure_id):
+    """Create or update the recovery room record for a procedure."""
+    from apps.accounts.models import UserRole
+    procedure = get_object_or_404(TheatreProcedure, pk=procedure_id)
+
+    allowed = (
+        request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPHTHALMOLOGIST, UserRole.DOCTOR,
+            UserRole.NURSE, UserRole.ANAESTHETIST,
+        )
+        or request.user.is_staff
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    record, _ = RecoveryRoomRecord.objects.get_or_create(
+        procedure=procedure,
+        defaults={'recovery_nurse': request.user, 'created_by': request.user,
+                  'arrival_time': timezone.now()},
+    )
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+
+        def _d(key, default=None):
+            val = request.POST.get(key, '')
+            if not val:
+                return default
+            try:
+                return Decimal(val)
+            except InvalidOperation:
+                return default
+
+        def _i(key, default=None):
+            val = request.POST.get(key, '')
+            if not val:
+                return default
+            try:
+                return int(val)
+            except ValueError:
+                return default
+
+        record.arrival_time   = request.POST.get('arrival_time') or record.arrival_time
+        record.discharge_time = request.POST.get('discharge_time') or None
+        record.aldrete_activity      = _i('aldrete_activity', 0)
+        record.aldrete_respiration   = _i('aldrete_respiration', 0)
+        record.aldrete_circulation   = _i('aldrete_circulation', 0)
+        record.aldrete_consciousness = _i('aldrete_consciousness', 0)
+        record.aldrete_colour        = _i('aldrete_colour', 0)
+        record.bp_systolic   = _i('bp_systolic')
+        record.bp_diastolic  = _i('bp_diastolic')
+        record.heart_rate    = _i('heart_rate')
+        record.spo2          = _d('spo2')
+        record.temperature_c = _d('temperature_c')
+        record.pain_score    = _i('pain_score')
+        record.nausea_vomiting = 'nausea_vomiting' in request.POST
+        record.eye_shield_in_place = 'eye_shield_in_place' in request.POST
+        record.recovery_va   = request.POST.get('recovery_va', '')
+        record.recovery_iop  = _d('recovery_iop')
+        record.anterior_segment_check = request.POST.get('anterior_segment_check', '')
+        record.eye_drops_given = request.POST.get('eye_drops_given', '')
+        record.status        = request.POST.get('status', record.status)
+        record.discharge_criteria_met = 'discharge_criteria_met' in request.POST
+        record.notes         = request.POST.get('notes', '')
+
+        if record.discharge_criteria_met and not record.discharged_by:
+            record.discharged_by = request.user
+
+        record.save()
+        messages.success(request, 'Recovery record updated.')
+        return redirect('ipd:recovery_room_record', procedure_id=procedure_id)
+
+    return render(request, 'ipd/recovery_room_record.html', {
+        'procedure': procedure,
+        'record': record,
+        'status_choices': RecoveryDischargeStatus.choices,
+        'aldrete_range': range(3),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISCHARGE CHECKLIST (JCI ACC.3)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@login_required
+def discharge_checklist(request, admission_id):
+    """Create or complete the discharge checklist for an admission."""
+    from apps.accounts.models import UserRole
+    admission = get_object_or_404(Admission, pk=admission_id)
+
+    allowed = (
+        request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.MEDICAL_DIRECTOR,
+            UserRole.OPHTHALMOLOGIST, UserRole.DOCTOR,
+            UserRole.NURSE, UserRole.WARD_NURSE,
+        )
+        or request.user.is_staff
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    checklist, _ = DischargeChecklist.objects.get_or_create(
+        admission=admission,
+        defaults={'completed_by': request.user, 'created_by': request.user},
+    )
+
+    if request.method == 'POST':
+        from decimal import Decimal, InvalidOperation
+
+        def _d(key, default=None):
+            val = request.POST.get(key, '')
+            if not val:
+                return default
+            try:
+                return Decimal(val)
+            except InvalidOperation:
+                return default
+
+        p = request.POST
+
+        # Clinical
+        checklist.final_va_od   = p.get('final_va_od', '')
+        checklist.final_va_os   = p.get('final_va_os', '')
+        checklist.final_iop_od  = _d('final_iop_od')
+        checklist.final_iop_os  = _d('final_iop_os')
+        checklist.wound_check_ok            = 'wound_check_ok' in p
+        checklist.anterior_segment_stable   = 'anterior_segment_stable' in p
+        checklist.no_active_infection       = 'no_active_infection' in p
+        checklist.pain_controlled           = 'pain_controlled' in p
+        # Medications
+        checklist.discharge_medications_prescribed = 'discharge_medications_prescribed' in p
+        checklist.eye_drop_schedule_given    = 'eye_drop_schedule_given' in p
+        checklist.systemic_meds_reconciled   = 'systemic_meds_reconciled' in p
+        checklist.medication_counselling     = 'medication_counselling' in p
+        # Follow-up
+        checklist.followup_1_date  = p.get('followup_1_date') or None
+        checklist.followup_2_date  = p.get('followup_2_date') or None
+        checklist.followup_3_date  = p.get('followup_3_date') or None
+        checklist.followup_appointment_booked = 'followup_appointment_booked' in p
+        checklist.referral_required  = 'referral_required' in p
+        checklist.referral_letter_given = 'referral_letter_given' in p
+        # Education
+        checklist.activity_restrictions_explained = 'activity_restrictions_explained' in p
+        checklist.protective_shield_given  = 'protective_shield_given' in p
+        checklist.sun_protection_advised   = 'sun_protection_advised' in p
+        checklist.emergency_signs_explained = 'emergency_signs_explained' in p
+        checklist.patient_discharge_summary_given = 'patient_discharge_summary_given' in p
+        # Admin
+        checklist.final_invoice_settled     = 'final_invoice_settled' in p
+        checklist.insurance_forms_completed = 'insurance_forms_completed' in p
+        checklist.patient_transport_arranged = 'patient_transport_arranged' in p
+        # Signatures
+        checklist.patient_agrees_to_discharge = 'patient_agrees_to_discharge' in p
+        checklist.doctor_discharge_order     = 'doctor_discharge_order' in p
+        checklist.notes = p.get('notes', '')
+        checklist.completed_by = request.user
+        checklist.save()
+
+        if checklist.is_complete:
+            messages.success(request, 'Discharge checklist complete. Patient ready for discharge.')
+        else:
+            messages.info(request, 'Discharge checklist saved (not yet complete).')
+
+        return redirect('ipd:discharge_checklist', admission_id=admission_id)
+
+    return render(request, 'ipd/discharge_checklist.html', {
+        'admission': admission,
+        'checklist': checklist,
     })

@@ -1,0 +1,324 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize ehr_tags %}
+{% block title %}Operative Report — {{ procedure }}{% endblock %}
+
+{% block page_header %}
+{% include 'components/patient_card.html' with patient=procedure.patient %}
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm mb-3" style="background:linear-gradient(135deg,#2c003e,#5b006e)">
+  <div class="card-body py-3 px-4 d-flex justify-content-between align-items-center">
+    <div>
+      <h6 class="text-white fw-bold mb-0"><i class="bi bi-file-medical me-2"></i>Operative Report</h6>
+      <div class="text-white-50 small">
+        JCI ASC.7.1 — Procedure: <strong class="text-white">{{ procedure }}</strong>
+      </div>
+    </div>
+    <div>
+      {% if report.is_finalised %}
+        <span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-lock me-1"></i>Finalised</span>
+      {% else %}
+        <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-pencil me-1"></i>Draft</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if report.is_finalised %}
+<div class="alert alert-success d-flex align-items-center mb-3">
+  <i class="bi bi-lock-fill me-2 fs-5"></i>
+  This operative report was <strong>finalised</strong> on {{ report.finalised_at|date:"d M Y H:i" }}
+  by Dr {{ report.surgeon.get_full_name }}. It is now read-only.
+</div>
+{% endif %}
+
+<form method="post" id="opReportForm">
+  {% csrf_token %}
+
+  <div class="row g-3">
+    <!-- ── Timing & Anaesthesia ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>Timing &amp; Anaesthesia</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Procedure Start</label>
+              <input type="datetime-local" name="procedure_start" class="form-control"
+                     value="{{ report.procedure_start|date:'Y-m-d\TH:i'|default:'' }}"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Procedure End</label>
+              <input type="datetime-local" name="procedure_end" class="form-control"
+                     value="{{ report.procedure_end|date:'Y-m-d\TH:i'|default:'' }}"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            {% if report.duration_minutes %}
+            <div class="col-12">
+              <div class="alert alert-info py-2 mb-0 small">
+                <i class="bi bi-stopwatch me-1"></i>Duration: <strong>{{ report.duration_minutes }} minutes</strong>
+              </div>
+            </div>
+            {% endif %}
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Operating Eye</label>
+              <select name="operating_eye" class="form-select" {% if report.is_finalised %}disabled{% endif %}>
+                <option value="">— Select —</option>
+                <option value="OD" {% if report.operating_eye == 'OD' %}selected{% endif %}>OD — Right Eye</option>
+                <option value="OS" {% if report.operating_eye == 'OS' %}selected{% endif %}>OS — Left Eye</option>
+                <option value="OU" {% if report.operating_eye == 'OU' %}selected{% endif %}>OU — Both Eyes</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Anaesthesia</label>
+              <input type="text" name="anaesthesia_used" class="form-control"
+                     value="{{ report.anaesthesia_used }}" placeholder="Topical / Peribulbar / GA"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Incision ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-scissors me-2 text-danger"></i>Incision Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-8">
+              <label class="form-label fw-semibold small">Incision Type</label>
+              <select name="incision_type" class="form-select" {% if report.is_finalised %}disabled{% endif %}>
+                <option value="">— Select —</option>
+                {% for val, label in incision_choices %}
+                  <option value="{{ val }}" {% if report.incision_type == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold small">Size (mm)</label>
+              <input type="number" name="incision_size_mm" class="form-control" step="0.05"
+                     value="{{ report.incision_size_mm|default:'' }}"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Pre-op VA</label>
+              <input type="text" name="preop_va" class="form-control"
+                     value="{{ report.preop_va }}" placeholder="6/60, CF, LogMAR 1.0"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold small">Pre-op IOP (mmHg)</label>
+              <input type="number" name="preop_iop" class="form-control" step="0.1"
+                     value="{{ report.preop_iop|default:'' }}"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Lens Status</label>
+              <input type="text" name="lens_status" class="form-control"
+                     value="{{ report.lens_status }}" placeholder="e.g. Dense NSIII cataract, posterior subcapsular"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Intraoperative findings ── -->
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-eye me-2 text-info"></i>Intraoperative Findings</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Vitreous Status</label>
+              <input type="text" name="vitreous_status" class="form-control"
+                     value="{{ report.vitreous_status }}" placeholder="Clear / Syneretic / Detached"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Fundus (Intraoperative)</label>
+              <input type="text" name="fundus_intraop" class="form-control"
+                     value="{{ report.fundus_intraop }}" placeholder="Normal / CRVO / RD"
+                     {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Procedure Description <span class="text-danger">*</span></label>
+              <textarea name="procedure_description" class="form-control" rows="6" required
+                        placeholder="Detailed step-by-step surgical narrative…"
+                        {% if report.is_finalised %}readonly{% endif %}>{{ report.procedure_description }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── IOL ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-gem me-2 text-warning"></i>IOL Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="iolInserted" name="iol_inserted"
+                   {% if report.iol_inserted %}checked{% endif %}
+                   {% if report.is_finalised %}disabled{% endif %}>
+            <label class="form-check-label fw-semibold" for="iolInserted">IOL Inserted</label>
+          </div>
+          <div id="iolSection" {% if not report.iol_inserted %}style="opacity:0.4;pointer-events:none"{% endif %}>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label fw-semibold small">IOL Type</label>
+                <select name="iol_type" class="form-select form-select-sm" {% if report.is_finalised %}disabled{% endif %}>
+                  <option value="">— Select —</option>
+                  {% for val, label in iol_type_choices %}
+                    <option value="{{ val }}" {% if report.iol_type == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small">Power (D)</label>
+                <input type="number" name="iol_power" class="form-control form-control-sm" step="0.25"
+                       value="{{ report.iol_power|default:'' }}" {% if report.is_finalised %}readonly{% endif %}>
+              </div>
+              <div class="col-8">
+                <label class="form-label fw-semibold small">Model</label>
+                <input type="text" name="iol_model" class="form-control form-control-sm"
+                       value="{{ report.iol_model }}" placeholder="e.g. Alcon SN60WF"
+                       {% if report.is_finalised %}readonly{% endif %}>
+              </div>
+              <div class="col-4">
+                <label class="form-label fw-semibold small">Lot #</label>
+                <input type="text" name="iol_lot" class="form-control form-control-sm font-monospace"
+                       value="{{ report.iol_lot }}" {% if report.is_finalised %}readonly{% endif %}>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Complications & Closure ── -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Complications &amp; Closure</h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Intraoperative Complications</label>
+            <textarea name="intraop_complications" class="form-control form-control-sm" rows="2"
+                      placeholder="None / describe…"
+                      {% if report.is_finalised %}readonly{% endif %}>{{ report.intraop_complications }}</textarea>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-auto">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="posterior_capsule_rupture" id="pcr"
+                       {% if report.posterior_capsule_rupture %}checked{% endif %}
+                       {% if report.is_finalised %}disabled{% endif %}>
+                <label class="form-check-label small" for="pcr">Posterior Capsule Rupture</label>
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="vitreous_loss" id="vl"
+                       {% if report.vitreous_loss %}checked{% endif %}
+                       {% if report.is_finalised %}disabled{% endif %}>
+                <label class="form-check-label small" for="vl">Vitreous Loss</label>
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="expulsive_haemorrhage" id="eh"
+                       {% if report.expulsive_haemorrhage %}checked{% endif %}
+                       {% if report.is_finalised %}disabled{% endif %}>
+                <label class="form-check-label small" for="eh">Expulsive Haemorrhage</label>
+              </div>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Sutures Placed</label>
+            <input type="text" name="sutures_placed" class="form-control form-control-sm"
+                   value="{{ report.sutures_placed }}" placeholder="e.g. 10-0 nylon × 2"
+                   {% if report.is_finalised %}readonly{% endif %}>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Sub-conj / Intracameral Injection</label>
+            <input type="text" name="subconj_injection" class="form-control form-control-sm"
+                   value="{{ report.subconj_injection }}" placeholder="e.g. Dexamethasone + Gentamicin"
+                   {% if report.is_finalised %}readonly{% endif %}>
+          </div>
+          <div class="row g-2 align-items-center">
+            <div class="col-6">
+              <label class="form-label fw-semibold small">End-of-Procedure IOP (mmHg)</label>
+              <input type="number" name="eop_iop" class="form-control form-control-sm" step="0.1"
+                     value="{{ report.eop_iop|default:'' }}" {% if report.is_finalised %}readonly{% endif %}>
+            </div>
+            <div class="col-6 pt-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="eye_pad_shield" id="eps"
+                       {% if report.eye_pad_shield %}checked{% endif %}
+                       {% if report.is_finalised %}disabled{% endif %}>
+                <label class="form-check-label fw-semibold small" for="eps">Eye Pad &amp; Shield Applied</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    {% if not report.is_finalised %}
+    <div class="col-12">
+      <div class="card border-0 shadow-sm bg-light">
+        <div class="card-body d-flex justify-content-between align-items-center gap-3">
+          <a href="{% url 'ipd:surgical_materials' procedure.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Materials
+          </a>
+          <div class="d-flex gap-2">
+            <button type="submit" name="save" class="btn btn-primary px-4">
+              <i class="bi bi-save me-1"></i>Save Draft
+            </button>
+            <button type="submit" name="finalise" class="btn btn-danger px-4"
+                    onclick="return confirm('Finalise this report? It will become READ-ONLY.')">
+              <i class="bi bi-lock me-1"></i>Finalise Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+      <div class="d-flex gap-2">
+        <a href="{% url 'ipd:recovery_room_record' procedure.pk %}" class="btn btn-primary">
+          <i class="bi bi-heart-pulse me-1"></i>Recovery Room Record
+        </a>
+        <a href="{% url 'ipd:surgical_materials' procedure.pk %}" class="btn btn-outline-secondary">
+          <i class="bi bi-box-seam me-1"></i>Materials Register
+        </a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('iolInserted')?.addEventListener('change', function() {
+  const sec = document.getElementById('iolSection');
+  sec.style.opacity = this.checked ? '1' : '0.4';
+  sec.style.pointerEvents = this.checked ? '' : 'none';
+});
+</script>
+{% endblock %}

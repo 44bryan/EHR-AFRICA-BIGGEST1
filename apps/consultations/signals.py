@@ -153,3 +153,38 @@ def auto_schedule_postop_followups(sender, instance, **kwargs):
 
     except Exception as e:
         logger.warning('auto_schedule_postop_followups failed: %s', e)
+
+
+@receiver(post_save, sender='consultations.SurgicalRequest')
+def create_counselling_qms_token(sender, instance, created, **kwargs):
+    """
+    When a SurgicalRequest is created (or set to SENT_FOR_COUNSELING),
+    auto-issue a QMS token for the COUNSEL queue so the counselling nurse
+    sees the patient in the QMS system.
+    """
+    SC = instance.StatusChoice.SENT_FOR_COUNSELING
+    if instance.status != SC:
+        return
+
+    try:
+        from apps.qms.models import QueueToken, ServiceType
+
+        # Avoid duplicate tokens for the same request
+        existing = QueueToken.objects.filter(
+            patient=instance.patient,
+            service_type=ServiceType.COUNSEL,
+            status__in=['WAITING', 'CALLING'],
+        ).filter(notes__icontains=str(instance.pk)).first()
+
+        if existing:
+            return
+
+        QueueToken.objects.create(
+            patient=instance.patient,
+            service_type=ServiceType.COUNSEL,
+            service_tier=getattr(instance, '_service_tier', 'STANDARD'),
+            notes=f'Surgical counselling required — request {instance.pk}',
+        )
+        logger.info('Counselling QMS token created for SurgicalRequest %s', instance.pk)
+    except Exception as e:
+        logger.warning('create_counselling_qms_token failed: %s', e)
