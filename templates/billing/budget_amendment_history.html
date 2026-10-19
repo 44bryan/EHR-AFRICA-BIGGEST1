@@ -1,0 +1,105 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Budget Amendment History{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <h5 class="fw-bold mb-0">Budget Amendment History</h5>
+    <p class="text-muted small mb-0">
+      {{ budget.get_budget_type_display }} — {{ budget.get_category_display|default:budget.category }}
+      &middot; {{ budget.year }}-{{ budget.month|stringformat:"02d" }}
+    </p>
+  </div>
+  <a href="{% url 'billing:budget_list' %}?month={{ budget.year }}-{{ budget.month|stringformat:'02d' }}"
+     class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Budget
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold small">Amendment Log</span>
+        <span class="badge bg-primary">Current: {{ budget.budgeted_amount|floatformat:0|intcomma }} FCFA</span>
+      </div>
+      <div class="card-body p-0">
+        {% if amendments %}
+        <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Date &amp; Time</th>
+              <th class="text-end">Previous Amount</th>
+              <th class="text-end">New Amount</th>
+              <th class="text-end">Change</th>
+              <th>Reason</th>
+              <th>Amended By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in amendments %}
+            <tr>
+              <td class="text-nowrap">{{ a.created_at|date:"d M Y H:i" }}</td>
+              <td class="text-end text-muted">{{ a.previous_amount|floatformat:0|intcomma }}</td>
+              <td class="text-end fw-semibold">{{ a.new_amount|floatformat:0|intcomma }}</td>
+              <td class="text-end">
+                {% with diff=a.new_amount|add:"-"|add:a.previous_amount %}
+                  {% if a.new_amount > a.previous_amount %}
+                    <span class="text-success fw-semibold">+{{ a.new_amount|floatformat:0|intcomma }}</span>
+                  {% else %}
+                    <span class="text-danger fw-semibold">{{ a.new_amount|floatformat:0|intcomma }}</span>
+                  {% endif %}
+                {% endwith %}
+              </td>
+              <td>{{ a.reason }}</td>
+              <td>{{ a.amended_by.get_full_name }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-4 text-muted small">
+          <i class="bi bi-clock-history fs-3 d-block mb-2 opacity-25"></i>
+          No amendments recorded yet.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-2">
+        <span class="fw-semibold small">Request Amendment</span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'billing:budget_amend' budget.id %}">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Current Amount (FCFA)</label>
+            <input type="text" class="form-control form-control-sm"
+                   value="{{ budget.budgeted_amount|floatformat:0|intcomma }}" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">New Amount (FCFA) <span class="text-danger">*</span></label>
+            <input type="number" name="new_amount" class="form-control form-control-sm"
+                   value="{{ budget.budgeted_amount }}" step="1" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason for Amendment <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control form-control-sm" rows="3"
+                      placeholder="e.g. Q3 re-forecast — surgical volume increased by 15%"
+                      required></textarea>
+          </div>
+          <button type="submit" class="btn btn-warning btn-sm w-100 fw-semibold">
+            <i class="bi bi-pencil-square me-1"></i>Submit Amendment
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

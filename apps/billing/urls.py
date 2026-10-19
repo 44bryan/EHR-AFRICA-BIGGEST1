@@ -109,6 +109,8 @@ urlpatterns = [
     path('budget/', views.budget_list, name='budget_list'),
     path('budget/create/', views.budget_create, name='budget_create'),
     path('budget/<uuid:budget_id>/delete/', views.budget_delete, name='budget_delete'),
+    path('budget/<uuid:budget_id>/amend/', views.budget_amend, name='budget_amend'),
+    path('budget/<uuid:budget_id>/amendments/', views.budget_amendment_history, name='budget_amendment_history'),
 
     # ── Insurance split ───────────────────────────────────────────────────────
     path('invoice/<uuid:invoice_id>/insurance/', views.invoice_set_insurance, name='invoice_set_insurance'),

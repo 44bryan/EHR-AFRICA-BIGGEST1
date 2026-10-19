@@ -4468,12 +4468,24 @@ def budget_create(request):
         messages.error(request, 'Invalid year, month or amount.')
         return redirect('billing:budget_list')
 
-    Budget.objects.update_or_create(
-        year=yr,
-        month=mo,
+    lookup = dict(
+        year=yr, month=mo,
         budget_type=request.POST.get('budget_type', BudgetType.REVENUE),
         category=request.POST.get('category', '').strip(),
         department=request.POST.get('department', '').strip(),
+    )
+    existing = Budget.objects.filter(is_deleted=False, **lookup).first()
+    if existing and existing.budgeted_amount != amt:
+        # Record amendment before overwriting
+        BudgetAmendment.objects.create(
+            budget=existing,
+            previous_amount=existing.budgeted_amount,
+            new_amount=amt,
+            reason=request.POST.get('notes', '').strip() or 'Manual budget update',
+            amended_by=request.user,
+        )
+    Budget.objects.update_or_create(
+        **lookup,
         defaults={
             'budgeted_amount': amt,
             'notes': request.POST.get('notes', '').strip(),
@@ -4500,6 +4512,54 @@ def budget_delete(request, budget_id):
     messages.success(request, 'Budget line deleted.')
     from django.urls import reverse
     return redirect(f"{reverse('billing:budget_list')}?month={month_str}")
+
+
+@login_required
+@require_POST
+def budget_amend(request, budget_id):
+    """Amend a budget line amount with mandatory reason — Finance Director / Senior Accountant."""
+    from django.urls import reverse
+    if not _can_approve_expense(request.user):
+        messages.error(request, 'Access denied. Senior Accountant or above required.')
+        return redirect('billing:budget_list')
+    b = get_object_or_404(Budget, id=budget_id, is_deleted=False)
+    try:
+        new_amount = Decimal(request.POST.get('new_amount', '0') or '0')
+    except InvalidOperation:
+        messages.error(request, 'Invalid amount.')
+        return redirect(f"{reverse('billing:budget_list')}?month={b.year}-{b.month:02d}")
+    reason = request.POST.get('reason', '').strip()
+    if not reason:
+        messages.error(request, 'Amendment reason is required.')
+        return redirect(f"{reverse('billing:budget_list')}?month={b.year}-{b.month:02d}")
+    if new_amount == b.budgeted_amount:
+        messages.info(request, 'No change in amount — amendment not recorded.')
+        return redirect(f"{reverse('billing:budget_list')}?month={b.year}-{b.month:02d}")
+    BudgetAmendment.objects.create(
+        budget=b,
+        previous_amount=b.budgeted_amount,
+        new_amount=new_amount,
+        reason=reason,
+        amended_by=request.user,
+    )
+    b.budgeted_amount = new_amount
+    b.save(update_fields=['budgeted_amount', 'updated_at'])
+    messages.success(request, f'Budget amended: {b.budgeted_amount:,.0f} → {new_amount:,.0f} FCFA')
+    return redirect(f"{reverse('billing:budget_list')}?month={b.year}-{b.month:02d}")
+
+
+@login_required
+def budget_amendment_history(request, budget_id):
+    """Amendment history for a single budget line — rendered as HTMX partial or full page."""
+    if not _can_view_pl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:budget_list')
+    b = get_object_or_404(Budget, id=budget_id, is_deleted=False)
+    amendments = b.amendments.select_related('amended_by').order_by('-created_at')
+    return render(request, 'billing/budget_amendment_history.html', {
+        'budget': b,
+        'amendments': amendments,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
