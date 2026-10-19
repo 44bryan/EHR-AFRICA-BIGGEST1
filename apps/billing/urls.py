@@ -5,6 +5,7 @@ app_name = 'billing'
 
 urlpatterns = [
     path('', views.billing_dashboard, name='dashboard'),
+    path('reports/', views.reports_index, name='reports_index'),
     path('pos/', views.pos_landing, name='pos_landing'),
     path('invoices/', views.invoice_list, name='invoice_list'),
     path('invoices/new/', views.invoice_create, name='invoice_create'),

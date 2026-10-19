@@ -168,6 +168,19 @@ def _can_manage_petty_cash(user):
 
 
 @login_required
+@login_required
+def reports_index(request):
+    """Centralised reports navigation — categorised cards for all financial reports."""
+    if not (request.user.is_super_admin or request.user.role in (
+        UserRole.ACCOUNTANT, UserRole.SENIOR_ACCOUNTANT, UserRole.FINANCE_DIRECTOR,
+        UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER,
+        UserRole.MEDICAL_DIRECTOR, UserRole.CEO, UserRole.ADMIN_DIRECTOR, UserRole.ADMIN,
+    ) or request.user.is_superuser):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    return render(request, 'billing/reports/index.html', {})
+
+
 def billing_dashboard(request):
     # Operational billing roles have their own dedicated dashboards — redirect them
     if request.user.role in (UserRole.CASHIER, UserRole.CHIEF_CASHIER, UserRole.BILLING_OFFICER):
