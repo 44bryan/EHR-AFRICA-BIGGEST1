@@ -4,7 +4,7 @@ Fix missing created_by_id / updated_by_id on laboratory_labresultamendment.
 Migration 0007 was recorded as applied in django_migrations but the two FK
 columns were never physically created on the table (confirmed via \d on prod).
 Using RunSQL with IF NOT EXISTS makes this safe to re-run.
-"""
+"""  # noqa: W605
 from django.conf import settings
 from django.db import migrations
 
