@@ -648,7 +648,13 @@ def lab_stats_view(request):
 @login_required
 def verify_result(request, result_id):
     """Lab senior / director verifies a result (ISO 15189 — tech who performed cannot verify)."""
-    if not (request.user.is_medical_director or request.user.is_super_admin):
+    _can_verify = (
+        request.user.is_medical_director
+        or request.user.is_super_admin
+        or request.user.is_lab_tech
+        or request.user.is_admin_director
+    )
+    if not _can_verify:
         return HttpResponseForbidden()
     result = get_object_or_404(LabResult, pk=result_id, is_deleted=False)
     if result.performed_by and result.performed_by == request.user:
