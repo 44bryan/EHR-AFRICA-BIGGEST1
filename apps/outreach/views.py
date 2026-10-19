@@ -33,9 +33,7 @@ def _can_manage(user):
 
 def _can_examine(user):
     """Clinicians who can record ophthalmology examinations."""
-    return (user.is_ophthalmologist or user.is_optometrist or user.is_refractionist
-            or user.is_medical_director or user.is_super_admin
-            or getattr(user, 'is_low_vision_specialist', False))
+    return (user.is_doctor or user.is_medical_director or user.is_super_admin)
 
 
 # ─── Activity views ───────────────────────────────────────────────────────────

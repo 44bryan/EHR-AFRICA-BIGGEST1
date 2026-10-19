@@ -429,6 +429,18 @@ class User(AbstractUser):
         return self.role == UserRole.OCULOPLASTICS_SURGEON
 
     @property
+    def is_ophthalmologist(self):
+        return self.role == UserRole.OPHTHALMOLOGIST
+
+    @property
+    def is_optometrist(self):
+        return self.role == UserRole.OPTOMETRIST
+
+    @property
+    def is_low_vision_specialist(self):
+        return self.role == UserRole.LOW_VISION_SPECIALIST
+
+    @property
     def is_specialist(self):
         """Doctor assigned to a specific specialty unit."""
         return self.role in (
