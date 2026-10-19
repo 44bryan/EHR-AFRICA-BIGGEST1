@@ -294,7 +294,6 @@ def investigation_list_view(request):
     })
 
 
-@login_required
 def _check_insurance_preauth(patient, visit):
     """Check if patient's insurance requires pre-auth and if it's approved.
     Returns (needs_preauth, has_valid_preauth, warning_message)."""
@@ -335,6 +334,7 @@ def _check_insurance_preauth(patient, visit):
         return False, True, ''
 
 
+@login_required
 def investigation_order_view(request, consultation_pk):
     if not request.user.can_order_investigations():
         return HttpResponseForbidden()
