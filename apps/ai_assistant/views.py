@@ -582,7 +582,7 @@ def patient_risk_summary_view(request, patient_id):
     result = get_patient_risk_summary(patient)
     if result['success']:
         return JsonResponse({'success': True, 'data': result['data']})
-    return JsonResponse({'success': False, 'error': result['error']}, status=500)
+    return JsonResponse({'success': False, 'error': result.get('error', 'AI service unavailable')})
 
 
 @login_required

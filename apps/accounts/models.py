@@ -638,11 +638,13 @@ class HospitalConfig(models.Model):
 
     # ── Hospital Identity ─────────────────────────────
     hospital_name    = models.CharField(max_length=200, default='EHR Africa Hospital', verbose_name='Hospital Name')
+    hospital_tagline = models.CharField(max_length=200, blank=True, default='', verbose_name='Tagline / Motto')
     hospital_address = models.TextField(blank=True, default='', verbose_name='Address')
     hospital_phone   = models.CharField(max_length=30,  blank=True, default='', verbose_name='Phone')
     hospital_email   = models.EmailField(blank=True, default='', verbose_name='Email')
     hospital_website = models.URLField(blank=True, default='', verbose_name='Website')
     hospital_tax_id  = models.CharField(max_length=60,  blank=True, default='', verbose_name='Tax ID / NIU')
+    hospital_logo    = models.ImageField(upload_to='hospital/', blank=True, null=True, verbose_name='Hospital Logo')
 
     # ── Security ──────────────────────────────────────
     session_timeout_hours   = models.PositiveSmallIntegerField(default=8,  verbose_name='Session Timeout (hours)')

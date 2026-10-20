@@ -106,7 +106,7 @@ def groq_chat(messages: list, system: str = None, model: str = None, max_tokens:
     if client is None:
         return {'success': False, 'error': 'Groq not configured. Add GROQ_API_KEY to .env', 'text': '', 'reasoning': ''}
 
-    model = model or getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile')
+    model = model or getattr(settings, 'GROQ_MODEL', 'deepseek-r1-distill-llama-70b')
     system_prompt = system or GLUDD_SYSTEM_PROMPT
 
     try:
@@ -135,7 +135,7 @@ def groq_chat(messages: list, system: str = None, model: str = None, max_tokens:
     except Exception as e:
         logger.error(f"Groq chat error (model={model}): {e}")
         # Fallback: retry with the fast model if the primary model fails
-        fallback = getattr(settings, 'GROQ_FAST_MODEL', 'llama-3.3-70b-versatile')
+        fallback = getattr(settings, 'GROQ_FAST_MODEL', 'llama-3.1-8b-instant')
         if model != fallback:
             logger.info(f"Retrying with fallback model {fallback}")
             try:
@@ -174,7 +174,7 @@ def groq_json(messages: list, system: str = None, model: str = None, max_tokens:
     if client is None:
         return {'success': False, 'error': 'Groq not configured', 'data': {}}
 
-    model = model or getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile')
+    model = model or getattr(settings, 'GROQ_MODEL', 'deepseek-r1-distill-llama-70b')
     system_prompt = (system or GLUDD_SYSTEM_PROMPT) + '\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanation outside the JSON object.'
     chat_messages = [{'role': 'system', 'content': system_prompt}] + messages
 
