@@ -1,0 +1,60 @@
+{% load static %}
+{# ──────────────────────────────────────────────────────────────────────────
+   EHR Africa — Hospital Letterhead Component
+   Usage:
+     Screen (hidden until print):    {% include 'components/letterhead.html' %}
+     Always visible (PDF preview):   {% include 'components/letterhead.html' with visible=True %}
+   Variables used (all from context processors — no args needed):
+     modules.hospital_logo, modules.hospital_name, modules.hospital_tagline,
+     modules.hospital_address, modules.hospital_phone, modules.hospital_email,
+     modules.hospital_website, modules.hospital_tax_id,
+     HOSPITAL_NAME, HOSPITAL_ADDRESS, HOSPITAL_PHONE, HOSPITAL_EMAIL,
+     HOSPITAL_CITY, HOSPITAL_COUNTRY, HOSPITAL_REG_NUMBER
+   ────────────────────────────────────────────────────────────────────────── #}
+<div class="{% if visible %}ehr-letterhead-visible{% else %}ehr-letterhead{% endif %}">
+  <div class="d-flex align-items-start gap-3">
+
+    {# Logo — prefer DB value (editable), fallback to static placeholder #}
+    {% if modules.hospital_logo %}
+      <img src="{{ modules.hospital_logo.url }}"
+           alt="{{ modules.hospital_name|default:HOSPITAL_NAME }} logo"
+           class="ehr-letterhead-logo flex-shrink-0">
+    {% else %}
+      <div class="flex-shrink-0 d-flex align-items-center justify-content-center rounded"
+           style="width:56px;height:56px;background:linear-gradient(135deg,#0891b2,#0e7490);">
+        <i class="bi bi-hospital text-white" style="font-size:1.6rem;"></i>
+      </div>
+    {% endif %}
+
+    {# Identity block #}
+    <div class="flex-grow-1">
+      <div class="ehr-letterhead-name">
+        {{ modules.hospital_name|default:HOSPITAL_NAME }}
+      </div>
+      {% if modules.hospital_tagline %}
+        <div class="ehr-letterhead-tagline">{{ modules.hospital_tagline }}</div>
+      {% endif %}
+      <div class="ehr-letterhead-contact mt-1">
+        {% with addr=modules.hospital_address|default:HOSPITAL_ADDRESS %}{% if addr %}{{ addr }}{% if HOSPITAL_CITY %}, {{ HOSPITAL_CITY }}{% endif %}{% if HOSPITAL_COUNTRY %} — {{ HOSPITAL_COUNTRY }}{% endif %}{% endif %}{% endwith %}
+      </div>
+      <div class="ehr-letterhead-contact d-flex flex-wrap gap-3 mt-1">
+        {% with ph=modules.hospital_phone|default:HOSPITAL_PHONE %}{% if ph %}
+          <span><i class="bi bi-telephone me-1"></i>{{ ph }}</span>
+        {% endif %}{% endwith %}
+        {% with em=modules.hospital_email|default:HOSPITAL_EMAIL %}{% if em %}
+          <span><i class="bi bi-envelope me-1"></i>{{ em }}</span>
+        {% endif %}{% endwith %}
+        {% with ws=modules.hospital_website|default:HOSPITAL_WEBSITE %}{% if ws %}
+          <span><i class="bi bi-globe me-1"></i>{{ ws }}</span>
+        {% endif %}{% endwith %}
+        {% if modules.hospital_tax_id %}
+          <span><i class="bi bi-receipt me-1"></i>NIU/Tax: {{ modules.hospital_tax_id }}</span>
+        {% endif %}
+        {% if HOSPITAL_REG_NUMBER %}
+          <span><i class="bi bi-building me-1"></i>Reg: {{ HOSPITAL_REG_NUMBER }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>{# /d-flex #}
+</div>

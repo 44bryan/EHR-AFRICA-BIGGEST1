@@ -4159,11 +4159,22 @@ def report_daily_summary(request):
         'expense_cat_labels': dict(ExpenseCategory.choices),
         'payments': payments.order_by('payment_date'),
     }
-    if request.GET.get('format') == 'pdf':
-        return _render_pdf(
-            'billing/pdf/daily_summary_pdf.html', ctx,
-            f'daily_summary_{report_date}.pdf',
-        )
+    fmt = request.GET.get('format')
+    if fmt == 'pdf':
+        return _render_pdf('billing/pdf/daily_summary_pdf.html', ctx, f'daily_summary_{report_date}.pdf')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'Daily Summary — {report_date}')
+        pm_labels = dict(PaymentMethod.choices)
+        cols = ['Payment Method', 'Amount (FCFA)']
+        rows = [cols] + [
+            [pm_labels.get(row['payment_method'], row['payment_method']), f"{float(row['total']):.0f}"]
+            for row in ctx.get('payments', []).values('payment_method').annotate(total=Sum('amount'))
+        ]
+        rows.append(['', ''])
+        rows.append(['TOTAL REVENUE', f"{float(ctx.get('net_revenue', 0)):.0f}"])
+        if fmt == 'csv':
+            return _csv_response(f'daily_summary_{report_date}.csv', hdr, rows)
+        return _excel_response(f'daily_summary_{report_date}.xlsx', hdr, rows, sheet_name='Daily Summary')
     return render(request, 'billing/reports/daily_summary.html', ctx)
 
 
@@ -4278,11 +4289,36 @@ def report_pl(request):
         'exp_cat_labels': dict(ExpenseCategory.choices),
         'method_labels': dict(PaymentMethod.choices),
     }
-    if request.GET.get('format') == 'pdf':
-        return _render_pdf(
-            'billing/pdf/pl_pdf.html', ctx,
-            f'pl_report_{month_str}.pdf',
-        )
+    fmt = request.GET.get('format')
+    if fmt == 'pdf':
+        return _render_pdf('billing/pdf/pl_pdf.html', ctx, f'pl_report_{month_str}.pdf')
+    if fmt == 'csv':
+        hdr = _hospital_header(f'Profit & Loss Statement — {ctx.get("month_label", month_str)}')
+        cols = ['Category', 'Revenue (FCFA)', 'Expense (FCFA)']
+        rev_label = dict(ServiceCategory.choices)
+        rows = [cols]
+        for row in ctx.get('rev_by_cat', []):
+            rows.append([rev_label.get(row['category'], row['category']), f"{float(row['total']):.0f}", ''])
+        rows.append(['', '', ''])
+        exp_label = dict(ctx.get('exp_cat_labels', {}))
+        for row in ctx.get('exp_by_cat', []):
+            rows.append([exp_label.get(row['category'], row['category']), '', f"{float(row['total']):.0f}"])
+        rows.append(['', '', ''])
+        rows.append(['TOTAL REVENUE', f"{float(ctx.get('rev_total', 0)):.0f}", ''])
+        rows.append(['TOTAL EXPENSES', '', f"{float(ctx.get('exp_total', 0)):.0f}"])
+        rows.append(['GROSS PROFIT', f"{float(ctx.get('gross_profit', 0)):.0f}", ''])
+        return _csv_response(f'pl_{month_str}.csv', hdr, rows)
+    if fmt == 'excel':
+        hdr = _hospital_header(f'Profit & Loss Statement — {ctx.get("month_label", month_str)}')
+        rev_label = dict(ServiceCategory.choices)
+        rows = [['Type', 'Category', 'Amount (FCFA)']]
+        for row in ctx.get('rev_by_cat', []):
+            rows.append(['Revenue', rev_label.get(row['category'], row['category']), float(row['total'])])
+        for row in ctx.get('exp_by_cat', []):
+            exp_label = dict(ExpenseCategory.choices)
+            rows.append(['Expense', exp_label.get(row['category'], row['category']), float(row['total'])])
+        rows.append(['', 'GROSS PROFIT', float(ctx.get('gross_profit', 0))])
+        return _excel_response(f'pl_{month_str}.xlsx', hdr, rows, sheet_name='P&L')
     return render(request, 'billing/reports/pl.html', ctx)
 
 
@@ -4341,11 +4377,21 @@ def report_top_services(request):
         'cat_labels': dict(ServiceCategory.choices),
         'today': today,
     }
-    if request.GET.get('format') == 'pdf':
-        return _render_pdf(
-            'billing/pdf/top_services_pdf.html', ctx,
-            f'top_services_{date_from_str}_{date_to_str}.pdf',
-        )
+    fmt = request.GET.get('format')
+    if fmt == 'pdf':
+        return _render_pdf('billing/pdf/top_services_pdf.html', ctx, f'top_services_{date_from_str}_{date_to_str}.pdf')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'Top Services Revenue — {date_from_str} to {date_to_str}')
+        cat_labels = dict(ServiceCategory.choices)
+        cols = ['Service', 'Category', 'Revenue (FCFA)', 'Count']
+        rows = [cols] + [
+            [s['description'], cat_labels.get(s['category'], s['category']),
+             f"{float(s['revenue']):.0f}", s['count']]
+            for s in ctx.get('services', [])
+        ]
+        if fmt == 'csv':
+            return _csv_response(f'top_services_{date_from_str}_{date_to_str}.csv', hdr, rows)
+        return _excel_response(f'top_services_{date_from_str}_{date_to_str}.xlsx', hdr, rows, sheet_name='Top Services')
     return render(request, 'billing/reports/top_services.html', ctx)
 
 
@@ -5299,6 +5345,110 @@ def _render_pdf(template_name, context, filename):
     from apps.reports.views import render_pdf as _shared_render_pdf
     context['pdf_filename'] = filename
     return _shared_render_pdf(template_name, context)
+
+
+def _csv_response(filename, header_rows, data_rows):
+    """
+    Return a CSV HttpResponse with hospital header rows + data.
+    header_rows: list of lists for preamble (hospital name, date, etc.)
+    data_rows:   list of lists (first list is column headers)
+    """
+    import csv
+    from django.http import HttpResponse
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    w = csv.writer(response)
+    for row in header_rows:
+        w.writerow(row)
+    if header_rows:
+        w.writerow([])   # blank separator
+    for row in data_rows:
+        w.writerow(row)
+    return response
+
+
+def _excel_response(filename, header_rows, data_rows, sheet_name='Report'):
+    """
+    Return an Excel HttpResponse with hospital header rows + styled data.
+    Requires openpyxl.
+    header_rows: list of lists for preamble
+    data_rows:   list of lists (first list is column headers)
+    """
+    from django.http import HttpResponse, HttpResponseBadRequest
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return HttpResponseBadRequest('openpyxl not installed')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_name[:31]
+
+    row_num = 1
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='0891B2')   # EHR teal
+
+    for prow in header_rows:
+        ws.append(prow)
+        ws.cell(row=row_num, column=1).font = Font(bold=True)
+        row_num += 1
+
+    if header_rows:
+        ws.append([])
+        row_num += 1
+
+    for i, row in enumerate(data_rows):
+        ws.append(row)
+        if i == 0:
+            # Style first data row as column header
+            for col in range(1, len(row) + 1):
+                cell = ws.cell(row=row_num, column=col)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center')
+        row_num += 1
+
+    # Auto-size columns
+    for col in ws.columns:
+        max_len = max((len(str(c.value or '')) for c in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+def _hospital_header(subtitle=''):
+    """Return preamble rows for CSV/Excel exports (hospital identity)."""
+    from apps.accounts.models import HospitalConfig
+    from django.conf import settings
+    try:
+        cfg = HospitalConfig.get()
+        name = cfg.hospital_name or getattr(settings, 'HOSPITAL_NAME', 'Hospital')
+        address = cfg.hospital_address or getattr(settings, 'HOSPITAL_ADDRESS', '')
+        phone = cfg.hospital_phone or getattr(settings, 'HOSPITAL_PHONE', '')
+        email = cfg.hospital_email or getattr(settings, 'HOSPITAL_EMAIL', '')
+        tax = cfg.hospital_tax_id or ''
+    except Exception:
+        name = getattr(settings, 'HOSPITAL_NAME', 'Hospital')
+        address = getattr(settings, 'HOSPITAL_ADDRESS', '')
+        phone = getattr(settings, 'HOSPITAL_PHONE', '')
+        email = getattr(settings, 'HOSPITAL_EMAIL', '')
+        tax = ''
+    from django.utils import timezone as _tz
+    rows = [
+        [name],
+        [address] if address else [],
+        [f'Tel: {phone}  |  Email: {email}' if phone or email else ''],
+        [f'Tax ID/NIU: {tax}'] if tax else [],
+        [subtitle] if subtitle else [],
+        [f'Generated: {_tz.localtime(_tz.now()).strftime("%d/%m/%Y %H:%M")}'],
+    ]
+    return [r for r in rows if r]
 
 
 def _log_financial(request, action, invoice, extra=None):
@@ -10667,9 +10817,20 @@ def report_ap_aging(request):
         totals[bucket] += balance
         totals['total'] += balance
 
-    return render(request, 'billing/reports/ap_aging.html', {
-        'rows': rows, 'totals': totals, 'today': today,
-    })
+    ctx_ap = {'rows': rows, 'totals': totals, 'today': today}
+    fmt = request.GET.get('format')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'AP Aging Report — as of {today}')
+        cols = ['Vendor', 'Bill Ref', 'Due Date', 'Balance (FCFA)', 'Age (days)', 'Bucket']
+        data = [cols] + [
+            [r['vendor'], getattr(r['bill'], 'reference', ''), str(r['due_date']),
+             f"{float(r['balance']):.0f}", r['age_days'], r['bucket'].replace('_', ' ')]
+            for r in rows
+        ]
+        if fmt == 'csv':
+            return _csv_response(f'ap_aging_{today}.csv', hdr, data)
+        return _excel_response(f'ap_aging_{today}.xlsx', hdr, data, sheet_name='AP Aging')
+    return render(request, 'billing/reports/ap_aging.html', ctx_ap)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -10735,7 +10896,7 @@ def report_monthly_summary(request):
     net_position = revenue - total_expense - ap_paid
 
     from .models import PaymentMethod, ExpenseCategory
-    return render(request, 'billing/reports/monthly_summary.html', {
+    ctx_ms = {
         'year': year, 'month': month,
         'month_name': calendar.month_name[month],
         'revenue': revenue,
@@ -10750,7 +10911,24 @@ def report_monthly_summary(request):
         'net_position': net_position,
         'method_labels': dict(PaymentMethod.choices),
         'cat_labels': dict(ExpenseCategory.choices),
-    })
+    }
+    fmt = request.GET.get('format')
+    if fmt in ('csv', 'excel'):
+        label = f"{calendar.month_name[month]} {year}"
+        hdr = _hospital_header(f'Monthly Financial Summary — {label}')
+        cat_l = dict(ExpenseCategory.choices)
+        rows = [['Description', 'Amount (FCFA)']]
+        rows.append(['Total Revenue', f'{float(revenue):.0f}'])
+        rows.append(['Total Expenses', f'{float(total_expense):.0f}'])
+        rows.append(['Net Position', f'{float(net_position):.0f}'])
+        rows.append(['', ''])
+        rows.append(['Expenses by Category', ''])
+        for e in expenses:
+            rows.append([cat_l.get(e['category'], e['category']), f'{float(e["total"]):.0f}'])
+        if fmt == 'csv':
+            return _csv_response(f'monthly_summary_{year}_{month:02d}.csv', hdr, rows)
+        return _excel_response(f'monthly_summary_{year}_{month:02d}.xlsx', hdr, rows, sheet_name='Monthly Summary')
+    return render(request, 'billing/reports/monthly_summary.html', ctx_ms)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

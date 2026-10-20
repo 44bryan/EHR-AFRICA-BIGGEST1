@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% load static %}
+{#
+  base_pdf.html — Minimal layout for print/PDF documents.
+  No sidebar, no topbar, no navigation. Letterhead is shown on screen + print.
+  Extend this for: receipts, statements, reports, certificates.
+
+  Usage:
+    extend layouts/base_pdf.html
+    override block pdf_title with Invoice #123
+    override block content with your content
+#}
+
+{% block body_class %}bg-white{% endblock %}
+
+{% block body %}
+<div class="pdf-wrapper" style="max-width:860px;margin:0 auto;padding:1.5rem 2rem;">
+
+  {# ── Letterhead (always visible in this layout) ── #}
+  {% include 'components/letterhead.html' with visible=True %}
+
+  {# ── Document title bar ── #}
+  {% block pdf_title_bar %}
+  <div class="text-center my-3">
+    <h5 class="fw-bold text-uppercase mb-0">{% block pdf_title %}Document{% endblock %}</h5>
+    <div class="text-muted small">{% block pdf_subtitle %}{% endblock %}</div>
+  </div>
+  {% endblock %}
+
+  {# ── Main content ── #}
+  {% block content %}{% endblock %}
+
+  {# ── Footer ── #}
+  <div class="mt-4 pt-2 border-top text-muted" style="font-size:.68rem;">
+    <div class="d-flex justify-content-between flex-wrap gap-2">
+      <span>Printed: {% now "d/m/Y H:i" %}</span>
+      {% block pdf_footer_extra %}<span></span>{% endblock %}
+      <span>{{ modules.hospital_name|default:HOSPITAL_NAME }}</span>
+    </div>
+  </div>
+
+</div>{# /pdf-wrapper #}
+
+{# ── Print controls (hidden on print) ── #}
+<div class="no-print text-center py-3" style="background:#f1f5f9;border-top:1px solid #e5e7eb;">
+  <button class="btn btn-sm btn-primary me-2" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print
+  </button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="window.close()">
+    <i class="bi bi-x me-1"></i>Close
+  </button>
+</div>
+
+{% block extra_js %}{% endblock %}
+{% endblock %}
