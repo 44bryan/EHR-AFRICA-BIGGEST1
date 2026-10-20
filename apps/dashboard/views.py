@@ -1039,7 +1039,7 @@ def home_view(request):
         return render(request, 'dashboard/lab_technician.html', ctx)
 
     # ── Pharmacist ────────────────────────────────────────────────────────
-    if user.is_pharmacist:
+    if user.is_pharmacist or user.is_head_pharmacist:
         from apps.prescriptions.models import DrugPrescription
         from apps.patients.models import Visit
         from apps.pharmacy.models import Drug, DrugStock
