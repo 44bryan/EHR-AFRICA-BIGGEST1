@@ -4812,8 +4812,26 @@ def ar_aging_report(request):
         'corporate_ar': corporate_ar,
         'bucket_order': ['current', 'days31', 'days61', 'days90'],
     }
-    if request.GET.get('format') == 'pdf':
+    fmt = request.GET.get('format', '')
+    if fmt == 'pdf':
         return _render_pdf('billing/pdf/ar_aging_pdf.html', ctx, f'ar_aging_{today}.pdf')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'AR Aging Report — as of {today}')
+        col_hdrs = ['Invoice #', 'Issue Date', 'Patient', 'Patient ID', 'Corporate', 'Total (FCFA)', 'Paid (FCFA)', 'Balance (FCFA)', 'Age (Days)', 'Bucket']
+        rows = [col_hdrs]
+        for bk in ['current', 'days31', 'days61', 'days90']:
+            for row in buckets[bk]['rows']:
+                inv = row['invoice']
+                rows.append([
+                    inv.invoice_number, inv.issue_date.strftime('%d/%m/%Y'),
+                    row['patient'].full_name, row['patient'].patient_id,
+                    inv.corporate_account.name if inv.corporate_account else '',
+                    row['total'], row['paid'], row['balance'], row['age_days'],
+                    buckets[bk]['label'],
+                ])
+        if fmt == 'csv':
+            return _csv_response(f'ar_aging_{today}.csv', hdr, rows)
+        return _excel_response(f'ar_aging_{today}.xlsx', hdr, rows, sheet_name='AR Aging')
     return render(request, 'billing/ar_aging.html', ctx)
 
 
@@ -8302,7 +8320,7 @@ def balance_sheet(request):
     total_liab_equity = total_liabilities + total_equity_val
     diff = total_assets - total_liab_equity
 
-    return render(request, 'billing/balance_sheet.html', {
+    ctx = {
         'assets': asset_groups,
         'liabilities': liab_groups,
         'equity_rows': equity_rows,
@@ -8314,7 +8332,37 @@ def balance_sheet(request):
         'is_balanced': abs(diff) < Decimal('0.01'),
         'balance_diff': diff,
         'date_to': date_to,
-    })
+    }
+    fmt = request.GET.get('format', '')
+    if fmt == 'csv':
+        hdr = _hospital_header(f'Balance Sheet — as at {date_to}')
+        rows = [['Section', 'Account', 'Balance (FCFA)']]
+        for grp in asset_groups:
+            for row in grp.get('rows', []):
+                rows.append(['Assets — ' + grp.get('name',''), row.get('name',''), float(row.get('balance',0))])
+        for grp in liab_groups:
+            for row in grp.get('rows', []):
+                rows.append(['Liabilities — ' + grp.get('name',''), row.get('name',''), float(row.get('balance',0))])
+        for row in equity_rows:
+            rows.append(['Equity', row.get('name',''), float(row.get('balance',0))])
+        rows.append(['', 'TOTAL ASSETS', float(total_assets)])
+        rows.append(['', 'TOTAL LIABILITIES + EQUITY', float(total_liab_equity)])
+        return _csv_response(f'balance_sheet_{date_to}.csv', hdr, rows)
+    if fmt == 'excel':
+        hdr = _hospital_header(f'Balance Sheet — as at {date_to}')
+        rows = [['Section', 'Account', 'Balance (FCFA)']]
+        for grp in asset_groups:
+            for row in grp.get('rows', []):
+                rows.append(['Assets — ' + grp.get('name',''), row.get('name',''), float(row.get('balance',0))])
+        for grp in liab_groups:
+            for row in grp.get('rows', []):
+                rows.append(['Liabilities — ' + grp.get('name',''), row.get('name',''), float(row.get('balance',0))])
+        for row in equity_rows:
+            rows.append(['Equity', row.get('name',''), float(row.get('balance',0))])
+        rows.append(['', 'TOTAL ASSETS', float(total_assets)])
+        rows.append(['', 'TOTAL LIABILITIES + EQUITY', float(total_liab_equity)])
+        return _excel_response(f'balance_sheet_{date_to}.xlsx', hdr, rows, sheet_name='Balance Sheet')
+    return render(request, 'billing/balance_sheet.html', ctx)
 
 
 # ── Cash Flow Statement ───────────────────────────────────────────────────────
@@ -8465,22 +8513,37 @@ def cash_flow_statement(request):
     net_change = net_operating + net_investing + net_financing
     closing_cash = opening_cash + net_change
 
-    return render(request, 'billing/cash_flow.html', {
-        'date_from': date_from,
-        'date_to': date_to,
-        'operating_inflows': operating_inflows,
-        'operating_outflows': operating_outflows,
-        'total_op_inflows': total_op_inflows,
-        'total_op_outflows': total_op_outflows,
-        'net_operating': net_operating,
-        'investing_rows': investing_rows,
-        'net_investing': net_investing,
-        'financing_rows': financing_rows,
-        'net_financing': net_financing,
-        'opening_cash': opening_cash,
-        'net_change': net_change,
-        'closing_cash': closing_cash,
-    })
+    ctx = {
+        'date_from': date_from, 'date_to': date_to,
+        'operating_inflows': operating_inflows, 'operating_outflows': operating_outflows,
+        'total_op_inflows': total_op_inflows, 'total_op_outflows': total_op_outflows,
+        'net_operating': net_operating, 'investing_rows': investing_rows,
+        'net_investing': net_investing, 'financing_rows': financing_rows,
+        'net_financing': net_financing, 'opening_cash': opening_cash,
+        'net_change': net_change, 'closing_cash': closing_cash,
+    }
+    fmt = request.GET.get('format', '')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'Cash Flow Statement — {date_from} to {date_to}')
+        rows = [['Section', 'Description', 'Amount (FCFA)']]
+        for r in operating_inflows:
+            rows.append(['Operating Inflows', r['label'], float(r['amount'])])
+        for r in operating_outflows:
+            rows.append(['Operating Outflows', r['label'], float(r['amount'])])
+        rows.append(['', 'Net Operating Cash Flow', float(net_operating)])
+        for r in investing_rows:
+            rows.append(['Investing', r.get('label',''), float(r.get('amount',0))])
+        rows.append(['', 'Net Investing Cash Flow', float(net_investing)])
+        for r in financing_rows:
+            rows.append(['Financing', r.get('label',''), float(r.get('amount',0))])
+        rows.append(['', 'Net Financing Cash Flow', float(net_financing)])
+        rows.append(['', 'Opening Cash Balance', float(opening_cash)])
+        rows.append(['', 'NET CHANGE IN CASH', float(net_change)])
+        rows.append(['', 'CLOSING CASH BALANCE', float(closing_cash)])
+        if fmt == 'csv':
+            return _csv_response(f'cash_flow_{date_from}_{date_to}.csv', hdr, rows)
+        return _excel_response(f'cash_flow_{date_from}_{date_to}.xlsx', hdr, rows, sheet_name='Cash Flow')
+    return render(request, 'billing/cash_flow.html', ctx)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
