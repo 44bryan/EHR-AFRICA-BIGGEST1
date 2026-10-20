@@ -5330,12 +5330,6 @@ import csv
 from django.http import HttpResponse
 
 
-def _csv_response(filename):
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    return response
-
-
 def _render_pdf(template_name, context, filename):
     """
     Render a template to PDF using the shared render_pdf engine.
@@ -5717,22 +5711,22 @@ def export_invoice_list(request):
     if date_to:
         qs = qs.filter(issue_date__lte=date_to)
     qs = qs.order_by('-created_at')
-    response = _csv_response(f'invoices_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Invoice #', 'Date', 'Patient', 'Patient ID', 'Total (FCFA)', 'Paid (FCFA)', 'Balance (FCFA)', 'Status', 'Created By'])
+    hdr = _hospital_header('Invoice List Export')
+    col_hdrs = ['Invoice #', 'Date', 'Patient', 'Patient ID', 'Total (FCFA)', 'Paid (FCFA)', 'Balance (FCFA)', 'Status', 'Created By']
+    rows = [col_hdrs]
     for inv in qs:
-        w.writerow([
+        rows.append([
             inv.invoice_number,
             inv.issue_date.strftime('%d/%m/%Y'),
             inv.patient.full_name,
             inv.patient.patient_id,
-            inv.total,
-            inv.amount_paid,
-            inv.balance_due,
+            float(inv.total),
+            float(inv.amount_paid),
+            float(inv.balance_due),
             inv.get_status_display(),
             inv.created_by.get_full_name() if inv.created_by else '',
         ])
-    return response
+    return _csv_response(f'invoices_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -5748,9 +5742,9 @@ def export_ar_aging(request):
         status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
         is_deleted=False,
     ).select_related('patient', 'corporate_account').order_by('issue_date')
-    response = _csv_response(f'ar_aging_{today}.csv')
-    w = csv.writer(response)
-    w.writerow(['Invoice #', 'Issue Date', 'Patient', 'Patient ID', 'Corporate Account', 'Invoice Total (FCFA)', 'Paid (FCFA)', 'Balance Due (FCFA)', 'Age (Days)', 'Bucket'])
+    hdr = _hospital_header(f'Accounts Receivable Aging — as of {today}')
+    col_hdrs = ['Invoice #', 'Issue Date', 'Patient', 'Patient ID', 'Corporate Account', 'Invoice Total (FCFA)', 'Paid (FCFA)', 'Balance Due (FCFA)', 'Age (Days)', 'Bucket']
+    rows = [col_hdrs]
     for inv in qs:
         age = (today - inv.issue_date).days
         balance = float(inv.balance_due)
@@ -5764,7 +5758,7 @@ def export_ar_aging(request):
             bucket = '61-90 days'
         else:
             bucket = '90+ days'
-        w.writerow([
+        rows.append([
             inv.invoice_number,
             inv.issue_date.strftime('%d/%m/%Y'),
             inv.patient.full_name,
@@ -5776,7 +5770,7 @@ def export_ar_aging(request):
             age,
             bucket,
         ])
-    return response
+    return _csv_response(f'ar_aging_{today}.csv', hdr, rows)
 
 
 @login_required
@@ -5801,11 +5795,11 @@ def export_expense_list(request):
     if date_to:
         qs = qs.filter(date__lte=date_to)
     qs = qs.order_by('-date')
-    response = _csv_response(f'expenses_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Date', 'Category', 'Description', 'Vendor', 'Amount (FCFA)', 'Payment Method', 'Status', 'Approved By', 'Submitted By'])
+    hdr = _hospital_header('Expense List Export')
+    col_hdrs = ['Date', 'Category', 'Description', 'Vendor', 'Amount (FCFA)', 'Payment Method', 'Status', 'Approved By', 'Submitted By']
+    rows = [col_hdrs]
     for exp in qs:
-        w.writerow([
+        rows.append([
             exp.date.strftime('%d/%m/%Y'),
             exp.get_category_display(),
             exp.description,
@@ -5816,7 +5810,7 @@ def export_expense_list(request):
             exp.approved_by.get_full_name() if exp.approved_by else '',
             exp.created_by.get_full_name() if exp.created_by else '',
         ])
-    return response
+    return _csv_response(f'expenses_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -5837,11 +5831,11 @@ def export_shift_list(request):
     if status_filter:
         qs = qs.filter(status=status_filter)
     qs = qs.order_by('-shift_date', 'cashier__first_name')
-    response = _csv_response(f'cashier_shifts_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Date', 'Cashier', 'Opening Float (FCFA)', 'Total Collected (FCFA)', 'Closing Cash (FCFA)', 'Variance (FCFA)', 'Status', 'Verified By'])
+    hdr = _hospital_header('Cashier Shifts Export')
+    col_hdrs = ['Date', 'Cashier', 'Opening Float (FCFA)', 'Total Collected (FCFA)', 'Closing Cash (FCFA)', 'Variance (FCFA)', 'Status', 'Verified By']
+    rows = [col_hdrs]
     for s in qs:
-        w.writerow([
+        rows.append([
             s.shift_date.strftime('%d/%m/%Y'),
             s.cashier.get_full_name() or s.cashier.username,
             float(s.opening_cash),
@@ -5851,7 +5845,7 @@ def export_shift_list(request):
             s.get_status_display(),
             s.verified_by.get_full_name() if s.verified_by else '',
         ])
-    return response
+    return _csv_response(f'cashier_shifts_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -5869,11 +5863,11 @@ def export_service_prices(request):
     if cat:
         qs = qs.filter(category=cat)
     qs = qs.order_by('category', 'name')
-    response = _csv_response(f'service_prices_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Code', 'Name', 'Category', 'Standard Price (FCFA)', 'NHIS Price (FCFA)', 'Insurance Price (FCFA)', 'Active'])
+    hdr = _hospital_header('Service Price Catalogue')
+    col_hdrs = ['Code', 'Name', 'Category', 'Standard Price (FCFA)', 'NHIS Price (FCFA)', 'Insurance Price (FCFA)', 'Active']
+    rows = [col_hdrs]
     for p in qs:
-        w.writerow([
+        rows.append([
             p.code or '',
             p.name,
             p.get_category_display(),
@@ -5882,7 +5876,7 @@ def export_service_prices(request):
             float(p.insurance_price) if p.insurance_price else '',
             'Yes' if p.is_active else 'No',
         ])
-    return response
+    return _csv_response(f'service_prices_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -5909,11 +5903,11 @@ def export_sales_journal(request):
     ).select_related('invoice__patient', 'received_by').order_by('payment_date')
     if cashier_id:
         pay_qs = pay_qs.filter(received_by_id=cashier_id)
-    response = _csv_response(f'sales_journal_{date_from_str}_{date_to_str}.csv')
-    w = csv.writer(response)
-    w.writerow(['Date', 'Receipt #', 'Invoice #', 'Patient', 'Patient ID', 'Amount (FCFA)', 'Payment Method', 'Reference', 'Cashier'])
+    hdr = _hospital_header(f'Sales Journal — {date_from_str} to {date_to_str}')
+    col_hdrs = ['Date', 'Receipt #', 'Invoice #', 'Patient', 'Patient ID', 'Amount (FCFA)', 'Payment Method', 'Reference', 'Cashier']
+    rows = [col_hdrs]
     for p in pay_qs:
-        w.writerow([
+        rows.append([
             p.payment_date.strftime('%d/%m/%Y %H:%M'),
             p.receipt_number or '',
             p.invoice.invoice_number,
@@ -5924,7 +5918,7 @@ def export_sales_journal(request):
             p.reference or '',
             p.received_by.get_full_name() if p.received_by else '',
         ])
-    return response
+    return _csv_response(f'sales_journal_{date_from_str}_{date_to_str}.csv', hdr, rows)
 
 
 @login_required
@@ -5954,11 +5948,11 @@ def export_void_register(request):
     if date_to:
         qs = qs.filter(issue_date__lte=date_to)
     qs = qs.order_by('-updated_at')
-    response = _csv_response(f'void_register_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Date', 'Invoice #', 'Patient', 'Patient ID', 'Amount (FCFA)', 'Status', 'Reason Code', 'Reason', 'Authorised By', 'Created By'])
+    hdr = _hospital_header('Void & Cancellation Register')
+    col_hdrs = ['Date', 'Invoice #', 'Patient', 'Patient ID', 'Amount (FCFA)', 'Status', 'Reason Code', 'Reason', 'Authorised By', 'Created By']
+    rows = [col_hdrs]
     for inv in qs:
-        w.writerow([
+        rows.append([
             inv.issue_date.strftime('%d/%m/%Y'),
             inv.invoice_number,
             inv.patient.full_name,
@@ -5970,7 +5964,7 @@ def export_void_register(request):
             inv.updated_by.get_full_name() if inv.updated_by else '',
             inv.created_by.get_full_name() if inv.created_by else '',
         ])
-    return response
+    return _csv_response(f'void_register_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -5982,11 +5976,11 @@ def export_corporate_list(request):
     _log_export(request, 'corporate_list')
     from .models import CorporateAccount
     accounts = CorporateAccount.objects.filter(is_deleted=False).order_by('name')
-    response = _csv_response(f'corporate_accounts_{timezone.localdate()}.csv')
-    w = csv.writer(response)
-    w.writerow(['Account Name', 'Account Code', 'Contact', 'Phone', 'Email', 'Credit Limit (FCFA)', 'Discount %', 'Payment Terms (Days)', 'Active'])
+    hdr = _hospital_header('Corporate Accounts Export')
+    col_hdrs = ['Account Name', 'Account Code', 'Contact', 'Phone', 'Email', 'Credit Limit (FCFA)', 'Discount %', 'Payment Terms (Days)', 'Active']
+    rows = [col_hdrs]
     for acc in accounts:
-        w.writerow([
+        rows.append([
             acc.name,
             acc.account_code or '',
             acc.contact_name or '',
@@ -5997,7 +5991,7 @@ def export_corporate_list(request):
             acc.payment_terms_days,
             'Yes' if acc.is_active else 'No',
         ])
-    return response
+    return _csv_response(f'corporate_accounts_{timezone.localdate()}.csv', hdr, rows)
 
 
 @login_required
@@ -6035,13 +6029,13 @@ def export_patient_financial(request):
             .order_by('-created_at')
         )
         fname = f'financial_record_{patient.patient_id}_{timezone.localdate()}.csv'
-        response = _csv_response(fname)
-        w = csv.writer(response)
-        w.writerow(['Invoice #', 'Date', 'Time', 'Issued By', 'Role', 'Total (FCFA)', 'Paid (FCFA)', 'Balance (FCFA)', 'Status'])
+        hdr = _hospital_header(f'Patient Financial Record — {patient.full_name} ({patient.patient_id})')
+        col_hdrs = ['Invoice #', 'Date', 'Time', 'Issued By', 'Role', 'Total (FCFA)', 'Paid (FCFA)', 'Balance (FCFA)', 'Status']
+        rows = [col_hdrs]
         for inv in invoices:
             issued_by = inv.created_by.get_full_name() or inv.created_by.username if inv.created_by else ''
             role = inv.created_by.get_role_display() if inv.created_by else ''
-            w.writerow([
+            rows.append([
                 inv.invoice_number,
                 inv.created_at.strftime('%d/%m/%Y'),
                 inv.created_at.strftime('%H:%M'),
@@ -6052,6 +6046,7 @@ def export_patient_financial(request):
                 float(inv.balance_due),
                 inv.get_status_display(),
             ])
+        response = _csv_response(fname, hdr, rows)
     else:
         # ── Summary export: all patients with invoice counts ──────────────────
         patients_qs = Patient.objects.filter(is_active=True, is_deleted=False).annotate(
@@ -6065,11 +6060,11 @@ def export_patient_financial(request):
             patients_qs = patients_qs.filter(patient_search_q(q))
 
         fname = f'patient_financial_records_{timezone.localdate()}.csv'
-        response = _csv_response(fname)
-        w = csv.writer(response)
-        w.writerow(['Patient ID', 'Full Name', 'Phone', 'Registered', 'Invoice Count', 'Last Transaction'])
+        hdr = _hospital_header('Patient Financial Records — Summary')
+        col_hdrs = ['Patient ID', 'Full Name', 'Phone', 'Registered', 'Invoice Count', 'Last Transaction']
+        rows = [col_hdrs]
         for p in patients_qs:
-            w.writerow([
+            rows.append([
                 p.patient_id,
                 p.full_name,
                 str(p.phone_number) if p.phone_number else '',
@@ -6077,6 +6072,7 @@ def export_patient_financial(request):
                 p.invoice_count or 0,
                 p.last_invoice_at.strftime('%d/%m/%Y') if p.last_invoice_at else '',
             ])
+        response = _csv_response(fname, hdr, rows)
 
     _log_export(request, 'patient_financial')
     return response
@@ -7724,7 +7720,10 @@ def trial_balance(request):
         w = csv.writer(resp)
         bal_lbl = 'GENERAL BALANCE' if balance_type == 'general' else 'AUXILIARY BALANCE'
         cc_mode_lbl = ' (COST CENTER BREAKDOWN)' if cc_breakdown else ''
-        w.writerow([f'{bal_lbl}{cc_mode_lbl}{_cc_label}  |  Period: {date_from} to {date_to}'])
+        # Hospital header
+        for hrow in _hospital_header(f'{bal_lbl}{cc_mode_lbl}{_cc_label}  |  Period: {date_from} to {date_to}'):
+            w.writerow(hrow)
+        w.writerow([])
         w.writerow(['Code', 'Account Name',
                     'Opening Debit', 'Opening Credit',
                     'Movement Debit', 'Movement Credit',
@@ -7962,6 +7961,15 @@ def trial_balance(request):
         ws.column_dimensions['B'].width = 40
         for col in 'CDEFGH':
             ws.column_dimensions[col].width = 18
+
+        # Hospital header rows inserted at top
+        _hosp_rows = _hospital_header(f'{lbl}{cc_mode_lbl_x} — {date_from} to {date_to}')
+        _n = len(_hosp_rows) + 1  # +1 blank separator
+        ws.insert_rows(1, _n)
+        for _i, _hrow in enumerate(_hosp_rows, 1):
+            _c = ws.cell(row=_i, column=1, value=' | '.join(str(x) for x in _hrow))
+            _c.font = Font(bold=True, size=12 if _i == 1 else 9, color='0891B2' if _i == 1 else '374151')
+        # row _n is blank separator — leave empty
 
         import io
         buf = io.BytesIO()
