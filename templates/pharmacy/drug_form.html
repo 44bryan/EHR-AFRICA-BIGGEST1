@@ -1,126 +1,174 @@
 {% extends "layouts/base_authenticated.html" %}
-{% block title %}{{ action }}{% endblock %}
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-8">
-    <div class="card mb-3 border-0 shadow-sm">
-      <div class="card-header bg-white d-flex align-items-center justify-content-between">
-        <h5 class="mb-0 fw-semibold">{{ action }}</h5>
-        <a href="{% if drug %}{% url 'pharmacy:drug_detail' drug.id %}{% else %}{% url 'pharmacy:drug_list' %}{% endif %}"
-           class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-arrow-left me-1"></i>Back
-        </a>
-      </div>
-      <div class="card-body">
-        <form method="post">
-          {% csrf_token %}
-          {% if form.non_field_errors %}
-          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
-          {% endif %}
+{% block title %}{% if drug %}Edit Drug — {{ drug.name }}{% else %}New Drug{% endif %}{% endblock %}
 
-          <div class="row g-3">
+{% block extra_css %}
+<style>
+.product-tabs { border-bottom: 2px solid #e9ecef; margin-bottom: 0; }
+.product-tabs .tab-btn {
+  background: none; border: none; border-bottom: 3px solid transparent;
+  padding: .6rem 1.1rem; margin-bottom: -2px;
+  font-size: .85rem; font-weight: 600; color: #64748b; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .4rem; transition: all .15s;
+}
+.product-tabs .tab-btn:hover { color: #0891b2; }
+.product-tabs .tab-btn.active { color: #0891b2; border-bottom-color: #0891b2; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+.section-label {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: #94a3b8; margin-bottom: .6rem;
+  display: flex; align-items: center; gap: .4rem;
+}
+.section-label::after { content:''; flex:1; height:1px; background:#e9ecef; }
+.tab-pane > .tab-card { background:#fff; border:1px solid #e9ecef; border-radius:12px; padding:1.5rem; }
+.form-sidebar { position: sticky; top: 80px; }
+.status-toggle-wrap { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.75rem 1rem; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0">{% if drug %}Edit — {{ drug.name }}{% else %}New Drug{% endif %}</h5>
+    <p class="page-subtitle text-muted small mb-0">{% if drug %}Update formulary entry{% else %}Add a new drug to the pharmacy formulary{% endif %}</p>
+  </div>
+  <a href="{% if drug %}{% url 'pharmacy:drug_detail' drug.id %}{% else %}{% url 'pharmacy:drug_list' %}{% endif %}"
+     class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to {% if drug %}Drug{% else %}Formulary{% endif %}
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" id="drugForm">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+  <div class="alert alert-danger mb-3">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <div class="row g-4">
+    <!-- Main tabs column -->
+    <div class="col-lg-9">
+
+      <!-- Tab nav -->
+      <div class="product-tabs mb-0">
+        <button type="button" class="tab-btn active" onclick="switchTab('basic', this)">
+          <i class="bi bi-capsule"></i>Drug Info
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('pricing', this)">
+          <i class="bi bi-currency-dollar"></i>Pricing
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('storage', this)">
+          <i class="bi bi-thermometer-half"></i>Storage &amp; Control
+        </button>
+      </div>
+
+      <!-- Tab 1: Drug Info -->
+      <div id="tab-basic" class="tab-pane active">
+        <div class="tab-card">
+          <div class="section-label mb-3">Identification</div>
+          <div class="row g-3 mb-4">
             <div class="col-md-6">
-              <label class="form-label fw-semibold small">Drug Name <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Drug Name <span class="text-danger">*</span></label>
               {{ form.name }}
               {% if form.name.errors %}<div class="invalid-feedback d-block">{{ form.name.errors.0 }}</div>{% endif %}
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold small">Generic Name <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Generic Name <span class="text-danger">*</span></label>
               {{ form.generic_name }}
+              {% if form.generic_name.errors %}<div class="invalid-feedback d-block">{{ form.generic_name.errors.0 }}</div>{% endif %}
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold small">Brand Name</label>
+              <label class="form-label fw-semibold">Brand Name <span class="text-muted fw-normal">(optional)</span></label>
               {{ form.brand_name }}
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-semibold small">Category <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
               {{ form.category }}
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-semibold small">Form <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Dosage Form <span class="text-danger">*</span></label>
               {{ form.form }}
             </div>
+          </div>
+
+          <div class="section-label mb-3">Dispensing Details</div>
+          <div class="row g-3 mb-4">
             <div class="col-md-4">
-              <label class="form-label fw-semibold small">Strength</label>
+              <label class="form-label fw-semibold">Strength</label>
               {{ form.strength }}
+              <div class="form-text">e.g. 500mg, 250mg/5ml</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label fw-semibold small">Unit of Measure</label>
+              <label class="form-label fw-semibold">Unit of Measure</label>
               {{ form.unit }}
+              <div class="form-text">e.g. tablet, vial, bottle</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label fw-semibold small">Barcode</label>
+              <label class="form-label fw-semibold">Barcode</label>
               {{ form.barcode }}
             </div>
-
-            <div class="col-md-4">
-              <label class="form-label fw-semibold small">Reorder Level</label>
-              {{ form.reorder_level }}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold small">Storage Condition</label>
-              {{ form.storage_condition }}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold small">Controlled Schedule</label>
-              {{ form.controlled_schedule }}
-            </div>
-
             <div class="col-12">
-              <label class="form-label fw-semibold small">Description / Notes</label>
+              <label class="form-label fw-semibold">Description / Notes</label>
               {{ form.description }}
             </div>
+          </div>
 
+          <div class="section-label mb-3">Flags</div>
+          <div class="row g-3">
             <div class="col-md-4">
-              <div class="form-check form-switch mt-2">
-                {{ form.is_active }}
-                <label class="form-check-label fw-semibold" for="{{ form.is_active.id_for_label }}">Active (visible in formulary)</label>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="form-check form-switch mt-2">
+              <div class="form-check form-switch">
                 {{ form.requires_prescription }}
-                <label class="form-check-label fw-semibold" for="{{ form.requires_prescription.id_for_label }}">Requires Prescription</label>
+                <label class="form-check-label fw-semibold" for="{{ form.requires_prescription.id_for_label }}">
+                  Requires Prescription
+                  <div class="text-muted fw-normal small">Cannot be dispensed without a valid Rx</div>
+                </label>
               </div>
             </div>
             <div class="col-md-4">
-              <div class="form-check form-switch mt-2">
+              <div class="form-check form-switch">
                 {{ form.is_controlled }}
-                <label class="form-check-label fw-semibold" for="{{ form.is_controlled.id_for_label }}">Controlled Drug (Narcotics)</label>
+                <label class="form-check-label fw-semibold" for="{{ form.is_controlled.id_for_label }}">
+                  Controlled Drug
+                  <div class="text-muted fw-normal small">Narcotics — requires controlled register</div>
+                </label>
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {# ── Tier-Based Pricing ── #}
-          <hr class="my-3">
-          <h6 class="fw-bold mb-3">
-            <i class="bi bi-currency-exchange me-2 text-success"></i>Tier-Based Pricing (FCFA)
-            {% if not can_edit_prices %}
-            <span class="badge bg-secondary ms-2" style="font-size:.65rem;">
-              <i class="bi bi-lock-fill me-1"></i>View Only — Head Pharmacist sets prices
-            </span>
-            {% endif %}
-          </h6>
+      <!-- Tab 2: Pricing -->
+      <div id="tab-pricing" class="tab-pane">
+        <div class="tab-card">
           {% if not can_edit_prices %}
-          <div class="alert alert-warning small py-2 mb-3">
+          <div class="alert alert-warning small py-2 mb-4">
             <i class="bi bi-shield-lock me-1"></i>
             <strong>Price editing is restricted.</strong> Only Head Pharmacist, Finance Director, or Admin can modify drug prices.
-            Contact your Head Pharmacist to update pricing.
           </div>
           {% endif %}
-          <div class="row g-3">
+
+          <div class="section-label mb-3">Base Pricing (XAF)</div>
+          <div class="row g-3 mb-4">
             <div class="col-md-3">
-              <label class="form-label fw-semibold small">Cost Price</label>
+              <label class="form-label fw-semibold">Cost Price</label>
               {{ form.cost_price }}
-              <div class="form-text small text-muted">Purchase / import cost</div>
+              <div class="form-text">Purchase / import cost</div>
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-semibold small text-primary">
-                <i class="bi bi-circle-fill me-1" style="font-size:6px;vertical-align:middle;color:var(--ehr-primary);"></i>Standard <span class="text-danger">*</span>
-              </label>
+              <label class="form-label fw-semibold text-primary">Standard Price <span class="text-danger">*</span></label>
               {{ form.selling_price }}
-              <div class="form-text small text-muted">Default selling price</div>
+              <div class="form-text">Default if no tier match</div>
             </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold text-warning">Insurance Markup %</label>
+              {{ form.insurance_markup_pct }}
+              <div class="form-text">Cost × (1 + X%)</div>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">Tier Prices (XAF) — leave 0 to use Standard</div>
+          <div class="row g-3 mb-3">
             <div class="col-md-3">
               <label class="form-label fw-semibold small" style="color:#fd7e14;">
                 <i class="bi bi-circle-fill me-1" style="font-size:6px;vertical-align:middle;"></i>Express
@@ -151,43 +199,119 @@
               </label>
               {{ form.price_outreach }}
             </div>
-            <div class="col-md-3">
-              <label class="form-label fw-semibold small text-warning">
-                <i class="bi bi-shield-check me-1"></i>Insurance Markup %
-              </label>
-              {{ form.insurance_markup_pct }}
-              <div class="form-text small text-muted">Cost + X% for insured patients</div>
-            </div>
-          </div>
-          <div class="alert alert-info small mt-3 mb-0 py-2">
-            <i class="bi bi-info-circle me-1"></i>
-            <strong>How pricing works:</strong> When dispensing, the system auto-selects the price based on the patient's visit tier.
-            For insured patients: <code>cost_price x (1 + markup%)</code>.
-            Leave tier prices at 0 to fall back to the Standard price.
           </div>
 
-          <hr class="my-4">
-          <div class="d-flex justify-content-end gap-2">
-            <button type="submit" class="btn btn-primary px-4">
-              <i class="bi bi-save me-1"></i>Save Drug
+          <div class="alert alert-info small py-2 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            At dispensing, the system auto-selects the price matching the patient's visit tier.
+            Insured patients use <code>cost_price × (1 + markup%)</code>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Storage & Control -->
+      <div id="tab-storage" class="tab-pane">
+        <div class="tab-card">
+          <div class="section-label mb-3">Storage</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Storage Condition</label>
+              {{ form.storage_condition }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Reorder Level</label>
+              {{ form.reorder_level }}
+              <div class="form-text">Alert triggered when stock falls below this quantity</div>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">Controlled Drug Details</div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Controlled Schedule</label>
+              {{ form.controlled_schedule }}
+              <div class="form-text">Only applicable if the Controlled Drug flag is enabled</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /col-lg-9 -->
+
+    <!-- Right Sidebar -->
+    <div class="col-lg-3">
+      <div class="form-sidebar d-flex flex-column gap-3">
+
+        <!-- Status -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Status</div>
+            <div class="status-toggle-wrap d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold" id="statusLabel">{% if not drug or drug.is_active %}Active{% else %}Inactive{% endif %}</div>
+                <div class="text-muted small">Visible in formulary</div>
+              </div>
+              <div class="form-check form-switch mb-0">
+                {{ form.is_active }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% if drug %}
+        <!-- Stock info -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Current Stock</div>
+            <dl class="mb-0 small">
+              <dt class="text-muted">On Hand</dt>
+              <dd class="fw-bold fs-5 {% if drug.current_stock <= drug.reorder_level %}text-danger{% else %}text-success{% endif %} font-monospace">
+                {{ drug.current_stock }} {{ drug.unit }}s
+              </dd>
+              <dt class="text-muted mt-2">Reorder Level</dt>
+              <dd>{{ drug.reorder_level }} {{ drug.unit }}s</dd>
+            </dl>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Save -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{% if drug %}Save Changes{% else %}Add Drug{% endif %}
             </button>
             <a href="{% if drug %}{% url 'pharmacy:drug_detail' drug.id %}{% else %}{% url 'pharmacy:drug_list' %}{% endif %}"
                class="btn btn-outline-secondary">Cancel</a>
           </div>
-        </form>
+        </div>
+
       </div>
     </div>
-  </div>
-</div>
-{% if not can_edit_prices %}
+
+  </div><!-- /row -->
+</form>
+
 <script>
-// Disable all price fields for non-authorized users
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+{% if not can_edit_prices %}
 ['id_cost_price','id_selling_price','id_price_express','id_price_vip',
  'id_price_executive_vip','id_price_staff','id_price_outreach','id_insurance_markup_pct'
-].forEach(function(id) {
+].forEach(function(id){
   var el = document.getElementById(id);
-  if (el) { el.readOnly = true; el.classList.add('bg-light'); el.style.cursor = 'not-allowed'; el.tabIndex = -1; }
+  if (el){ el.readOnly = true; el.classList.add('bg-light'); el.style.cursor = 'not-allowed'; el.tabIndex = -1; }
 });
-</script>
 {% endif %}
+var activeToggle = document.getElementById('{{ form.is_active.id_for_label }}');
+if (activeToggle) {
+  activeToggle.addEventListener('change', function(){
+    document.getElementById('statusLabel').textContent = this.checked ? 'Active' : 'Inactive';
+  });
+}
+</script>
 {% endblock %}
