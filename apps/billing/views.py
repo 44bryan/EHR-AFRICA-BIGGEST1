@@ -6448,7 +6448,7 @@ def asset_edit(request, asset_id):
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERAL LEDGER  —  Chart of Accounts, Journal Entries, Reports
 # ═══════════════════════════════════════════════════════════════════════════════
-from .models import GLAccount, AccountType, JournalEntry, JournalLine, JournalEntryStatus, CostCenter
+from .models import GLAccount, AccountType, JournalEntry, JournalLine, JournalEntryStatus, CostCenter, JournalType
 
 
 def _can_access_gl(user):
@@ -8442,8 +8442,8 @@ def voucher_wise_balance(request):
     rows = []
     grand_dr = grand_cr = 0
     for entry in qs:
-        dr = entry.lines.filter(is_deleted=False).aggregate(t=_Sum('debit_amount'))['t'] or 0
-        cr = entry.lines.filter(is_deleted=False).aggregate(t=_Sum('credit_amount'))['t'] or 0
+        dr = entry.lines.aggregate(t=_Sum('debit_amount'))['t'] or 0
+        cr = entry.lines.aggregate(t=_Sum('credit_amount'))['t'] or 0
         diff = abs(dr - cr)
         rows.append({'entry': entry, 'total_dr': dr, 'total_cr': cr,
                      'balanced': diff < Decimal('0.01'), 'diff': diff})
