@@ -10,9 +10,14 @@
 .rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
 @media print {
   .no-print { display:none !important; }
-  @page { size: A4 landscape; margin: 10mm 8mm; }
+  @page { size: A4 landscape; margin: 10mm 8mm 18mm 8mm; }
   body { font-size:7.5pt !important; }
+  .print-only-header { display:block !important; }
+  .print-footer { display:block !important; }
 }
+.print-only-header { display:none; }
+.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
+  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
 </style>
 {% endblock %}
 
@@ -38,6 +43,13 @@
 
 {% block content %}
 {% include 'components/letterhead.html' %}
+
+<!-- Print-only report header -->
+<div class="print-only-header mb-3">
+  <h5 class="fw-bold mb-1">Voucher-Wise Balance</h5>
+  <div class="small text-muted">Period: {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</div>
+  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="vwPrintDate"></span></div>
+</div>
 
 <!-- Filters -->
 <form method="get" class="row g-2 mb-4 align-items-end no-print">
@@ -72,8 +84,8 @@
           <th>Voucher #</th>
           <th>Type</th>
           <th>Description</th>
-          <th class="text-end">Total Debits</th>
-          <th class="text-end">Total Credits</th>
+          <th class="text-end">Total Debits (XAF)</th>
+          <th class="text-end">Total Credits (XAF)</th>
           <th class="text-center">Balanced</th>
         </tr>
       </thead>
@@ -128,4 +140,13 @@
     </table>
   </div>
 </div>
+
+<div class="print-footer">
+  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Printed: <span id="vwPrintDate2"></span> &nbsp;&bull;&nbsp; Voucher-Wise Balance &nbsp;&bull;&nbsp; {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  ['vwPrintDate','vwPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+</script>
 {% endblock %}

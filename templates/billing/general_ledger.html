@@ -17,7 +17,13 @@
 @media print {
   .no-print { display:none !important; }
   .acct-header { background:#f8f9fa !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  @page { size: A4 portrait; margin: 10mm 10mm 18mm 10mm; }
+  .print-only-header { display:block !important; }
+  .print-footer { display:block !important; }
 }
+.print-only-header { display:none; }
+.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
+  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
 </style>
 {% endblock %}
 
@@ -43,6 +49,13 @@
 
 {% block content %}
 {% include 'components/letterhead.html' %}
+
+<!-- Print-only report header -->
+<div class="print-only-header mb-3">
+  <h5 class="fw-bold mb-1">General Ledger</h5>
+  {% if request.GET.date_from %}<div class="small text-muted">Period: {{ request.GET.date_from }} — {{ request.GET.date_to }}</div>{% endif %}
+  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="glPrintDate"></span></div>
+</div>
 
 <!-- Filters -->
 <form method="get" class="row g-2 mb-4 align-items-end no-print">
@@ -96,9 +109,9 @@
             <th style="width:100px">Date</th>
             <th>Description</th>
             <th style="width:110px">Doc #</th>
-            <th class="text-end" style="width:120px">Debit</th>
-            <th class="text-end" style="width:120px">Credit</th>
-            <th class="text-end" style="width:130px">Balance</th>
+            <th class="text-end" style="width:120px">Debit (XAF)</th>
+            <th class="text-end" style="width:120px">Credit (XAF)</th>
+            <th class="text-end" style="width:130px">Balance (XAF)</th>
           </tr>
         </thead>
         <tbody>
@@ -149,4 +162,13 @@
     {% else %}Select an account above to view its transaction history.{% endif %}
   </div>
 {% endif %}
+
+<div class="print-footer">
+  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Printed: <span id="glPrintDate2"></span> &nbsp;&bull;&nbsp; General Ledger
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  ['glPrintDate','glPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+</script>
 {% endblock %}

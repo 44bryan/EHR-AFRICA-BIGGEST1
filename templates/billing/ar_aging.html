@@ -12,9 +12,14 @@
   display:flex; justify-content:space-between; align-items:center; font-size:.83rem; }
 @media print {
   .no-print { display:none !important; }
-  @page { size: A4 landscape; margin: 10mm 8mm; }
+  @page { size: A4 landscape; margin: 10mm 8mm 18mm 8mm; }
   body { font-size:7.5pt !important; }
+  .print-only-header { display:block !important; }
+  .print-footer { display:block !important; }
 }
+.print-only-header { display:none; }
+.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
+  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
 </style>
 {% endblock %}
 
@@ -40,6 +45,13 @@
 
 {% block content %}
 {% include 'components/letterhead.html' %}
+
+<!-- Print-only report header -->
+<div class="print-only-header mb-3">
+  <h5 class="fw-bold mb-1">Accounts Receivable Aging Report</h5>
+  <div class="small text-muted">As of {{ today|date:"d M Y" }}</div>
+  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="arPrintDate"></span></div>
+</div>
 
 <!-- Summary strip -->
 <div class="row g-2 mb-4 no-print">
@@ -95,7 +107,7 @@
           <th>Invoice #</th>
           <th>Patient / Account</th>
           <th>Issue Date</th>
-          <th class="text-end">Outstanding</th>
+          <th class="text-end">Outstanding (XAF)</th>
           <th class="text-end">Age (days)</th>
           <th>Status</th>
           <th></th>
@@ -170,4 +182,13 @@
   No outstanding invoices for the selected period.
 </div>
 {% endif %}
+
+<div class="print-footer">
+  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Printed: <span id="arPrintDate2"></span> &nbsp;&bull;&nbsp; AR Aging Report &nbsp;&bull;&nbsp; As of {{ today|date:"d M Y" }}
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  ['arPrintDate','arPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+</script>
 {% endblock %}
