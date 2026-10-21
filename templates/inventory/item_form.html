@@ -4,7 +4,7 @@
 {% block extra_css %}
 <style>
 /* ── Product form tab nav ── */
-.product-tabs { border-bottom: 2px solid #e9ecef; margin-bottom: 1.5rem; }
+.product-tabs { border-bottom: 2px solid #e9ecef; margin-bottom: 0; }
 .product-tabs .tab-btn {
   background: none; border: none; border-bottom: 3px solid transparent;
   padding: .6rem 1.1rem; margin-bottom: -2px;
@@ -36,10 +36,17 @@
 .img-preview { max-height: 80px; max-width: 120px; object-fit: contain; display:none; margin: 0 auto .5rem; }
 
 /* ── GL account chip ── */
-.gl-chip { display:inline-flex; align-items:center; gap:.3rem;
-  background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px;
-  padding:.2rem .6rem; font-size:.72rem; font-weight:600; color:#0369a1; }
+.gl-chip { display:inline-flex; align-items:center; gap:.3rem; padding:.2rem .55rem;
+  background:#f1f5f9; border:1px solid #e2e8f0; border-radius:20px; font-size:.78rem; font-weight:600; }
+.gl-chip.revenue { background:#dcfce7; border-color:#86efac; color:#15803d; }
+.gl-chip.expense { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+.gl-chip.asset   { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
+.gl-chip.other   { background:#f3f4f6; border-color:#d1d5db; color:#374151; }
+
+/* ── Tab content card ── */
 .tab-pane > .tab-card { background:#fff; border:1px solid #e9ecef; border-radius:12px; padding:1.5rem; }
+
+/* ── Right sidebar ── */
 .form-sidebar { position: sticky; top: 80px; }
 </style>
 {% endblock %}
@@ -84,9 +91,11 @@
 
   <div class="row g-4">
 
-    <div class="col-lg-8">
+    <!-- ── Main tabs column ── -->
+    <div class="col-lg-9">
 
-      <div class="product-tabs mt-2">
+      <!-- Tab nav -->
+      <div class="product-tabs mb-0">
         <button type="button" class="tab-btn active" onclick="switchTab('basic', this)">
           <i class="bi bi-info-circle"></i>Basic Info
         </button>
@@ -101,6 +110,7 @@
         </button>
       </div>
 
+      <!-- ══ Tab 1: Basic Info ══ -->
       <div id="tab-basic" class="tab-pane active">
         <div class="tab-card">
           <div class="section-label mb-3">Identification</div>
@@ -184,94 +194,91 @@
         </div>
       </div>
 
+      <!-- ══ Tab 2: Pricing & Billing ══ -->
       <div id="tab-pricing" class="tab-pane">
         <div class="tab-card">
-        <div class="row g-3">
-
-          <div class="col-12">
-            <div class="section-label"><i class="bi bi-cash-coin text-success"></i>Purchase Cost</div>
-          </div>
-          <div class="col-4">
-            <label class="form-label fw-semibold">Unit Cost (Purchase Price)</label>
-            <div class="input-group">
-              <span class="input-group-text text-muted small">XAF</span>
-              <input type="number" name="unit_cost" class="form-control" step="0.01" min="0"
-                     value="{{ item.unit_cost|default:'0' }}">
+          <div class="section-label mb-3"><i class="bi bi-cash-coin text-success me-1"></i>Purchase Cost</div>
+          <div class="row g-3 mb-4">
+            <div class="col-4">
+              <label class="form-label fw-semibold">Unit Cost (Purchase Price)</label>
+              <div class="input-group">
+                <span class="input-group-text text-muted small">XAF</span>
+                <input type="number" name="unit_cost" class="form-control" step="0.01" min="0"
+                       id="inp_cost" value="{{ item.unit_cost|default:'0' }}" oninput="updateSummary()">
+              </div>
             </div>
           </div>
 
-          <div class="col-12 mt-2">
-            <div class="section-label"><i class="bi bi-receipt text-primary"></i>Billing / Sales Pricing</div>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">Billing Sub-Category (Family)</label>
-            <select name="sub_category" class="form-select ts-select">
-              <option value="">— None —</option>
-              {% for sc in sub_categories %}
-              <option value="{{ sc.id }}" {% if sp_sub_category == sc.id %}selected{% endif %}>{{ sc.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">Desk Tier</label>
-            <select name="tier" class="form-select">
-              <option value="">— All Tiers —</option>
-              <option value="STANDARD" {% if sp_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
-              <option value="EXPRESS"  {% if sp_tier == 'EXPRESS'  %}selected{% endif %}>Express</option>
-              <option value="VIP"      {% if sp_tier == 'VIP'      %}selected{% endif %}>VIP</option>
-              <option value="EVIP"     {% if sp_tier == 'EVIP'     %}selected{% endif %}>Executive VIP</option>
-              <option value="INSURED"  {% if sp_tier == 'INSURED'  %}selected{% endif %}>Insured / HMO</option>
-            </select>
-          </div>
-
-          <div class="col-4">
-            <label class="form-label fw-semibold">Price HT (excl. tax)</label>
-            <div class="input-group">
-              <span class="input-group-text text-muted small">XAF</span>
-              <input type="number" name="price_ht" class="form-control" min="0" step="1"
-                     id="inp_ht" value="{{ sp_price_ht|default:'0' }}">
+          <div class="section-label mb-3"><i class="bi bi-receipt text-primary me-1"></i>Billing / Sales Pricing</div>
+          <div class="row g-3 mb-4">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Billing Sub-Category (Family)</label>
+              <select name="sub_category" class="form-select ts-select">
+                <option value="">— None —</option>
+                {% for sc in sub_categories %}
+                <option value="{{ sc.id }}" {% if sp_sub_category == sc.id %}selected{% endif %}>{{ sc.name }}</option>
+                {% endfor %}
+              </select>
             </div>
-          </div>
-          <div class="col-3">
-            <label class="form-label fw-semibold">Tax Rate</label>
-            <div class="input-group">
-              <input type="number" name="tax_rate" class="form-control" min="0" step="0.01"
-                     id="inp_tax" value="{{ sp_tax_rate|default:'0' }}">
-              <span class="input-group-text text-muted small">%</span>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Desk Tier</label>
+              <select name="tier" class="form-select">
+                <option value="">— All Tiers —</option>
+                <option value="STANDARD" {% if sp_tier == 'STANDARD' %}selected{% endif %}>Standard</option>
+                <option value="EXPRESS"  {% if sp_tier == 'EXPRESS'  %}selected{% endif %}>Express</option>
+                <option value="VIP"      {% if sp_tier == 'VIP'      %}selected{% endif %}>VIP</option>
+                <option value="EVIP"     {% if sp_tier == 'EVIP'     %}selected{% endif %}>Executive VIP</option>
+                <option value="INSURED"  {% if sp_tier == 'INSURED'  %}selected{% endif %}>Insured / HMO</option>
+              </select>
             </div>
-          </div>
-          <div class="col-5">
-            <label class="form-label fw-semibold">Selling Price TTC <span class="text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text text-muted small">XAF</span>
-              <input type="number" name="price" class="form-control fw-bold" min="0" step="1"
-                     id="inp_ttc" value="{{ sp_price|default:'0' }}" required>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Price HT <span class="text-muted fw-normal small">(excl. tax)</span></label>
+              <div class="input-group">
+                <span class="input-group-text text-muted small">XAF</span>
+                <input type="number" name="price_ht" class="form-control" min="0" step="1"
+                       id="inp_ht" value="{{ sp_price_ht|default:'0' }}" oninput="calcTTC()">
+              </div>
             </div>
-          </div>
-
-          <div class="col-12 mt-1">
-            <div class="section-label"><i class="bi bi-shield-check text-info"></i>Special Rates</div>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">NHIS Rate <small class="text-muted">(optional)</small></label>
-            <div class="input-group">
-              <span class="input-group-text text-muted small">XAF</span>
-              <input type="number" name="nhis_price" class="form-control" min="0" step="100"
-                     value="{{ sp_nhis|default:'' }}" placeholder="Leave blank = same as TTC">
+            <div class="col-md-2">
+              <label class="form-label fw-semibold">Tax Rate %</label>
+              <div class="input-group">
+                <input type="number" name="tax_rate" class="form-control" min="0" step="0.01"
+                       id="inp_tax" value="{{ sp_tax_rate|default:'0' }}" oninput="calcTTC()">
+                <span class="input-group-text text-muted small">%</span>
+              </div>
             </div>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">Insurance / HMO Rate <small class="text-muted">(optional)</small></label>
-            <div class="input-group">
-              <span class="input-group-text text-muted small">XAF</span>
-              <input type="number" name="insurance_price" class="form-control" min="0" step="100"
-                     value="{{ sp_insurance|default:'' }}" placeholder="Leave blank = same as TTC">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Selling Price TTC <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text text-muted small">XAF</span>
+                <input type="number" name="price" class="form-control fw-bold" min="0" step="1"
+                       id="inp_ttc" value="{{ sp_price|default:'0' }}" required oninput="updateSummary()">
+              </div>
+              <div class="form-text">Amount billed to the patient.</div>
             </div>
           </div>
 
-          <div class="col-12 mt-1">
-            <div class="section-label"><i class="bi bi-toggles text-secondary"></i>Billing Options</div>
+          <div class="section-label mb-3"><i class="bi bi-shield-check text-info me-1"></i>Special Rates</div>
+          <div class="row g-3 mb-4">
+            <div class="col-6">
+              <label class="form-label fw-semibold">NHIS Rate <small class="text-muted">(optional)</small></label>
+              <div class="input-group">
+                <span class="input-group-text text-muted small">XAF</span>
+                <input type="number" name="nhis_price" class="form-control" min="0" step="100"
+                       value="{{ sp_nhis|default:'' }}" placeholder="Leave blank = same as TTC">
+              </div>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Insurance / HMO Rate <small class="text-muted">(optional)</small></label>
+              <div class="input-group">
+                <span class="input-group-text text-muted small">XAF</span>
+                <input type="number" name="insurance_price" class="form-control" min="0" step="100"
+                       value="{{ sp_insurance|default:'' }}" placeholder="Leave blank = same as TTC">
+              </div>
+            </div>
           </div>
+
+          <div class="section-label mb-3"><i class="bi bi-toggles text-secondary me-1"></i>Billing Options</div>
           <div class="d-flex flex-wrap gap-4 ps-1">
             <div class="form-check form-switch">
               <input type="checkbox" name="is_taxable" class="form-check-input" id="chk_taxable" role="switch"
@@ -285,80 +292,84 @@
             </div>
           </div>
         </div>
-        </div>
       </div>
 
+      <!-- ══ Tab 3: Accounting ══ -->
       <div id="tab-accounting" class="tab-pane">
         <div class="tab-card">
-        <div class="alert alert-light border small mb-4 d-flex gap-2">
-          <i class="bi bi-info-circle text-primary flex-shrink-0 mt-1"></i>
-          <div>
+          <div class="section-label mb-3">GL Account Mapping</div>
+          <p class="text-muted small mb-4">
+            <i class="bi bi-info-circle me-1"></i>
             GL accounts control how stock movements post to the ledger automatically.
             Leave blank to use the store location default. OHADA codes shown.
+          </p>
+          <div class="row g-4 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip revenue me-1"><i class="bi bi-arrow-up-right"></i>7xxx</span>
+                Sales / Revenue Account
+              </label>
+              <select name="gl_account" class="form-select ts-select">
+                <option value="">— Default (from category) —</option>
+                {% for a in gl_accounts %}
+                <option value="{{ a.pk }}" {% if sp_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 7011 Ventes de marchandises / 7061 Prestations de services</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip expense me-1"><i class="bi bi-arrow-down-left"></i>6xxx</span>
+                Purchase / Cost Account
+              </label>
+              <select name="purchase_gl_account" class="form-select ts-select">
+                <option value="">— Default (from category) —</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}" {% if sp_purchase_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 6011 Achats de marchandises / 6031 Variation de stocks</div>
+            </div>
           </div>
-        </div>
-        <div class="row g-4">
-          <div class="col-md-6">
-            <label class="form-label fw-semibold d-flex align-items-center gap-2">
-              <span class="gl-chip"><i class="bi bi-arrow-up-right"></i>Income</span>
-              Sales / Revenue Account
-            </label>
-            <select name="gl_account" class="form-select ts-select">
-              <option value="">— Default (from category) —</option>
-              {% for a in gl_accounts %}
-              <option value="{{ a.pk }}" {% if sp_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">e.g. 7011 Ventes de marchandises / 7061 Prestations de services</div>
+
+          <div class="section-label mb-3">Inventory GL Accounts</div>
+          <div class="row g-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip asset me-1"><i class="bi bi-archive"></i>3xxx</span>
+                Stock Asset Account
+              </label>
+              <select name="stock_gl_account" class="form-select ts-select">
+                <option value="">— Default (from store location) —</option>
+                {% for a in gl_asset_accounts %}
+                <option value="{{ a.pk }}" {% if sp_stock_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 3111 Marchandises / 3121 Matières premières</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip other me-1"><i class="bi bi-arrow-left-right"></i>6031</span>
+                Stock Variation Account
+              </label>
+              <select name="stock_variation_gl_account" class="form-select ts-select">
+                <option value="">— Default —</option>
+                {% for a in gl_expense_accounts %}
+                <option value="{{ a.pk }}" {% if sp_var_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 6031 Variation de stocks de marchandises</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">UDI Code <small class="text-muted">(implants only)</small></label>
+              <input type="text" name="udi_code" class="form-control font-monospace"
+                     value="{{ item.udi_code|default:'' }}" placeholder="Unique Device Identifier">
+            </div>
           </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold d-flex align-items-center gap-2">
-              <span class="gl-chip" style="background:#fef2f2;border-color:#fecaca;color:#dc2626"><i class="bi bi-arrow-down-left"></i>Expense</span>
-              Purchase / Cost Account
-            </label>
-            <select name="purchase_gl_account" class="form-select ts-select">
-              <option value="">— Default (from category) —</option>
-              {% for a in gl_expense_accounts %}
-              <option value="{{ a.pk }}" {% if sp_purchase_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">e.g. 6011 Achats de marchandises / 6031 Variation de stocks</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold d-flex align-items-center gap-2">
-              <span class="gl-chip" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d"><i class="bi bi-archive"></i>Inventory</span>
-              Stock Asset Account
-            </label>
-            <select name="stock_gl_account" class="form-select ts-select">
-              <option value="">— Default (from store location) —</option>
-              {% for a in gl_asset_accounts %}
-              <option value="{{ a.pk }}" {% if sp_stock_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">e.g. 3111 Marchandises / 3121 Matières premières</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold d-flex align-items-center gap-2">
-              <span class="gl-chip" style="background:#fefce8;border-color:#fde68a;color:#b45309"><i class="bi bi-arrow-left-right"></i>COGS</span>
-              Stock Variation Account
-            </label>
-            <select name="stock_variation_gl_account" class="form-select ts-select">
-              <option value="">— Default —</option>
-              {% for a in gl_expense_accounts %}
-              <option value="{{ a.pk }}" {% if sp_var_gl == a.pk %}selected{% endif %}>{{ a.code }} — {{ a.name }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">e.g. 6031 Variation de stocks de marchandises</div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold">UDI Code <small class="text-muted">(implants only)</small></label>
-            <input type="text" name="udi_code" class="form-control font-monospace"
-                   value="{{ item.udi_code|default:'' }}" placeholder="Unique Device Identifier">
-          </div>
-        </div>
         </div>
       </div>
 
+      <!-- ══ Tab 4: Tracking ══ -->
       <div id="tab-tracking" class="tab-pane">
         <div class="tab-card">
           <div class="section-label mb-3">Stock Levels</div>
@@ -451,86 +462,88 @@
         </div>
       </div>
 
-    </div>
+    </div><!-- /col-lg-9 -->
 
-    <div class="col-lg-4">
+    <!-- ── Right Sidebar ── -->
+    <div class="col-lg-3">
       <div class="form-sidebar d-flex flex-column gap-3">
 
-      <div class="card border-0 shadow-sm">
-        <div class="card-body">
-          <div class="section-label mb-3">Status</div>
-          <div class="status-toggle-wrap d-flex align-items-center justify-content-between">
-            <div>
-              <div class="fw-semibold" id="lbl_active_title">{% if item.is_active or action == 'Create' %}Active{% else %}Inactive{% endif %}</div>
-              <div class="text-muted small">Inactive items hidden from POS &amp; stock forms</div>
-            </div>
-            <div class="form-check form-switch mb-0">
-              <input type="checkbox" name="is_active" class="form-check-input" id="chk_active" role="switch"
-                     {% if item.is_active or action == 'Create' %}checked{% endif %}
-                     style="width:2.4rem;height:1.2rem;">
-              <label class="form-check-label fw-semibold" for="chk_active" id="lbl_active">
-                {% if item.is_active or action == 'Create' %}Active{% else %}Inactive{% endif %}
-              </label>
+        <!-- Status -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Status</div>
+            <div class="status-toggle-wrap d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold" id="lbl_active_title">{% if item.is_active or action == 'Create' %}Active{% else %}Inactive{% endif %}</div>
+                <div class="text-muted small">Inactive items hidden from POS &amp; stock forms</div>
+              </div>
+              <div class="form-check form-switch mb-0">
+                <input type="checkbox" name="is_active" class="form-check-input" id="chk_active" role="switch"
+                       {% if item.is_active or action == 'Create' %}checked{% endif %}
+                       style="width:2.4rem;height:1.2rem;"
+                       onchange="var l=this.checked?'Active':'Inactive';document.getElementById('lbl_active').textContent=l;document.getElementById('lbl_active_title').textContent=l;">
+                <label class="form-check-label fw-semibold" for="chk_active" id="lbl_active">
+                  {% if item.is_active or action == 'Create' %}Active{% else %}Inactive{% endif %}
+                </label>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header py-2 bg-white">
-          <span class="fw-semibold small"><i class="bi bi-image me-1 text-secondary"></i>Product Image</span>
-        </div>
-        <div class="card-body text-center">
-          {% if item.image %}
-          <img src="{{ item.image.url }}" class="img-preview" id="imgPreview" style="display:block;">
-          {% else %}
-          <img class="img-preview" id="imgPreview">
-          {% endif %}
-          <div class="img-upload-box" onclick="document.getElementById('imgInput').click()">
-            <i class="bi bi-cloud-upload text-muted fs-4 d-block mb-1"></i>
-            <div class="small text-muted">Click to upload image</div>
-            <div class="text-muted" style="font-size:.7rem;">JPEG, PNG or WebP · Max 800×800px</div>
+        <!-- Product Image -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-header py-2 bg-white">
+            <span class="fw-semibold small"><i class="bi bi-image me-1 text-secondary"></i>Product Image</span>
           </div>
-          <input type="file" name="image" id="imgInput" accept="image/*" class="d-none" onchange="previewImg(this)">
-        </div>
-      </div>
-
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header py-2 bg-white">
-          <span class="fw-semibold small"><i class="bi bi-card-checklist me-1 text-secondary"></i>Summary</span>
-        </div>
-        <div class="card-body">
-          <table class="table table-sm table-borderless mb-0" style="font-size:.8rem;">
-            <tr>
-              <td class="text-muted ps-0">Selling Price</td>
-              <td class="fw-bold text-end pe-0" id="sum_price">{{ sp_price|default:'0'|floatformat:0 }} XAF</td>
-            </tr>
-            <tr>
-              <td class="text-muted ps-0">Unit Cost</td>
-              <td class="fw-bold text-end pe-0" id="sum_cost">{{ item.unit_cost|default:'0'|floatformat:0 }} XAF</td>
-            </tr>
-            {% if action == 'Edit' %}
-            <tr>
-              <td class="text-muted ps-0">In Stock</td>
-              <td class="fw-bold text-end pe-0">{{ item.current_stock|default:0 }} {{ item.unit|default:'units' }}</td>
-            </tr>
+          <div class="card-body text-center">
+            {% if item.image %}
+            <img src="{{ item.image.url }}" class="img-preview" id="imgPreview" style="display:block;">
+            {% else %}
+            <img class="img-preview" id="imgPreview">
             {% endif %}
-          </table>
+            <div class="img-upload-box" onclick="document.getElementById('imgInput').click()">
+              <i class="bi bi-cloud-upload text-muted fs-4 d-block mb-1"></i>
+              <div class="small text-muted">Click to upload image</div>
+              <div class="text-muted" style="font-size:.7rem;">JPEG, PNG or WebP · Max 800×800px</div>
+            </div>
+            <input type="file" name="image" id="imgInput" accept="image/*" class="d-none" onchange="previewImg(this)">
+          </div>
         </div>
-      </div>
 
-      <div class="card border-0 shadow-sm">
-        <div class="card-body d-grid gap-2">
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-check-lg me-1"></i>
-            {% if action == 'Create' %}Create Product{% else %}Save Changes{% endif %}
-          </button>
-          <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <!-- Summary -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Summary</div>
+            <dl class="mb-0 small">
+              <dt class="text-muted">Selling Price TTC</dt>
+              <dd class="fw-bold fs-5 text-primary font-monospace" id="sum_price">
+                {{ sp_price|default:0|floatformat:0 }} XAF
+              </dd>
+              <dt class="text-muted mt-2">Unit Cost</dt>
+              <dd class="fw-semibold" id="sum_cost">{{ item.unit_cost|default:'0'|floatformat:0 }} XAF</dd>
+              {% if action == 'Edit' %}
+              <dt class="text-muted mt-2">In Stock</dt>
+              <dd class="fw-semibold {% if item.current_stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
+                {{ item.current_stock|default:0 }} {{ item.unit|default:'units' }}
+              </dd>
+              {% endif %}
+            </dl>
+          </div>
         </div>
-      </div>
+
+        <!-- Save -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>
+              {% if action == 'Create' %}Create Product{% else %}Save Changes{% endif %}
+            </button>
+            <a href="{% url 'inventory:item_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </div>
 
       </div>
-    </div>
+    </div><!-- /col-lg-3 -->
 
   </div>{# /row #}
 </form>
@@ -547,13 +560,6 @@ function switchTab(name, btn) {
   btn.classList.add('active');
 }
 
-/* ── Active toggle label ────────────────────────── */
-document.getElementById('chk_active').addEventListener('change', function() {
-  var label = this.checked ? 'Active' : 'Inactive';
-  document.getElementById('lbl_active').textContent = label;
-  document.getElementById('lbl_active_title').textContent = label;
-});
-
 /* ── Image preview ──────────────────────────────── */
 function previewImg(input) {
   const preview = document.getElementById('imgPreview');
@@ -564,18 +570,23 @@ function previewImg(input) {
   }
 }
 
-/* ── TTC auto-calc from HT + tax ───────────────── */
-const ht  = document.getElementById('inp_ht');
-const tax = document.getElementById('inp_tax');
-const ttc = document.getElementById('inp_ttc');
-const sumPrice = document.getElementById('sum_price');
-function calcTTC() {
-  const h = parseFloat(ht.value) || 0;
-  const t = parseFloat(tax.value) || 0;
-  if (h > 0) { ttc.value = Math.round(h * (1 + t / 100)); }
-  if (sumPrice) sumPrice.textContent = (parseInt(ttc.value) || 0).toLocaleString('fr-FR') + ' XAF';
+/* ── Summary live update ────────────────────────── */
+function updateSummary() {
+  const ttc = parseInt(document.getElementById('inp_ttc').value) || 0;
+  const cost = parseInt(document.getElementById('inp_cost').value) || 0;
+  document.getElementById('sum_price').textContent = ttc.toLocaleString('fr-FR') + ' XAF';
+  document.getElementById('sum_cost').textContent  = cost.toLocaleString('fr-FR') + ' XAF';
 }
-if (ht) { ht.addEventListener('input', calcTTC); tax.addEventListener('input', calcTTC); }
+
+/* ── TTC auto-calc from HT + tax ───────────────── */
+function calcTTC() {
+  const h = parseFloat(document.getElementById('inp_ht').value) || 0;
+  const t = parseFloat(document.getElementById('inp_tax').value) || 0;
+  if (h > 0) {
+    document.getElementById('inp_ttc').value = Math.round(h * (1 + t / 100));
+  }
+  updateSummary();
+}
 
 /* ── Optical GL auto-suggest ────────────────────── */
 (function () {
