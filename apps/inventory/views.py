@@ -784,6 +784,7 @@ def item_create(request):
             location=request.POST.get('location', '').strip(),
             store_location=store_loc,
             description=request.POST.get('description', '').strip(),
+            is_active='is_active' in request.POST,
             requires_expiry_tracking='requires_expiry_tracking' in request.POST,
             is_consignment='is_consignment' in request.POST,
             udi_code=request.POST.get('udi_code', '').strip(),
@@ -887,6 +888,7 @@ def item_edit(request, item_id):
         item.max_stock_level    = int(request.POST.get('max_stock_level', 0) or 0)
         item.location           = request.POST.get('location', '').strip()
         item.description        = request.POST.get('description', '').strip()
+        item.is_active          = 'is_active' in request.POST
         item.requires_expiry_tracking = 'requires_expiry_tracking' in request.POST
         item.is_consignment     = 'is_consignment' in request.POST
         item.udi_code           = request.POST.get('udi_code', '').strip()
