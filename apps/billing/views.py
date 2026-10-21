@@ -8580,7 +8580,7 @@ def customer_ledger_summary(request):
                 'total_invoiced': Decimal('0'),
                 'total_paid': Decimal('0'),
             }
-        patient_map[pid]['total_invoiced'] += inv.total_amount or Decimal('0')
+        patient_map[pid]['total_invoiced'] += inv.total or Decimal('0')
         patient_map[pid]['total_paid'] += inv.amount_paid or Decimal('0')
 
     rows = []
