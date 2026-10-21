@@ -69,6 +69,7 @@ urlpatterns = [
     path('service-prices/', views.service_price_list, name='service_price_list'),
     path('service-prices/create/', views.service_price_create, name='service_price_create'),
     path('service-prices/<uuid:price_id>/edit/', views.service_price_edit, name='service_price_edit'),
+    path('service-prices/<uuid:price_id>/form/', views.service_price_edit_form, name='service_price_edit_form'),
     path('service-prices/<uuid:price_id>/toggle/', views.service_price_toggle, name='service_price_toggle'),
 
     # ── Service Sub-Categories ───────────────────────────────────────────────

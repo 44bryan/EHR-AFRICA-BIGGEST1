@@ -1,0 +1,435 @@
+{% extends "layouts/base_authenticated.html" %}
+{% block title %}{% if sp %}Edit Service{% else %}New Service{% endif %} — Billing Catalogue{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Service form tab nav ── */
+.product-tabs { border-bottom: 2px solid #e9ecef; margin-bottom: 1.5rem; }
+.product-tabs .tab-btn {
+  background: none; border: none; border-bottom: 3px solid transparent;
+  padding: .6rem 1.1rem; margin-bottom: -2px;
+  font-size: .85rem; font-weight: 600; color: #64748b; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .4rem; transition: all .15s;
+}
+.product-tabs .tab-btn:hover { color: #0891b2; }
+.product-tabs .tab-btn.active { color: #0891b2; border-bottom-color: #0891b2; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ── Status pill ── */
+.status-toggle-wrap { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.75rem 1rem; }
+
+/* ── Section label ── */
+.section-label {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: #94a3b8; margin-bottom: .6rem;
+  display: flex; align-items: center; gap: .4rem;
+}
+.section-label::after { content:''; flex:1; height:1px; background:#e9ecef; }
+
+/* ── GL chip ── */
+.gl-chip { display:inline-flex; align-items:center; gap:.3rem; padding:.2rem .55rem;
+  background:#f1f5f9; border:1px solid #e2e8f0; border-radius:20px; font-size:.78rem; font-weight:600; }
+.gl-chip.revenue { background:#dcfce7; border-color:#86efac; color:#15803d; }
+.gl-chip.expense { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+.gl-chip.asset   { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
+.gl-chip.other   { background:#f3f4f6; border-color:#d1d5db; color:#374151; }
+
+/* ── Tab content card ── */
+.tab-pane > .tab-card { background:#fff; border:1px solid #e9ecef; border-radius:12px; padding:1.5rem; }
+
+/* ── Right sidebar ── */
+.form-sidebar { position: sticky; top: 80px; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0">{% if sp %}Edit — {{ sp.name }}{% else %}New {% if default_type == 'ITEM' %}Item{% else %}Service{% endif %}{% endif %}</h5>
+    <p class="page-subtitle text-muted small mb-0">{% if sp %}Update billing catalogue entry{% else %}Add a billable service or item to the charge master{% endif %}</p>
+  </div>
+  <a href="{% url 'billing:service_price_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Catalogue
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "components/letterhead.html" %}
+
+<form method="post" id="spForm">
+  {% csrf_token %}
+  {% if sp %}<input type="hidden" name="_method" value="edit">{% endif %}
+
+  <div class="row g-4">
+    <!-- ── Main tabs column ── -->
+    <div class="col-lg-9">
+
+      <!-- Tab nav -->
+      <div class="product-tabs mb-0">
+        <button type="button" class="tab-btn active" onclick="switchTab('basic', this)">
+          <i class="bi bi-info-circle"></i>Basic Info
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('pricing', this)">
+          <i class="bi bi-currency-dollar"></i>Pricing & Billing
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('accounting', this)">
+          <i class="bi bi-journal-bookmark"></i>Accounting
+        </button>
+      </div>
+
+      <!-- ══ Tab 1: Basic Info ══ -->
+      <div id="tab-basic" class="tab-pane active">
+        <div class="tab-card">
+          <div class="section-label mb-3">Identification</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Service / Item Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                placeholder="e.g. General Consultation, CBC Blood Test, Amoxicillin 500mg"
+                value="{{ sp.name|default:'' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Code <span class="text-muted fw-normal">(SKU / reference)</span></label>
+              <input type="text" name="code" class="form-control" placeholder="e.g. CONS-001"
+                value="{{ sp.code|default:'' }}">
+            </div>
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Entry Type <span class="text-danger">*</span></label>
+              <select name="entry_type" id="entryTypeSelect" class="form-select" onchange="onTypeChange(this.value)">
+                <option value="SERVICE" {% if not sp or sp.entry_type == 'SERVICE' %}selected{% endif %}>Service (intangible)</option>
+                <option value="ITEM" {% if sp and sp.entry_type == 'ITEM' %}selected{% endif %}>Item (physical good)</option>
+              </select>
+              <div class="form-text">Services = consultations, procedures. Items = drugs, consumables.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" class="form-select" required>
+                <option value="">— Select —</option>
+                {% for val, label in categories %}
+                <option value="{{ val }}" {% if sp and sp.category == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Sub-Category / Family</label>
+              <select name="sub_category" class="form-select">
+                <option value="">— None —</option>
+                {% for sc in sub_categories %}
+                <option value="{{ sc.id }}" {% if sp and sp.sub_category_id == sc.id %}selected{% endif %}>{{ sc.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">Billing Restrictions</div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Desk Tier Restriction</label>
+              <select name="tier" id="tierSelect" class="form-select">
+                <option value="">All Tiers (No restriction)</option>
+                <option value="STANDARD" {% if sp and sp.tier == 'STANDARD' %}selected{% endif %}>Standard Desk Only</option>
+                <option value="EXPRESS" {% if sp and sp.tier == 'EXPRESS' %}selected{% endif %}>Express Desk Only</option>
+                <option value="VIP" {% if sp and sp.tier == 'VIP' %}selected{% endif %}>VIP Desk Only</option>
+                <option value="EVIP" {% if sp and sp.tier == 'EVIP' %}selected{% endif %}>Executive VIP Desk Only</option>
+                <option value="INSURED" {% if sp and sp.tier == 'INSURED' %}selected{% endif %}>Insured / HMO Desk Only</option>
+              </select>
+              <div id="tierHelp" class="form-text text-danger" style="display:none;">
+                <i class="bi bi-exclamation-triangle me-1"></i>Desk Tier is required for services.
+              </div>
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" name="requires_price_entry" id="requiresPriceEntry"
+                  {% if sp and sp.requires_price_entry %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="requiresPriceEntry">
+                  Requires Manual Price Entry
+                  <div class="text-muted fw-normal small">Cashier must type the price at billing time</div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Tab 2: Pricing & Billing ══ -->
+      <div id="tab-pricing" class="tab-pane">
+        <div class="tab-card">
+          <div class="section-label mb-3">Standard Pricing (XAF)</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Price HT <span class="text-muted fw-normal small">(excl. tax)</span></label>
+              <div class="input-group">
+                <input type="number" name="price_ht" id="priceHt" class="form-control" min="0" step="1" placeholder="0"
+                  value="{{ sp.price_ht|default:'' }}" oninput="calcTTC()">
+                <span class="input-group-text text-muted small">XAF</span>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-semibold">Tax Rate %</label>
+              <div class="input-group">
+                <input type="number" name="tax_rate" id="taxRate" class="form-control" min="0" max="100" step="0.01"
+                  placeholder="0" value="{{ sp.tax_rate|default:'' }}" oninput="calcTTC()">
+                <span class="input-group-text text-muted small">%</span>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Price TTC <span class="text-muted fw-normal small">(incl. tax)</span> <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="number" name="price" id="priceTTC" class="form-control" min="0" step="1" required
+                  placeholder="0" value="{{ sp.price|default:'' }}" oninput="onTTCChange()">
+                <span class="input-group-text text-muted small">XAF</span>
+              </div>
+              <div class="form-text">This is the amount billed to the patient.</div>
+            </div>
+            <div class="col-md-4 d-flex align-items-end pb-1">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_taxable" id="isTaxable"
+                  {% if sp and sp.is_taxable %}checked{% endif %} onchange="calcTTC()">
+                <label class="form-check-label fw-semibold" for="isTaxable">
+                  Subject to TVA/VAT
+                  <div class="text-muted fw-normal small">Activates TVA reporting on this entry</div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">Insurance / NHIS Rates</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">NHIS Price</label>
+              <div class="input-group">
+                <input type="number" name="nhis_price" class="form-control" min="0" step="1" placeholder="Same as TTC"
+                  value="{{ sp.nhis_price|default:'' }}">
+                <span class="input-group-text text-muted small">XAF</span>
+              </div>
+              <div class="form-text">Leave blank to use standard price.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Insurance / HMO Price</label>
+              <div class="input-group">
+                <input type="number" name="insurance_price" class="form-control" min="0" step="1" placeholder="Same as TTC"
+                  value="{{ sp.insurance_price|default:'' }}">
+                <span class="input-group-text text-muted small">XAF</span>
+              </div>
+              <div class="form-text">Leave blank to use standard price.</div>
+            </div>
+          </div>
+
+          <div id="itemStockSection" class="section-label mb-3" style="display:none;">Inventory Options</div>
+          <div id="itemStockFields" class="row g-3" style="display:none;">
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_stockable" id="isStockable"
+                  {% if sp and sp.is_stockable %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="isStockable">
+                  Track Stock / Inventory
+                  <div class="text-muted fw-normal small">Deducts from stock when billed (for physical goods)</div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Tab 3: Accounting ══ -->
+      <div id="tab-accounting" class="tab-pane">
+        <div class="tab-card">
+          <div class="section-label mb-3">GL Account Mapping</div>
+          <p class="text-muted small mb-4">
+            <i class="bi bi-info-circle me-1"></i>
+            Map this entry to your OHADA chart of accounts. If left blank, the sub-category GL account will be used.
+          </p>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip revenue me-1"><i class="bi bi-arrow-up-circle"></i>7xxx</span>
+                Income Account <span class="text-muted fw-normal">(Revenue)</span>
+              </label>
+              <select name="gl_account" class="form-select">
+                <option value="">— Use sub-category default —</option>
+                {% for gl in gl_accounts %}
+                <option value="{{ gl.pk }}" {% if sp and sp.gl_account_id == gl.pk %}selected{% endif %}>
+                  {{ gl.code }} — {{ gl.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 7061 — Services Rendered, 7071 — Sales of Goods</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <span class="gl-chip expense me-1"><i class="bi bi-arrow-down-circle"></i>6xxx</span>
+                Expense / Purchase Account
+              </label>
+              <select name="purchase_gl_account" class="form-select">
+                <option value="">— None —</option>
+                {% for gl in gl_expense_accounts %}
+                <option value="{{ gl.pk }}" {% if sp and sp.purchase_gl_account_id == gl.pk %}selected{% endif %}>
+                  {{ gl.code }} — {{ gl.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">e.g. 6011 — Purchases of Goods, 6211 — External Services</div>
+            </div>
+          </div>
+
+          <div id="itemGLSection">
+            <div class="section-label mb-3">Inventory GL Accounts <span class="text-muted fw-normal">(Items only)</span></div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">
+                  <span class="gl-chip asset me-1"><i class="bi bi-box"></i>3xxx</span>
+                  Stock / Inventory Account
+                </label>
+                <select name="stock_gl_account" class="form-select">
+                  <option value="">— None —</option>
+                  {% for gl in gl_asset_accounts %}
+                  <option value="{{ gl.pk }}" {% if sp and sp.stock_gl_account_id == gl.pk %}selected{% endif %}>
+                    {{ gl.code }} — {{ gl.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">e.g. 3111 — Stock of Goods</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">
+                  <span class="gl-chip other me-1"><i class="bi bi-arrow-left-right"></i>6031</span>
+                  Stock Variation Account
+                </label>
+                <select name="stock_variation_gl_account" class="form-select">
+                  <option value="">— None —</option>
+                  {% for gl in gl_expense_accounts %}
+                  <option value="{{ gl.pk }}" {% if sp and sp.stock_variation_gl_account_id == gl.pk %}selected{% endif %}>
+                    {{ gl.code }} — {{ gl.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">e.g. 6031 — Variation of Stock of Goods</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /col-lg-9 -->
+
+    <!-- ── Right Sidebar ── -->
+    <div class="col-lg-3">
+      <div class="form-sidebar d-flex flex-column gap-3">
+
+        <!-- Status -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Status</div>
+            <div class="status-toggle-wrap d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold" id="statusLabel">{% if not sp or sp.is_active %}Active{% else %}Inactive{% endif %}</div>
+                <div class="text-muted small">Visible at cashier billing</div>
+              </div>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" name="is_active" id="isActive"
+                  {% if not sp or sp.is_active %}checked{% endif %}
+                  onchange="document.getElementById('statusLabel').textContent = this.checked ? 'Active' : 'Inactive'">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary card -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body">
+            <div class="section-label mb-3">Summary</div>
+            <dl class="mb-0 small">
+              <dt class="text-muted">Price TTC</dt>
+              <dd class="fw-bold fs-5 text-primary font-monospace" id="summaryPrice">
+                {{ sp.price|default:0|floatformat:0 }} XAF
+              </dd>
+              <dt class="text-muted mt-2">Type</dt>
+              <dd id="summaryType">{% if sp %}{{ sp.get_entry_type_display }}{% else %}Service{% endif %}</dd>
+              {% if sp %}
+              <dt class="text-muted mt-2">Last updated</dt>
+              <dd>{{ sp.updated_at|date:"d M Y" }}</dd>
+              {% endif %}
+            </dl>
+          </div>
+        </div>
+
+        <!-- Save -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{% if sp %}Save Changes{% else %}Create{% endif %}
+            </button>
+            <a href="{% url 'billing:service_price_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /row -->
+</form>
+
+<script>
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+function onTypeChange(val) {
+  const isItem = val === 'ITEM';
+  document.getElementById('itemStockSection').style.display = isItem ? '' : 'none';
+  document.getElementById('itemStockFields').style.display = isItem ? '' : 'none';
+  document.getElementById('itemGLSection').style.display = isItem ? '' : 'none';
+  if (isItem) document.getElementById('isStockable').checked = true;
+  document.getElementById('summaryType').textContent = isItem ? 'Item (Physical Good)' : 'Service';
+  // Tier mandatory only for services
+  document.getElementById('tierHelp').style.display = 'none';
+}
+
+function calcTTC() {
+  const ht = parseFloat(document.getElementById('priceHt').value) || 0;
+  const rate = parseFloat(document.getElementById('taxRate').value) || 0;
+  if (ht > 0) {
+    const ttc = Math.round(ht * (1 + rate / 100));
+    document.getElementById('priceTTC').value = ttc;
+    updateSummaryPrice(ttc);
+  }
+}
+
+function onTTCChange() {
+  const ttc = parseFloat(document.getElementById('priceTTC').value) || 0;
+  updateSummaryPrice(ttc);
+}
+
+function updateSummaryPrice(val) {
+  document.getElementById('summaryPrice').textContent = Math.round(val).toLocaleString('fr-FR') + ' XAF';
+}
+
+// Validate tier for services before submit
+document.getElementById('spForm').addEventListener('submit', function(e) {
+  const type = document.getElementById('entryTypeSelect').value;
+  const tier = document.getElementById('tierSelect').value;
+  if (type === 'SERVICE' && !tier) {
+    document.getElementById('tierHelp').style.display = '';
+    document.getElementById('tierSelect').focus();
+    // Switch back to Basic Info tab to show the error
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-basic').classList.add('active');
+    document.querySelectorAll('.tab-btn')[0].classList.add('active');
+    e.preventDefault();
+    return false;
+  }
+});
+
+// Init
+onTypeChange(document.getElementById('entryTypeSelect').value);
+</script>
+{% endblock %}

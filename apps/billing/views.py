@@ -3297,13 +3297,33 @@ def service_price_list(request):
     })
 
 
+def _service_price_form_context(request):
+    """Shared context for create/edit service price form."""
+    from .models import ServiceSubCategory, GLAccount, EntryType
+    sub_categories = ServiceSubCategory.objects.filter(is_deleted=False).select_related('gl_account').order_by('category', 'sort_order')
+    gl_revenue = GLAccount.objects.filter(is_active=True, account_type='REVENUE').order_by('code')
+    gl_expense = GLAccount.objects.filter(is_active=True, account_type='EXPENSE').order_by('code')
+    gl_asset   = GLAccount.objects.filter(is_active=True, account_type='ASSET').order_by('code')
+    return {
+        'categories': ServiceCategory.choices,
+        'sub_categories': sub_categories,
+        'gl_accounts': gl_revenue,
+        'gl_expense_accounts': gl_expense,
+        'gl_asset_accounts': gl_asset,
+    }
+
+
 @login_required
-@require_POST
 def service_price_create(request):
     """Create a new service price entry. Store Keeper can add ITEM entries only."""
     if not _can_authorize_billing(request.user) and request.user.role != UserRole.STORE_KEEPER:
         messages.error(request, 'Access denied.')
         return redirect('billing:service_price_list')
+
+    if request.method == 'GET':
+        ctx = _service_price_form_context(request)
+        ctx['default_type'] = request.GET.get('type', 'SERVICE')
+        return render(request, 'billing/service_price_form.html', ctx)
     name = request.POST.get('name', '').strip()
     category = request.POST.get('category', '').strip()
     price_str = request.POST.get('price', '').strip()
@@ -3355,7 +3375,7 @@ def service_price_create(request):
         is_stockable=is_item or bool(request.POST.get('is_stockable')),
         is_taxable=bool(request.POST.get('is_taxable')),
         requires_price_entry=bool(request.POST.get('requires_price_entry')),
-        is_active=True,
+        is_active='is_active' in request.POST,
         created_by=request.user,
     )
     label = 'Item' if is_item else 'Service'
@@ -3412,6 +3432,53 @@ def service_price_edit(request, price_id):
         return JsonResponse({'success': True})
     except (InvalidOperation, Exception) as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def service_price_edit_form(request, price_id):
+    """GET: render the tabbed edit form. POST: save changes and redirect."""
+    if not _can_authorize_billing(request.user) and request.user.role != UserRole.STORE_KEEPER:
+        messages.error(request, 'Access denied.')
+        return redirect('billing:service_price_list')
+    sp = get_object_or_404(ServicePrice, id=price_id, is_deleted=False)
+    if request.method == 'GET':
+        ctx = _service_price_form_context(request)
+        ctx['sp'] = sp
+        return render(request, 'billing/service_price_form.html', ctx)
+    # POST — save changes
+    try:
+        sp.name        = request.POST.get('name', sp.name).strip()
+        sp.code        = request.POST.get('code', sp.code).strip()
+        sp.entry_type  = request.POST.get('entry_type', sp.entry_type).strip()
+        sp.category    = request.POST.get('category', sp.category).strip()
+        sp.tier        = request.POST.get('tier', '').strip()
+        sp.sub_category_id = request.POST.get('sub_category', '') or None
+        sp.gl_account_id   = request.POST.get('gl_account', '') or None
+        sp.purchase_gl_account_id   = request.POST.get('purchase_gl_account', '') or None
+        sp.stock_gl_account_id      = request.POST.get('stock_gl_account', '') or None
+        sp.stock_variation_gl_account_id = request.POST.get('stock_variation_gl_account', '') or None
+        price_ht = request.POST.get('price_ht', '').strip()
+        tax_rate = request.POST.get('tax_rate', '').strip()
+        nhis     = request.POST.get('nhis_price', '').strip()
+        ins      = request.POST.get('insurance_price', '').strip()
+        sp.price_ht        = Decimal(price_ht) if price_ht else Decimal('0')
+        sp.tax_rate        = Decimal(tax_rate) if tax_rate else Decimal('0')
+        sp.price           = Decimal(request.POST.get('price', str(sp.price)))
+        sp.nhis_price      = Decimal(nhis) if nhis else None
+        sp.insurance_price = Decimal(ins) if ins else None
+        sp.is_taxable            = 'is_taxable' in request.POST
+        sp.is_stockable          = (sp.entry_type == 'ITEM') or ('is_stockable' in request.POST)
+        sp.requires_price_entry  = 'requires_price_entry' in request.POST
+        sp.is_active             = 'is_active' in request.POST
+        sp.updated_by = request.user
+        sp.save()
+        messages.success(request, f'"{sp.name}" updated.')
+    except (InvalidOperation, Exception) as e:
+        messages.error(request, f'Error saving: {e}')
+        ctx = _service_price_form_context(request)
+        ctx['sp'] = sp
+        return render(request, 'billing/service_price_form.html', ctx)
+    return redirect('billing:service_price_list')
 
 
 @json_error_handler
