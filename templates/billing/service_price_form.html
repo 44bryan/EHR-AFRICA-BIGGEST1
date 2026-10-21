@@ -77,6 +77,9 @@
         <button type="button" class="tab-btn" onclick="switchTab('accounting', this)">
           <i class="bi bi-journal-bookmark"></i>Accounting
         </button>
+        <button type="button" class="tab-btn" id="trackingTabBtn" onclick="switchTab('tracking', this)" style="display:none;">
+          <i class="bi bi-box-seam"></i>Tracking
+        </button>
       </div>
 
       <!-- ══ Tab 1: Basic Info ══ -->
@@ -220,19 +223,6 @@
             </div>
           </div>
 
-          <div id="itemStockSection" class="section-label mb-3" style="display:none;">Inventory Options</div>
-          <div id="itemStockFields" class="row g-3" style="display:none;">
-            <div class="col-md-6">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="is_stockable" id="isStockable"
-                  {% if sp and sp.is_stockable %}checked{% endif %}>
-                <label class="form-check-label fw-semibold" for="isStockable">
-                  Track Stock / Inventory
-                  <div class="text-muted fw-normal small">Deducts from stock when billed (for physical goods)</div>
-                </label>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -315,6 +305,76 @@
         </div>
       </div>
 
+      <!-- ══ Tab 4: Tracking (Items only) ══ -->
+      <div id="tab-tracking" class="tab-pane">
+        <div class="tab-card">
+
+          <div class="section-label mb-3">Stock Tracking</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="is_stockable" id="isStockable"
+                  {% if sp and sp.is_stockable %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="isStockable">
+                  Track Stock / Inventory
+                  <div class="text-muted fw-normal small">Deducts quantity from stock when billed at the cashier.</div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">Batch & Expiry Tracking</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="track_batch" id="trackBatch"
+                  {% if sp and sp.track_batch %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="trackBatch">
+                  Batch Tracking
+                  <div class="text-muted fw-normal small">Require batch number on every receipt and sale.</div>
+                </label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="track_expiry" id="trackExpiry"
+                  {% if sp and sp.track_expiry %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="trackExpiry">
+                  Expiry Date Tracking
+                  <div class="text-muted fw-normal small">Enables FEFO dispatch and expiry alerts.</div>
+                </label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Shelf Life (days)</label>
+              <input type="number" name="shelf_life_days" class="form-control" min="0" step="1" placeholder="e.g. 365"
+                value="{{ sp.shelf_life_days|default:'' }}">
+              <div class="form-text">Auto-calculates expiry from manufacture date.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Alert (days before expiry)</label>
+              <input type="number" name="expiry_alert_days" class="form-control" min="0" step="1" placeholder="30"
+                value="{{ sp.expiry_alert_days|default:'' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Valuation Method</label>
+              <select name="valuation_method" class="form-select">
+                <option value="AVCO" {% if not sp or sp.valuation_method == 'AVCO' %}selected{% endif %}>Average Cost (AVCO)</option>
+                <option value="FIFO" {% if sp and sp.valuation_method == 'FIFO' %}selected{% endif %}>First In First Out (FIFO)</option>
+                <option value="FEFO" {% if sp and sp.valuation_method == 'FEFO' %}selected{% endif %}>First Expiry First Out (FEFO)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="alert alert-info py-2 small mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            Detailed batch records, bin cards and stock movements are managed in the
+            <strong>Inventory</strong> module once this item is linked to a stock item.
+          </div>
+
+        </div>
+      </div>
+
     </div><!-- /col-lg-9 -->
 
     <!-- ── Right Sidebar ── -->
@@ -384,12 +444,17 @@ function switchTab(name, btn) {
 
 function onTypeChange(val) {
   const isItem = val === 'ITEM';
-  document.getElementById('itemStockSection').style.display = isItem ? '' : 'none';
-  document.getElementById('itemStockFields').style.display = isItem ? '' : 'none';
   document.getElementById('itemGLSection').style.display = isItem ? '' : 'none';
+  document.getElementById('trackingTabBtn').style.display = isItem ? '' : 'none';
   if (isItem) document.getElementById('isStockable').checked = true;
   document.getElementById('summaryType').textContent = isItem ? 'Item (Physical Good)' : 'Service';
-  // Tier mandatory only for services
+  // If switching to Service and currently on Tracking tab, go back to Basic Info
+  if (!isItem) {
+    const trackPane = document.getElementById('tab-tracking');
+    if (trackPane && trackPane.classList.contains('active')) {
+      switchTab('basic', document.querySelectorAll('.tab-btn')[0]);
+    }
+  }
   document.getElementById('tierHelp').style.display = 'none';
 }
 
