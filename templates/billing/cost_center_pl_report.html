@@ -1,118 +1,222 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Cost Center P&L{% endblock %}
-{% block content %}
-{% include 'components/letterhead.html' %}
-<div class="container-fluid py-3">
+{% block title %}Compte de Résultat par Centre de Coût{% endblock %}
 
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h5 class="mb-0 fw-bold"><i class="bi bi-building me-2"></i>Compte de Résultat par Centre de Coût</h5>
-    <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary">
+{% block extra_css %}
+<style>
+.rpt-wrap { max-width: 1100px; margin: 0 auto; }
+.ohada-band {
+  font-size: .68rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
+  background: #1e3a5f; border-radius: 4px 4px 0 0;
+}
+.cc-head td {
+  background: #1e3a5f !important; color: #fff;
+  font-weight: 700; font-size: .84rem; padding: .45rem 1rem;
+  border-bottom: 2px solid #0f2744;
+}
+.cc-rev-sub td { background: #f0fdf4 !important; color: #15803d; font-style: italic; font-size: .79rem; }
+.cc-exp-sub td { background: #fef2f2 !important; color: #dc2626; font-style: italic; font-size: .79rem; }
+.cc-leaf td   { font-size: .79rem; color: #64748b; }
+.cc-grand-row td { font-weight: 800; font-size: .88rem; background: #f1f5f9 !important; border-top: 2px solid #334155; }
+
+.badge-margin { font-size: .72rem; padding: .25rem .5rem; }
+.kpi-strip { display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.kpi-pill { flex: 1; min-width: 120px; border-radius: 8px; padding: .65rem 1rem; text-align: center; }
+.kpi-pill .lbl { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+.kpi-pill .val { font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+@media print {
+  .no-print { display: none !important; }
+  @page { size: A4 landscape; margin: 8mm 10mm 15mm 10mm; }
+  body, td { font-size: 7.5pt !important; }
+  .cc-head td, .ohada-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-footer { display: block !important; }
+}
+.print-footer {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 2mm 10mm; font-size: 7pt; color: #666;
+  border-top: 1px solid #ccc; background: #fff; text-align: center;
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
+    <span class="fw-bold fs-6">Compte de Résultat par Centre de Coût</span>
+    <span class="text-muted small ms-2">P&amp;L by Cost Center (OHADA Cl. 6 &amp; 7)</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?date_from={{ date_from }}&date_to={{ date_to }}&export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>CSV
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<div class="rpt-wrap">
+
+  <!-- ── Title ── -->
+  <div class="text-center mb-3">
+    <div class="fw-bold fs-5 mb-1">COMPTE DE RÉSULTAT PAR CENTRE DE COÛT</div>
+    <div class="text-muted small">Période : <strong>{{ date_from }}</strong> — <strong>{{ date_to }}</strong></div>
+    <div class="text-muted" style="font-size:.72rem;">Classe 6 (Charges) &amp; Classe 7 (Produits) — Normes OHADA / SYSCOHADA</div>
   </div>
 
-  <div class="card border-0 shadow-sm mb-3">
+  <!-- ── Filters ── -->
+  <div class="card border-0 shadow-sm mb-3 no-print">
     <div class="card-body py-2">
       <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
-        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="width:140px">
-        <input type="date" name="date_to"   class="form-control form-control-sm" value="{{ date_to }}"   style="width:140px">
+        <div>
+          <label class="form-label small fw-semibold mb-0 me-1">De:</label>
+          <input type="date" name="date_from" class="form-control form-control-sm d-inline" value="{{ date_from }}" style="width:145px">
+        </div>
+        <div>
+          <label class="form-label small fw-semibold mb-0 me-1">À:</label>
+          <input type="date" name="date_to" class="form-control form-control-sm d-inline" value="{{ date_to }}" style="width:145px">
+        </div>
         <select name="cc_select" class="form-select form-select-sm" style="width:220px" onchange="this.form.submit()">
-          <option value="">— All Cost Centers —</option>
+          <option value="">— Tous les Centres de Coût —</option>
           {% for cc in cost_centers %}
-            <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>{{ cc.code }} — {{ cc.name }}</option>
+          <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>{{ cc.code }} — {{ cc.name }}</option>
           {% endfor %}
         </select>
-        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
-        <a href="{% url 'billing:cost_center_pl_report' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filtrer</button>
+        <a href="{% url 'billing:cost_center_pl_report' %}" class="btn btn-sm btn-outline-secondary">Réinitialiser</a>
         <button type="button" class="btn btn-sm btn-outline-info"
-                onclick="var f=this.form;f.querySelector('[name=date_from]').value='{{ today }}';f.querySelector('[name=date_to]').value='{{ today }}';f.submit();">
-          <i class="bi bi-calendar-day me-1"></i>Today
+          onclick="var f=this.form;f.querySelector('[name=date_from]').value='{{ today }}';f.querySelector('[name=date_to]').value='{{ today }}';f.submit();">
+          <i class="bi bi-calendar-day me-1"></i>Aujourd'hui
         </button>
       </form>
     </div>
   </div>
 
-  <div class="card mb-3 border-0 shadow-sm">
+  {% if cc_sections %}
+  <!-- ── KPI Strip ── -->
+  <div class="kpi-strip no-print">
+    <div class="kpi-pill" style="background:#f0fdf4;border:1px solid #86efac;">
+      <div class="lbl">Total Produits</div>
+      <div class="val text-success">{{ grand_revenue|intcomma }}</div>
+      <div style="font-size:.7rem;color:#64748b;">XAF</div>
+    </div>
+    <div class="kpi-pill" style="background:#fef2f2;border:1px solid #fca5a5;">
+      <div class="lbl">Total Charges</div>
+      <div class="val text-danger">{{ grand_expense|intcomma }}</div>
+      <div style="font-size:.7rem;color:#64748b;">XAF</div>
+    </div>
+    <div class="kpi-pill {% if grand_margin >= 0 %}" style="background:#f0fdf4;border:1px solid #86efac;"{% else %}" style="background:#fef2f2;border:1px solid #fca5a5;"{% endif %}>
+      <div class="lbl">Résultat Global</div>
+      <div class="val {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">{{ grand_margin|intcomma }}</div>
+      <div style="font-size:.7rem;color:#64748b;">XAF</div>
+    </div>
+    <div class="kpi-pill" style="background:#f0f9ff;border:1px solid #93c5fd;">
+      <div class="lbl">Taux de Marge</div>
+      <div class="val text-primary">{% if grand_revenue %}{% widthratio grand_margin grand_revenue 100 %}%{% else %}—{% endif %}</div>
+      <div style="font-size:.7rem;color:#64748b;">Net Margin</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Report Table ── -->
+  <div class="ohada-band">
+    <i class="bi bi-building me-2"></i>Résultats par Centre de Coût
+  </div>
+  <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0" style="font-size:.84rem;">
+      <table class="table table-sm mb-0" style="font-size:.84rem;">
         <thead class="table-light">
-          <tr>
+          <tr style="border-bottom:2px solid #e2e8f0;">
             <th style="width:90px">Code</th>
-            <th>Account / Cost Center</th>
-            <th class="text-end" style="width:130px">Revenue (Cl.7)</th>
-            <th class="text-end" style="width:130px">Expenses (Cl.6)</th>
-            <th class="text-end" style="width:120px">Net Result</th>
-            <th class="text-end" style="width:70px">Margin%</th>
+            <th>Compte / Centre de Coût</th>
+            <th class="text-end" style="width:140px">Produits Cl.7 (XAF)</th>
+            <th class="text-end" style="width:140px">Charges Cl.6 (XAF)</th>
+            <th class="text-end" style="width:130px">Résultat (XAF)</th>
+            <th class="text-end" style="width:75px">Marge %</th>
           </tr>
         </thead>
         <tbody>
         {% for sec in cc_sections %}
-          {# Cost Center header row #}
-          <tr class="table-light">
-            <td class="fw-bold font-monospace">{{ sec.cc.code }}</td>
-            <td class="fw-bold"><i class="bi bi-building me-1"></i>{{ sec.cc.name }}</td>
-            <td class="text-end fw-bold text-success">{{ sec.total_rev|intcomma }}</td>
-            <td class="text-end fw-bold text-danger">{{ sec.total_exp|intcomma }}</td>
-            <td class="text-end fw-bold {% if sec.net_result >= 0 %}text-success{% else %}text-danger{% endif %}">{{ sec.net_result|intcomma }}</td>
+          <!-- Cost Center header -->
+          <tr class="cc-head">
+            <td class="font-monospace">{{ sec.cc.code }}</td>
+            <td><i class="bi bi-building me-1"></i>{{ sec.cc.name }}</td>
+            <td class="text-end text-success">{{ sec.total_rev|intcomma }}</td>
+            <td class="text-end" style="color:#fca5a5;">({{ sec.total_exp|intcomma }})</td>
+            <td class="text-end {% if sec.net_result >= 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ sec.net_result|intcomma }}
+            </td>
             <td class="text-end">
-              {% if sec.margin_pct > 0 %}<span class="badge bg-success">{{ sec.margin_pct|floatformat:1 }}%</span>
-              {% elif sec.margin_pct < 0 %}<span class="badge bg-danger">{{ sec.margin_pct|floatformat:1 }}%</span>
-              {% else %}<span class="badge bg-secondary">0%</span>{% endif %}
+              {% if sec.margin_pct > 0 %}<span class="badge bg-success badge-margin">{{ sec.margin_pct|floatformat:1 }}%</span>
+              {% elif sec.margin_pct < 0 %}<span class="badge bg-danger badge-margin">{{ sec.margin_pct|floatformat:1 }}%</span>
+              {% else %}<span class="badge bg-secondary badge-margin">0%</span>{% endif %}
             </td>
           </tr>
-          {# Revenue sub-category rows #}
+
+          <!-- Revenue sub-groups -->
           {% for prefix, grp in sec.rev_groups %}
-          <tr>
-            <td class="ps-3 font-monospace text-muted small">{{ prefix }}x</td>
-            <td class="ps-3 text-success fst-italic small">{{ grp.label }}</td>
-            <td class="text-end text-success small">{{ grp.total|intcomma }}</td>
+          <tr class="cc-rev-sub">
+            <td class="ps-3 font-monospace">{{ prefix }}x</td>
+            <td class="ps-3">↳ {{ grp.label }}</td>
+            <td class="text-end">{{ grp.total|intcomma }}</td>
             <td></td><td></td><td></td>
           </tr>
-            {% for row in grp.rows %}
-          <tr>
-            <td class="ps-4 font-monospace text-muted small">{{ row.code }}</td>
-            <td class="ps-4 text-muted small">{{ row.name }}</td>
-            <td class="text-end small text-muted">{{ row.amount|intcomma }}</td>
+          {% for row in grp.rows %}
+          <tr class="cc-leaf">
+            <td class="ps-4 font-monospace">{{ row.code }}</td>
+            <td class="ps-4">{{ row.name }}</td>
+            <td class="text-end">{{ row.amount|intcomma }}</td>
             <td></td><td></td><td></td>
           </tr>
-            {% endfor %}
           {% endfor %}
-          {# Expense sub-category rows #}
+          {% endfor %}
+
+          <!-- Expense sub-groups -->
           {% for prefix, grp in sec.exp_groups %}
-          <tr>
-            <td class="ps-3 font-monospace text-muted small">{{ prefix }}x</td>
-            <td class="ps-3 text-danger fst-italic small">{{ grp.label }}</td>
+          <tr class="cc-exp-sub">
+            <td class="ps-3 font-monospace">{{ prefix }}x</td>
+            <td class="ps-3">↳ {{ grp.label }}</td>
             <td></td>
-            <td class="text-end text-danger small">{{ grp.total|intcomma }}</td>
+            <td class="text-end">({{ grp.total|intcomma }})</td>
             <td></td><td></td>
           </tr>
-            {% for row in grp.rows %}
-          <tr>
-            <td class="ps-4 font-monospace text-muted small">{{ row.code }}</td>
-            <td class="ps-4 text-muted small">{{ row.name }}</td>
+          {% for row in grp.rows %}
+          <tr class="cc-leaf">
+            <td class="ps-4 font-monospace">{{ row.code }}</td>
+            <td class="ps-4">{{ row.name }}</td>
             <td></td>
-            <td class="text-end small text-muted">{{ row.amount|intcomma }}</td>
+            <td class="text-end">{{ row.amount|intcomma }}</td>
             <td></td><td></td>
           </tr>
-            {% endfor %}
+          {% endfor %}
           {% endfor %}
         {% empty %}
-          <tr><td colspan="6" class="text-center text-muted py-4">No cost centers with posted entries in this period.</td></tr>
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              <i class="bi bi-inbox d-block fs-3 mb-2 opacity-25"></i>
+              Aucun centre de coût avec des écritures validées pour cette période.
+            </td>
+          </tr>
         {% endfor %}
         </tbody>
         {% if cc_sections %}
-        <tfoot class="table-light fw-bold">
-          <tr style="border-top:2px solid #1E3A5F;">
-            <td colspan="2">GRAND TOTAL — ALL COST CENTERS</td>
+        <tfoot>
+          <tr class="cc-grand-row">
+            <td colspan="2" class="ps-3">GRAND TOTAL — TOUS CENTRES DE COÛT</td>
             <td class="text-end text-success">{{ grand_revenue|intcomma }}</td>
-            <td class="text-end text-danger">{{ grand_expense|intcomma }}</td>
+            <td class="text-end text-danger">({{ grand_expense|intcomma }})</td>
             <td class="text-end {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">{{ grand_margin|intcomma }}</td>
-            <td class="text-end">
-              {% if grand_revenue %}
-                {% widthratio grand_margin grand_revenue 100 as pct %}
-                {{ pct }}%
-              {% else %}0%{% endif %}
+            <td class="text-end fw-bold">
+              {% if grand_revenue %}{% widthratio grand_margin grand_revenue 100 %}%{% else %}0%{% endif %}
             </td>
           </tr>
         </tfoot>
@@ -121,11 +225,23 @@
     </div>
   </div>
 
-  <div class="card border-0 shadow-sm mt-3">
-    <div class="card-body small text-muted">
-      <strong>Note:</strong> Revenue = net credit balance on Class 7 accounts. Expenses = net debit balance on Class 6 accounts.
-      Only posted journal entries within the selected date range are included. Indented rows show account-level detail.
-    </div>
+  <!-- Note -->
+  <div class="text-muted small mt-3 px-1" style="font-size:.72rem;">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Note :</strong> Produits = solde créditeur net des comptes de Classe 7.
+    Charges = solde débiteur net des comptes de Classe 6.
+    Seules les écritures comptables <em>validées (POSTED)</em> dans la période sélectionnée sont incluses.
   </div>
+
+</div><!-- /rpt-wrap -->
+
+<div class="print-footer">
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Compte de Résultat par Centre de Coût (OHADA) &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }} &nbsp;&bull;&nbsp;
+  Imprimé le : <span id="ccPrintDate"></span>
 </div>
+<script>
+  (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var el=document.getElementById('ccPrintDate'); if(el) el.textContent=s; })();
+</script>
 {% endblock %}

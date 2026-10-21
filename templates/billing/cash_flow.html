@@ -1,20 +1,46 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Cash Flow Statement{% endblock %}
+{% block title %}Tableau des Flux de Trésorerie{% endblock %}
 
 {% block extra_css %}
 <style>
+.rpt-wrap { max-width: 820px; margin: 0 auto; }
+.cf-band {
+  font-size: .68rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
+  border-radius: 4px 4px 0 0;
+}
+.cf-band.operating  { background: #0891b2; }
+.cf-band.investing  { background: #7c3aed; }
+.cf-band.financing  { background: #b45309; }
+.cf-band.summary    { background: #334155; }
+
+.cf-table { width: 100%; border-collapse: collapse; }
+.cf-table td { padding: .3rem 1rem; font-size: .83rem; border-bottom: 1px solid #f1f5f9; }
+.cf-table td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--bs-font-monospace); }
+.cf-table tr:hover td { background: #f8fafc; }
+.cf-sub-head td { font-weight: 700; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; background: #f8fafc !important; color: #64748b; border-bottom: 1px solid #e9ecef; }
+.cf-sub-total td { font-weight: 700; background: #f1f5f9 !important; border-top: 1.5px solid #e2e8f0; border-bottom: 1.5px solid #e2e8f0; }
+.cf-net td { font-weight: 800; font-size: .88rem; border-top: 2px solid currentColor; }
+.cf-net.operating td { color: #0891b2; }
+.cf-net.investing  td { color: #7c3aed; }
+.cf-net.financing  td { color: #b45309; }
+
+.cf-summary-row td { padding: .4rem 1rem; font-size: .85rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
+.cf-summary-final td { font-weight: 800; font-size: 1rem; border-top: 2px solid #334155; }
+
 @media print {
   .no-print { display: none !important; }
-  @page { size: A4 portrait; margin: 10mm 10mm 18mm 10mm; }
-  body { font-size: 8pt !important; }
-  .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
-  .print-only-header { display: block !important; }
+  @page { size: A4 portrait; margin: 8mm 10mm 15mm 10mm; }
+  body, .cf-table td { font-size: 7.5pt !important; }
+  .cf-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-footer { display: block !important; }
 }
-.print-only-header { display: none; }
-.print-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 2mm 10mm;
-  font-size: 7.5pt; color: #666; border-top: 1px solid #ccc; background: #fff; text-align: center; }
+.print-footer {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 2mm 10mm; font-size: 7pt; color: #666;
+  border-top: 1px solid #ccc; background: #fff; text-align: center;
+}
 </style>
 {% endblock %}
 
@@ -24,20 +50,15 @@
     <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <span class="fw-bold fs-6">Cash Flow Statement</span>
-    <span class="text-muted small ms-2">{{ date_from }} — {{ date_to }}</span>
+    <span class="fw-bold fs-6">Tableau des Flux de Trésorerie</span>
+    <span class="text-muted small ms-2">Cash Flow Statement — {{ date_from }} — {{ date_to }}</span>
   </div>
   <div class="d-flex gap-2 no-print">
-    <div class="btn-group" role="group">
-      <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-download me-1"></i>Export</a>
-      <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"><span class="visually-hidden">Select format</span></button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:220px;">
-        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i><strong>PDF Report</strong><small class="text-muted d-block ms-4">With hospital letterhead</small></a></li>
-        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=excel" target="_blank"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel Spreadsheet (.xlsx)<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
-        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
-      </ul>
+    <div class="btn-group">
+      <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-file-earmark-pdf me-1 text-danger"></i>PDF</a>
+      <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=excel" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-file-earmark-excel me-1 text-success"></i>Excel</a>
+      <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=csv" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1 text-primary"></i>CSV</a>
+      <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
     </div>
   </div>
 </div>
@@ -46,180 +67,163 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-<!-- Print-only report header -->
-<div class="print-only-header mb-3">
-  <h5 class="fw-bold mb-1">Cash Flow Statement</h5>
-  <div class="small text-muted">Period: {{ date_from }} — {{ date_to }}</div>
-  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="cfPrintDate"></span></div>
-</div>
+<div class="rpt-wrap">
 
-<form method="get" class="row g-2 mb-4 align-items-end no-print">
-  <div class="col-md-2">
-    <label class="form-label fw-semibold small">From</label>
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+  <!-- ── Report title ── -->
+  <div class="text-center mb-4">
+    <div class="fw-bold fs-5 mb-1">TABLEAU DES FLUX DE TRÉSORERIE</div>
+    <div class="text-muted small">Période : <strong>{{ date_from }}</strong> — <strong>{{ date_to }}</strong></div>
+    <div class="text-muted" style="font-size:.72rem;">Méthode directe — Normes OHADA / SYSCOHADA</div>
   </div>
-  <div class="col-md-2">
-    <label class="form-label fw-semibold small">To</label>
-    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+
+  <!-- ── Date filter ── -->
+  <form method="get" class="row g-2 mb-4 align-items-end no-print">
+    <div class="col-auto">
+      <label class="form-label fw-semibold small mb-1">De</label>
+      <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+    </div>
+    <div class="col-auto">
+      <label class="form-label fw-semibold small mb-1">À</label>
+      <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-calculator me-1"></i>Générer</button>
+    </div>
+  </form>
+
+  <!-- ══ I. OPERATING ACTIVITIES ══ -->
+  <div class="cf-band operating">
+    <i class="bi bi-gear me-2"></i>I. Flux des Activités d'Exploitation (Operating Activities)
   </div>
-  <div class="col-md-2">
-    <button type="submit" class="btn btn-sm btn-primary w-100">
-      <i class="bi bi-calculator me-1"></i>Generate
-    </button>
+  <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
+    <table class="cf-table">
+      <tr class="cf-sub-head"><td colspan="2">Encaissements (Cash Inflows)</td></tr>
+      {% for row in operating_inflows %}
+      <tr>
+        <td class="ps-4">{{ row.label }}</td>
+        <td class="text-success">{{ row.amount|floatformat:0|intcomma }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2" class="text-center text-muted small py-2">Aucun encaissement</td></tr>
+      {% endfor %}
+      <tr class="cf-sub-total">
+        <td class="ps-3">Total Encaissements</td>
+        <td class="text-success">{{ total_op_inflows|floatformat:0|intcomma }}</td>
+      </tr>
+      <tr class="cf-sub-head"><td colspan="2" style="padding-top:.5rem;">Décaissements (Cash Outflows)</td></tr>
+      {% for row in operating_outflows %}
+      <tr>
+        <td class="ps-4">{{ row.label }}</td>
+        <td class="text-danger">({{ row.amount|floatformat:0|intcomma }})</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2" class="text-center text-muted small py-2">Aucun décaissement</td></tr>
+      {% endfor %}
+      <tr class="cf-sub-total">
+        <td class="ps-3">Total Décaissements</td>
+        <td class="text-danger">({{ total_op_outflows|floatformat:0|intcomma }})</td>
+      </tr>
+    </table>
+    <table class="cf-table">
+      <tr class="cf-net operating">
+        <td>FLUX NET D'EXPLOITATION (Net Operating Cash Flow)</td>
+        <td class="{% if net_operating >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if net_operating < 0 %}({{ net_operating|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_operating|floatformat:0|intcomma }}{% endif %} XAF
+        </td>
+      </tr>
+    </table>
   </div>
-</form>
 
-<div class="row g-4">
-  <div class="col-lg-8 mx-auto">
-
-    <!-- Operating Activities -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-header py-2 bg-white border-bottom d-flex justify-content-between">
-        <span class="fw-bold"><i class="bi bi-gear me-2"></i>Operating Activities</span>
-        <span class="fw-bold">{{ net_operating|floatformat:0|intcomma }} XAF</span>
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm mb-0">
-          <tbody>
-            <tr class="table-light"><td colspan="2" class="fw-semibold small ps-3 py-1">Cash Inflows</td></tr>
-            {% for row in operating_inflows %}
-            <tr>
-              <td class="ps-4 small">{{ row.label }}</td>
-              <td class="text-end text-success fw-semibold">{{ row.amount|floatformat:0|intcomma }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="2" class="text-center text-muted small">No inflows</td></tr>
-            {% endfor %}
-            <tr class="fw-semibold border-top">
-              <td class="ps-3">Total Inflows</td>
-              <td class="text-end text-success">{{ total_op_inflows|floatformat:0|intcomma }}</td>
-            </tr>
-
-            <tr class="table-light"><td colspan="2" class="fw-semibold small ps-3 py-1 mt-2">Cash Outflows</td></tr>
-            {% for row in operating_outflows %}
-            <tr>
-              <td class="ps-4 small">{{ row.label }}</td>
-              <td class="text-end text-danger fw-semibold">({{ row.amount|floatformat:0|intcomma }})</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="2" class="text-center text-muted small">No outflows</td></tr>
-            {% endfor %}
-            <tr class="fw-semibold border-top">
-              <td class="ps-3">Total Outflows</td>
-              <td class="text-end text-danger">({{ total_op_outflows|floatformat:0|intcomma }})</td>
-            </tr>
-          </tbody>
-          <tfoot class="table-primary fw-bold">
-            <tr>
-              <td class="ps-3">Net Cash from Operating Activities</td>
-              <td class="text-end {% if net_operating >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {% if net_operating < 0 %}({{ net_operating|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_operating|floatformat:0|intcomma }}{% endif %} XAF
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-
-    <!-- Investing Activities -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-header py-2 bg-white border-bottom d-flex justify-content-between">
-        <span class="fw-bold"><i class="bi bi-building me-2"></i>Investing Activities</span>
-        <span class="fw-bold">{{ net_investing|floatformat:0|intcomma }} XAF</span>
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm mb-0">
-          <tbody>
-            {% for row in investing_rows %}
-            <tr>
-              <td class="ps-4 small">{{ row.label }}</td>
-              <td class="text-end {% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
-                {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="2" class="text-center text-muted small py-3">No investing activity in period</td></tr>
-            {% endfor %}
-          </tbody>
-          <tfoot class="table-info fw-bold">
-            <tr>
-              <td class="ps-3">Net Cash from Investing Activities</td>
-              <td class="text-end {% if net_investing >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {% if net_investing < 0 %}({{ net_investing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_investing|floatformat:0|intcomma }}{% endif %} XAF
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-
-    <!-- Financing Activities -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-header py-2 bg-white border-bottom d-flex justify-content-between">
-        <span class="fw-bold"><i class="bi bi-cash-coin me-2"></i>Financing Activities</span>
-        <span class="fw-bold">{{ net_financing|floatformat:0|intcomma }} XAF</span>
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-sm mb-0">
-          <tbody>
-            {% for row in financing_rows %}
-            <tr>
-              <td class="ps-4 small">{{ row.label }}</td>
-              <td class="text-end {% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
-                {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="2" class="text-center text-muted small py-3">No financing activity in period</td></tr>
-            {% endfor %}
-          </tbody>
-          <tfoot class="table-success fw-bold">
-            <tr>
-              <td class="ps-3">Net Cash from Financing Activities</td>
-              <td class="text-end {% if net_financing >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {% if net_financing < 0 %}({{ net_financing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_financing|floatformat:0|intcomma }}{% endif %} XAF
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-
-    <!-- Net Change Summary -->
-    <div class="card shadow-sm border-2 border-dark">
-      <div class="card-body">
-        <table class="table table-sm mb-0">
-          <tbody>
-            <tr>
-              <td class="fw-semibold">Opening Cash Balance</td>
-              <td class="text-end fw-semibold">{{ opening_cash|floatformat:0|intcomma }} XAF</td>
-            </tr>
-            <tr>
-              <td class="fw-semibold">Net Change in Cash</td>
-              <td class="text-end fw-bold {% if net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {% if net_change >= 0 %}+{% endif %}{{ net_change|floatformat:0|intcomma }} XAF
-              </td>
-            </tr>
-          </tbody>
-          <tfoot class="table-secondary fw-bold border-top border-2">
-            <tr>
-              <td>Closing Cash Balance</td>
-              <td class="text-end fs-6">{{ closing_cash|floatformat:0|intcomma }} XAF</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-
+  <!-- ══ II. INVESTING ACTIVITIES ══ -->
+  <div class="cf-band investing">
+    <i class="bi bi-building me-2"></i>II. Flux des Activités d'Investissement (Investing Activities)
   </div>
-</div>
+  <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
+    <table class="cf-table">
+      {% for row in investing_rows %}
+      <tr>
+        <td class="ps-4">{{ row.label }}</td>
+        <td class="{% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2" class="text-center text-muted small py-3">Aucune activité d'investissement</td></tr>
+      {% endfor %}
+    </table>
+    <table class="cf-table">
+      <tr class="cf-net investing">
+        <td>FLUX NET D'INVESTISSEMENT (Net Investing Cash Flow)</td>
+        <td class="{% if net_investing >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if net_investing < 0 %}({{ net_investing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_investing|floatformat:0|intcomma }}{% endif %} XAF
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══ III. FINANCING ACTIVITIES ══ -->
+  <div class="cf-band financing">
+    <i class="bi bi-cash-coin me-2"></i>III. Flux des Activités de Financement (Financing Activities)
+  </div>
+  <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
+    <table class="cf-table">
+      {% for row in financing_rows %}
+      <tr>
+        <td class="ps-4">{{ row.label }}</td>
+        <td class="{% if row.amount >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if row.amount < 0 %}({{ row.amount|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ row.amount|floatformat:0|intcomma }}{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2" class="text-center text-muted small py-3">Aucune activité de financement</td></tr>
+      {% endfor %}
+    </table>
+    <table class="cf-table">
+      <tr class="cf-net financing">
+        <td>FLUX NET DE FINANCEMENT (Net Financing Cash Flow)</td>
+        <td class="{% if net_financing >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if net_financing < 0 %}({{ net_financing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_financing|floatformat:0|intcomma }}{% endif %} XAF
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══ IV. NET CHANGE SUMMARY ══ -->
+  <div class="cf-band summary">
+    <i class="bi bi-calculator me-2"></i>IV. Variation Nette de Trésorerie (Net Change in Cash)
+  </div>
+  <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
+    <table class="cf-table">
+      <tr class="cf-summary-row">
+        <td>Trésorerie d'Ouverture (Opening Cash Balance)</td>
+        <td class="font-monospace">{{ opening_cash|floatformat:0|intcomma }} XAF</td>
+      </tr>
+      <tr class="cf-summary-row">
+        <td>Flux nets de la période (Net Change in Cash)</td>
+        <td class="font-monospace {% if net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {% if net_change >= 0 %}+{% endif %}{{ net_change|floatformat:0|intcomma }} XAF
+        </td>
+      </tr>
+    </table>
+    <table class="cf-table">
+      <tr class="cf-summary-final">
+        <td>TRÉSORERIE DE CLÔTURE (Closing Cash Balance)</td>
+        <td class="font-monospace {% if closing_cash >= 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ closing_cash|floatformat:0|intcomma }} XAF
+        </td>
+      </tr>
+    </table>
+  </div>
+
+</div><!-- /rpt-wrap -->
 
 <div class="print-footer">
-  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Printed: <span id="cfPrintDate2"></span> &nbsp;&bull;&nbsp; Cash Flow Statement &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }}
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Tableau des Flux de Trésorerie (OHADA) &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }} &nbsp;&bull;&nbsp;
+  Imprimé le : <span id="cfPrintDate"></span>
 </div>
 <script>
-  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
-  ['cfPrintDate','cfPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+  (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var el=document.getElementById('cfPrintDate'); if(el) el.textContent=s; })();
 </script>
 {% endblock %}

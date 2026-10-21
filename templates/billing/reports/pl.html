@@ -1,27 +1,54 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}P&L — {{ month_label }}{% endblock %}
+{% block title %}Compte de Résultat — {{ month_label }}{% endblock %}
 
 {% block extra_css %}
 <style>
-.pl-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f3f4f6; font-size:.9rem; }
-.pl-row:last-child { border-bottom:none; }
-.pl-section { background:#fff; border-radius:10px; border:1px solid #dee2e6; padding:1rem; margin-bottom:1rem; }
-.pl-section-title { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; font-weight:700; margin-bottom:.5rem; }
+.rpt-wrap { max-width: 960px; margin: 0 auto; }
+.ohada-band {
+  font-size: .68rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
+  border-radius: 4px 4px 0 0;
+}
+.ohada-band.revenue { background: #15803d; }
+.ohada-band.expense { background: #dc2626; }
+.ohada-band.result  { background: #1d4ed8; }
+
+.pl-table { width: 100%; border-collapse: collapse; }
+.pl-table td { padding: .3rem 1rem; font-size: .83rem; border-bottom: 1px solid #f1f5f9; }
+.pl-table td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--bs-font-monospace); }
+.pl-table tr:hover td { background: #f8fafc; }
+.pl-sub td { font-weight: 700; background: #f1f5f9 !important; border-top: 1.5px solid #e2e8f0; border-bottom: 1.5px solid #e2e8f0; }
+.pl-grand td { font-weight: 800; font-size: .9rem; border-top: 2px solid #334155; }
+.pl-grand.rev td { color: #15803d; }
+.pl-grand.exp td { color: #dc2626; }
+.pl-grand.net td { font-size: 1rem; }
+
+.kpi-card { border-radius: 10px; padding: .9rem 1.1rem; text-align: center; }
+.kpi-card .kpi-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+.kpi-card .kpi-value { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kpi-card .kpi-sub { font-size: .72rem; color: #94a3b8; }
+
 @media print {
   .no-print { display: none !important; }
-  .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  @page { size: A4 portrait; margin: 8mm 10mm 15mm 10mm; }
+  body, .pl-table td { font-size: 7.5pt !important; }
+  .ohada-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-footer { display: block !important; }
+}
+.print-footer {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 2mm 10mm; font-size: 7pt; color: #666;
+  border-top: 1px solid #ccc; background: #fff; text-align: center;
 }
 </style>
 {% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">Profit &amp; Loss Statement</h5>
-      <div class="page-subtitle text-muted small">{{ month_label }}</div>
-    </div>
+  <div>
+    <span class="fw-bold fs-6">Compte de Résultat</span>
+    <span class="text-muted small ms-2">Profit &amp; Loss Statement — {{ month_label }}</span>
   </div>
   <div class="d-flex gap-2 align-items-center no-print flex-wrap">
     <a href="?month={{ prev_month }}" class="btn btn-sm btn-outline-secondary">‹ {{ prev_month }}</a>
@@ -30,17 +57,12 @@
       <button type="submit" class="btn btn-sm btn-primary">Go</button>
     </form>
     <a href="?month={{ next_month }}" class="btn btn-sm btn-outline-secondary">{{ next_month }} ›</a>
-    <div class="btn-group no-print" role="group">
-    <a href="?month={{ month_str }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export as PDF with hospital letterhead"><i class="bi bi-download me-1"></i>Export</a>
-    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"><span class="visually-hidden">Select format</span></button>
-    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:220px;">
-      <li><a class="dropdown-item py-2" href="?month={{ month_str }}&format=pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i><strong>PDF Report</strong><small class="page-subtitle text-muted d-block ms-4">With hospital letterhead</small></a></li>
-      <li><a class="dropdown-item py-2" href="?month={{ month_str }}&format=excel" target="_blank"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel Spreadsheet (.xlsx)<small class="page-subtitle text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><a class="dropdown-item py-2" href="?month={{ month_str }}&format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="page-subtitle text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><hr class="dropdown-divider"></li>
-      <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
-    </ul>
-  </div>
+    <div class="btn-group">
+      <a href="?month={{ month_str }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-file-earmark-pdf me-1 text-danger"></i>PDF</a>
+      <a href="?month={{ month_str }}&format=excel" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-file-earmark-excel me-1 text-success"></i>Excel</a>
+      <a href="?month={{ month_str }}&format=csv" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1 text-primary"></i>CSV</a>
+      <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -48,157 +70,216 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-<!-- Top Summary Cards -->
-<div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="text-muted small text-uppercase">Gross Revenue</div>
-      <div class="fs-3 fw-bold text-success">{{ rev_total|floatformat:0|intcomma }}</div>
-      <div class="text-muted small">FCFA</div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="text-muted small text-uppercase">Total Expenses</div>
-      <div class="fs-3 fw-bold text-danger">{{ exp_total|floatformat:0|intcomma }}</div>
-      <div class="text-muted small">FCFA</div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="text-muted small text-uppercase">Net Profit</div>
-      <div class="fs-3 fw-bold {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-        {{ gross_profit|floatformat:0|intcomma }}
-      </div>
-      <div class="text-muted small">FCFA</div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center py-3">
-      <div class="text-muted small text-uppercase">Margin</div>
-      <div class="fs-3 fw-bold {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-        {% if net_revenue %}{% widthratio gross_profit net_revenue 100 %}%{% else %}—{% endif %}
-      </div>
-      <div class="text-muted small">Net margin</div>
-    </div>
-  </div>
-</div>
+<div class="rpt-wrap">
 
-<div class="row g-3">
-  <!-- P&L Statement -->
-  <div class="col-lg-5">
-    <div class="card mb-3 border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom fw-semibold">
-        <i class="bi bi-file-text me-1 text-primary"></i>P&L Statement — {{ month_label }}
+  <!-- ── Report title ── -->
+  <div class="text-center mb-4">
+    <div class="fw-bold fs-5 mb-1">COMPTE DE RÉSULTAT</div>
+    <div class="text-muted small">Période : <strong>{{ month_label }}</strong></div>
+    <div class="text-muted" style="font-size:.73rem;">Établi conformément aux normes OHADA / SYSCOHADA</div>
+  </div>
+
+  <!-- ── KPI summary strip ── -->
+  <div class="row g-3 mb-4 no-print">
+    <div class="col-6 col-lg-3">
+      <div class="kpi-card" style="background:#f0fdf4;border:1px solid #86efac;">
+        <div class="kpi-label">Chiffre d'Affaires</div>
+        <div class="kpi-value text-success">{{ rev_total|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">XAF — Gross Collections</div>
       </div>
-      <div class="card-body">
-        <!-- Revenue Section -->
-        <div class="pl-section-title text-success">REVENUE</div>
-        <div class="pl-row">
-          <span class="text-muted">Gross Collections</span>
-          <span class="fw-semibold">{{ rev_total|floatformat:0|intcomma }}</span>
-        </div>
-        <div class="pl-row">
-          <span class="text-muted">Less: Refunds</span>
-          <span class="text-danger">({{ ref_total|floatformat:0|intcomma }})</span>
-        </div>
-        <div class="pl-row fw-bold" style="background:#f0fdf4;padding:6px 8px;border-radius:4px;">
-          <span>Net Revenue</span>
-          <span class="text-success">{{ net_revenue|floatformat:0|intcomma }}</span>
-        </div>
-        <br>
-        <!-- Expense Section -->
-        <div class="pl-section-title text-danger">OPERATING EXPENSES</div>
-        {% for row in exp_by_cat %}
-        <div class="pl-row">
-          <span class="text-muted">{% for k, v in exp_cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</span>
-          <span>({{ row.total|floatformat:0|intcomma }})</span>
-        </div>
-        {% empty %}
-        <div class="pl-row"><span class="text-muted">No expenses recorded</span><span>0</span></div>
-        {% endfor %}
-        <div class="pl-row fw-bold" style="background:#fef2f2;padding:6px 8px;border-radius:4px;">
-          <span>Total Expenses</span>
-          <span class="text-danger">({{ exp_total|floatformat:0|intcomma }})</span>
-        </div>
-        <br>
-        <!-- Net Profit -->
-        <div class="pl-row fw-bold fs-6" style="background:{% if gross_profit >= 0 %}#f0fdf4{% else %}#fef2f2{% endif %};padding:8px;border-radius:6px;border:1px solid {% if gross_profit >= 0 %}#86efac{% else %}#fca5a5{% endif %};">
-          <span>NET {% if gross_profit >= 0 %}PROFIT{% else %}LOSS{% endif %}</span>
-          <span class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-            {{ gross_profit|floatformat:0|intcomma }} FCFA
-          </span>
-        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-card" style="background:#fef2f2;border:1px solid #fca5a5;">
+        <div class="kpi-label">Charges d'Exploitation</div>
+        <div class="kpi-value text-danger">{{ exp_total|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">XAF — Total Expenses</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-card {% if gross_profit >= 0 %}" style="background:#f0fdf4;border:1px solid #86efac;"{% else %}" style="background:#fef2f2;border:1px solid #fca5a5;"{% endif %}>
+        <div class="kpi-label">Résultat Net</div>
+        <div class="kpi-value {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">{{ gross_profit|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">XAF — Net {% if gross_profit >= 0 %}Profit{% else %}Loss{% endif %}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-card" style="background:#f0f9ff;border:1px solid #93c5fd;">
+        <div class="kpi-label">Taux de Marge Nette</div>
+        <div class="kpi-value text-primary">{% if net_revenue %}{% widthratio gross_profit net_revenue 100 %}%{% else %}—{% endif %}</div>
+        <div class="kpi-sub">Net Margin</div>
       </div>
     </div>
   </div>
 
-  <!-- Revenue Breakdown -->
-  <div class="col-lg-7">
-    <div class="row g-3">
-      <!-- By Category -->
-      <div class="col-12">
-        <div class="card mb-3 border-0 shadow-sm">
-          <div class="card-header bg-white border-bottom fw-semibold small">
-            <i class="bi bi-grid me-1 text-info"></i>Revenue by Service Category
-          </div>
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0 small">
-                <thead class="table-light">
-                  <tr><th>Category</th><th class="text-end">Revenue (FCFA)</th><th class="text-end">%</th></tr>
-                </thead>
-                <tbody>
-                  {% for row in rev_by_cat %}
-                  <tr>
-                    <td>{% for k, v in cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</td>
-                    <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
-                    <td class="text-end text-muted">
-                      {% if net_revenue %}{% widthratio row.total net_revenue 100 %}%{% else %}—{% endif %}
-                    </td>
-                  </tr>
-                  {% empty %}
-                  <tr><td colspan="3" class="text-center text-muted py-3">No revenue data</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
+  <div class="row g-4">
+    <!-- ══ LEFT: P&L Statement ══ -->
+    <div class="col-lg-5">
+
+      <!-- Revenue -->
+      <div class="ohada-band revenue"><i class="bi bi-graph-up-arrow me-2"></i>Produits d'Exploitation — Revenue</div>
+      <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
+        <table class="pl-table">
+          <tr>
+            <td>Recettes brutes (Gross Collections)</td>
+            <td class="text-success">{{ rev_total|floatformat:0|intcomma }}</td>
+          </tr>
+          <tr>
+            <td class="ps-4 text-muted small">Moins: Remboursements (Refunds)</td>
+            <td class="text-danger">({{ ref_total|floatformat:0|intcomma }})</td>
+          </tr>
+          <tr class="pl-sub">
+            <td>Chiffre d'affaires net (Net Revenue)</td>
+            <td class="text-success">{{ net_revenue|floatformat:0|intcomma }}</td>
+          </tr>
+        </table>
+        <table class="pl-table">
+          <tr class="pl-grand rev">
+            <td>TOTAL PRODUITS (Cl. 7)</td>
+            <td>{{ net_revenue|floatformat:0|intcomma }} XAF</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Expenses -->
+      <div class="ohada-band expense"><i class="bi bi-graph-down-arrow me-2"></i>Charges d'Exploitation — Expenses</div>
+      <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
+        <table class="pl-table">
+          {% for row in exp_by_cat %}
+          <tr>
+            <td class="ps-3">{% for k, v in exp_cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</td>
+            <td class="text-danger">({{ row.total|floatformat:0|intcomma }})</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="2" class="text-center text-muted small py-3">Aucune charge enregistrée</td></tr>
+          {% endfor %}
+          <tr class="pl-sub">
+            <td>Total Charges d'exploitation</td>
+            <td class="text-danger">({{ exp_total|floatformat:0|intcomma }})</td>
+          </tr>
+        </table>
+        <table class="pl-table">
+          <tr class="pl-grand exp">
+            <td>TOTAL CHARGES (Cl. 6)</td>
+            <td>({{ exp_total|floatformat:0|intcomma }}) XAF</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Net Result -->
+      <div class="ohada-band result"><i class="bi bi-calculator me-2"></i>Résultat de l'Exercice</div>
+      <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
+        <table class="pl-table">
+          <tr>
+            <td>Produits — Charges</td>
+            <td class="fw-bold {% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ net_revenue|floatformat:0|intcomma }} − {{ exp_total|floatformat:0|intcomma }}
+            </td>
+          </tr>
+        </table>
+        <table class="pl-table">
+          <tr class="pl-grand net">
+            <td class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+              RÉSULTAT {% if gross_profit >= 0 %}BÉNÉFICIAIRE{% else %}DÉFICITAIRE{% endif %}
+            </td>
+            <td class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+              {{ gross_profit|floatformat:0|intcomma }} XAF
+            </td>
+          </tr>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- ══ RIGHT: Breakdowns ══ -->
+    <div class="col-lg-7">
+
+      <!-- By Service Category -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header py-2 bg-white border-bottom">
+          <span class="fw-semibold small"><i class="bi bi-grid me-1 text-info"></i>Revenus par Catégorie de Soins</span>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm align-middle mb-0" style="font-size:.82rem;">
+            <thead class="table-light">
+              <tr>
+                <th>Catégorie</th>
+                <th class="text-end">Montant (XAF)</th>
+                <th class="text-end">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rev_by_cat %}
+              <tr>
+                <td>{% for k, v in cat_labels.items %}{% if k == row.category %}{{ v }}{% endif %}{% endfor %}</td>
+                <td class="text-end fw-semibold font-monospace">{{ row.total|floatformat:0|intcomma }}</td>
+                <td class="text-end text-muted">{% if net_revenue %}{% widthratio row.total net_revenue 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="text-center text-muted py-3">Aucune donnée de revenu</td></tr>
+              {% endfor %}
+            </tbody>
+            {% if rev_by_cat %}
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td>Total</td>
+                <td class="text-end font-monospace text-success">{{ net_revenue|floatformat:0|intcomma }}</td>
+                <td class="text-end">100%</td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
         </div>
       </div>
 
       <!-- By Payment Method -->
-      <div class="col-12">
-        <div class="card mb-3 border-0 shadow-sm">
-          <div class="card-header bg-white border-bottom fw-semibold small">
-            <i class="bi bi-credit-card me-1 text-primary"></i>Collections by Payment Method
-          </div>
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0 small">
-                <thead class="table-light">
-                  <tr><th>Method</th><th class="text-end">Amount (FCFA)</th><th class="text-end">%</th></tr>
-                </thead>
-                <tbody>
-                  {% for row in rev_by_method %}
-                  <tr>
-                    <td>{% for k, v in method_labels.items %}{% if k == row.payment_method %}{{ v }}{% endif %}{% endfor %}</td>
-                    <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
-                    <td class="text-end text-muted">
-                      {% if rev_total %}{% widthratio row.total rev_total 100 %}%{% else %}—{% endif %}
-                    </td>
-                  </tr>
-                  {% empty %}
-                  <tr><td colspan="3" class="text-center text-muted py-3">No data</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <div class="card border-0 shadow-sm">
+        <div class="card-header py-2 bg-white border-bottom">
+          <span class="fw-semibold small"><i class="bi bi-credit-card me-1 text-primary"></i>Encaissements par Mode de Paiement</span>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm align-middle mb-0" style="font-size:.82rem;">
+            <thead class="table-light">
+              <tr>
+                <th>Mode de Paiement</th>
+                <th class="text-end">Montant (XAF)</th>
+                <th class="text-end">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rev_by_method %}
+              <tr>
+                <td>{% for k, v in method_labels.items %}{% if k == row.payment_method %}{{ v }}{% endif %}{% endfor %}</td>
+                <td class="text-end fw-semibold font-monospace">{{ row.total|floatformat:0|intcomma }}</td>
+                <td class="text-end text-muted">{% if rev_total %}{% widthratio row.total rev_total 100 %}%{% else %}—{% endif %}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="text-center text-muted py-3">Aucune donnée</td></tr>
+              {% endfor %}
+            </tbody>
+            {% if rev_by_method %}
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td>Total Encaissements</td>
+                <td class="text-end font-monospace text-success">{{ rev_total|floatformat:0|intcomma }}</td>
+                <td class="text-end">100%</td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
         </div>
       </div>
-    </div>
-  </div>
 
+    </div>
+  </div><!-- /row -->
+</div><!-- /rpt-wrap -->
+
+<div class="print-footer">
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Compte de Résultat (OHADA) &nbsp;&bull;&nbsp; {{ month_label }} &nbsp;&bull;&nbsp;
+  Imprimé le : <span id="plPrintDate"></span>
 </div>
+<script>
+  (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var el=document.getElementById('plPrintDate'); if(el) el.textContent=s; })();
+</script>
 {% endblock %}

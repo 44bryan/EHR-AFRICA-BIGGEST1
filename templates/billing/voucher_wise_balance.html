@@ -1,23 +1,58 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Voucher-Wise Balance{% endblock %}
+{% block title %}Balance par Pièce Comptable — Voucher-Wise Balance{% endblock %}
 
 {% block extra_css %}
 <style>
-.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
-.rpt-table td { font-size:.83rem; vertical-align:middle; }
-.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
-.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
-@media print {
-  .no-print { display:none !important; }
-  @page { size: A4 landscape; margin: 10mm 8mm 18mm 8mm; }
-  body { font-size:7.5pt !important; }
-  .print-only-header { display:block !important; }
-  .print-footer { display:block !important; }
+.rpt-wrap { max-width: 1100px; margin: 0 auto; }
+
+.ohada-band {
+  font-size: .68rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
+  border-radius: 4px 4px 0 0; background: #1e3a5f;
+  display: flex; justify-content: space-between; align-items: center;
 }
-.print-only-header { display:none; }
-.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
-  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
+
+.rpt-table th {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: #64748b; font-weight: 700; background: #f8fafc;
+}
+.rpt-table td { font-size: .82rem; vertical-align: middle; }
+.rpt-table tbody tr:hover td { background: #f0f9ff; }
+
+.balance-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  border-radius: 4px; padding: .18rem .55rem; font-size: .68rem; font-weight: 700;
+}
+.balance-chip.ok  { background: #dcfce7; color: #15803d; }
+.balance-chip.bad { background: #fee2e2; color: #dc2626; }
+
+.grand-total-row td {
+  font-weight: 800; font-size: .85rem;
+  background: #1e3a5f !important; color: #fff;
+  border-top: 2px solid #0f2744;
+}
+.grand-total-row td .font-monospace { color: #93c5fd; }
+
+.kpi-pill { border-radius: 8px; padding: .65rem 1rem; }
+.kpi-pill .lbl { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+.kpi-pill .val { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.rpt-empty { text-align: center; padding: 3rem 1rem; color: #adb5bd; }
+.rpt-empty i { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
+
+@media print {
+  .no-print { display: none !important; }
+  @page { size: A4 landscape; margin: 8mm 8mm 15mm 8mm; }
+  body, .rpt-table td { font-size: 7pt !important; }
+  .ohada-band, .grand-total-row td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-footer { display: block !important; }
+}
+.print-footer {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 2mm 10mm; font-size: 7pt; color: #666;
+  border-top: 1px solid #ccc; background: #fff; text-align: center;
+}
 </style>
 {% endblock %}
 
@@ -27,16 +62,16 @@
     <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <span class="fw-bold fs-6">Voucher-Wise Balance</span>
-    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+    <span class="fw-bold fs-6">Balance par Pièce Comptable</span>
+    <span class="text-muted small ms-2">Voucher-Wise Balance — {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
   </div>
   <div class="d-flex gap-2 no-print">
+    <a href="?date_from={{ date_from_str }}&date_to={{ date_to_str }}&export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-filetype-csv me-1 text-primary"></i>CSV
+    </a>
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-printer me-1"></i>Print
     </button>
-    <a href="?date_from={{ date_from_str }}&date_to={{ date_to_str }}&export=csv" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-download me-1"></i>Export CSV
-    </a>
   </div>
 </div>
 {% endblock %}
@@ -44,109 +79,163 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-<!-- Print-only report header -->
-<div class="print-only-header mb-3">
-  <h5 class="fw-bold mb-1">Voucher-Wise Balance</h5>
-  <div class="small text-muted">Period: {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</div>
-  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="vwPrintDate"></span></div>
-</div>
+<div class="rpt-wrap">
 
-<!-- Filters -->
-<form method="get" class="row g-2 mb-4 align-items-end no-print">
-  <div class="col-sm-3">
-    <label class="form-label small fw-semibold mb-1">From</label>
-    <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+  <!-- ── Report title ── -->
+  <div class="text-center mb-4">
+    <div class="fw-bold fs-5 mb-1">BALANCE PAR PIÈCE COMPTABLE</div>
+    <div class="text-muted small">Période : <strong>{{ date_from|date:"d F Y" }}</strong> — <strong>{{ date_to|date:"d F Y" }}</strong></div>
+    <div class="text-muted" style="font-size:.72rem;">Registre des pièces justificatives — Normes OHADA / SYSCOHADA</div>
   </div>
-  <div class="col-sm-3">
-    <label class="form-label small fw-semibold mb-1">To</label>
-    <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
-  </div>
-  <div class="col-sm-3">
-    <label class="form-label small fw-semibold mb-1">Journal Type</label>
-    <select name="journal_type" class="form-select form-select-sm">
-      <option value="">All Types</option>
-      {% for jt in journal_types %}
-      <option value="{{ jt.id }}" {% if request.GET.journal_type == jt.id|stringformat:"s" %}selected{% endif %}>{{ jt.code }} — {{ jt.name }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-auto">
-    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
-  </div>
-</form>
 
-<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
-  <div class="table-responsive">
-    <table class="table table-sm table-hover mb-0 rpt-table">
-      <thead>
-        <tr style="border-bottom:2px solid #e9ecef;">
-          <th>Date</th>
-          <th>Voucher #</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th class="text-end">Total Debits (XAF)</th>
-          <th class="text-end">Total Credits (XAF)</th>
-          <th class="text-center">Balanced</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td class="font-monospace small text-muted">{{ row.entry.entry_date|date:"d/m/Y" }}</td>
-          <td>
-            <a href="{% url 'billing:journal_entry_detail' row.entry.pk %}" class="fw-semibold text-primary text-decoration-none">
-              {{ row.entry.entry_number }}
-            </a>
-          </td>
-          <td class="small text-muted">{{ row.entry.journal_type.code|default:"—" }}</td>
-          <td>{{ row.entry.description|truncatechars:60 }}</td>
-          <td class="text-end font-monospace fw-semibold">{{ row.total_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end font-monospace fw-semibold">{{ row.total_cr|floatformat:0|intcomma }}</td>
-          <td class="text-center">
-            {% if row.balanced %}
-            <span class="badge bg-success" style="font-size:.68rem;">Balanced</span>
-            {% else %}
-            <span class="badge bg-danger" style="font-size:.68rem;">Off by {{ row.diff|floatformat:0|intcomma }}</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="7">
-            <div class="rpt-empty">
-              <i class="bi bi-journal-text"></i>
-              No vouchers found for the selected period.
-            </div>
-          </td>
-        </tr>
+  <!-- ── Filters ── -->
+  <form method="get" class="row g-2 mb-4 align-items-end no-print">
+    <div class="col-sm-3">
+      <label class="form-label small fw-semibold mb-1">De</label>
+      <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-sm-3">
+      <label class="form-label small fw-semibold mb-1">À</label>
+      <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-sm-3">
+      <label class="form-label small fw-semibold mb-1">Type de Journal</label>
+      <select name="journal_type" class="form-select form-select-sm">
+        <option value="">— Tous les Types —</option>
+        {% for jt in journal_types %}
+        <option value="{{ jt.id }}" {% if request.GET.journal_type == jt.id|stringformat:"s" %}selected{% endif %}>{{ jt.code }} — {{ jt.name }}</option>
         {% endfor %}
-      </tbody>
-      {% if rows %}
-      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
-        <tr>
-          <td colspan="4" class="fw-semibold small text-uppercase text-muted text-end pe-3">Total</td>
-          <td class="text-end font-monospace fw-bold">{{ grand_dr|floatformat:0|intcomma }}</td>
-          <td class="text-end font-monospace fw-bold">{{ grand_cr|floatformat:0|intcomma }}</td>
-          <td class="text-center">
-            {% if grand_dr == grand_cr %}
-            <span class="badge bg-success" style="font-size:.68rem;">Balanced</span>
-            {% else %}
-            <span class="badge bg-danger" style="font-size:.68rem;">Unbalanced</span>
-            {% endif %}
-          </td>
-        </tr>
-      </tfoot>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Appliquer</button>
+    </div>
+  </form>
+
+  <!-- ── KPI strip ── -->
+  {% if rows %}
+  <div class="row g-2 mb-4 no-print">
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#f0f9ff;border:1px solid #93c5fd;">
+        <div class="lbl">Nb. de Pièces</div>
+        <div class="val text-primary font-monospace">{{ rows|length }}</div>
+        <div style="font-size:.7rem;color:#64748b;">Total vouchers</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#f0fdf4;border:1px solid #86efac;">
+        <div class="lbl">Total Débits</div>
+        <div class="val text-success font-monospace">{{ grand_dr|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">XAF</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#fef2f2;border:1px solid #fca5a5;">
+        <div class="lbl">Total Crédits</div>
+        <div class="val text-danger font-monospace">{{ grand_cr|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">XAF</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      {% if grand_dr == grand_cr %}
+      <div class="kpi-pill" style="background:#f0fdf4;border:1px solid #86efac;">
+        <div class="lbl">Équilibre</div>
+        <div class="val text-success"><i class="bi bi-check-circle-fill"></i></div>
+        <div style="font-size:.7rem;color:#64748b;">Toutes pièces équilibrées</div>
+      </div>
+      {% else %}
+      <div class="kpi-pill" style="background:#fef2f2;border:1px solid #fca5a5;">
+        <div class="lbl">Différence</div>
+        <div class="val text-danger font-monospace">{{ grand_dr|add:grand_cr|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#dc2626;">Hors équilibre</div>
+      </div>
       {% endif %}
-    </table>
+    </div>
   </div>
-</div>
+  {% endif %}
+
+  <!-- ── Table ── -->
+  <div class="ohada-band">
+    <span><i class="bi bi-journal-text me-2"></i>Détail des Pièces Comptables</span>
+    {% if rows %}<span class="font-monospace">{{ rows|length }} pièce{{ rows|length|pluralize }}</span>{% endif %}
+  </div>
+  <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 rpt-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>N° Pièce</th>
+            <th>Type</th>
+            <th>Libellé</th>
+            <th class="text-end">Débit (XAF)</th>
+            <th class="text-end">Crédit (XAF)</th>
+            <th class="text-center">Équilibre</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="font-monospace small text-muted">{{ row.entry.entry_date|date:"d/m/Y" }}</td>
+            <td>
+              <a href="{% url 'billing:journal_entry_detail' row.entry.pk %}" class="fw-semibold text-primary text-decoration-none">
+                {{ row.entry.entry_number }}
+              </a>
+            </td>
+            <td>
+              <span class="badge bg-secondary" style="font-size:.68rem;">{{ row.entry.journal_type.code|default:"—" }}</span>
+            </td>
+            <td class="text-muted small">{{ row.entry.description|truncatechars:65 }}</td>
+            <td class="text-end font-monospace fw-semibold text-success">{{ row.total_dr|floatformat:0|intcomma }}</td>
+            <td class="text-end font-monospace fw-semibold text-danger">{{ row.total_cr|floatformat:0|intcomma }}</td>
+            <td class="text-center">
+              {% if row.balanced %}
+              <span class="balance-chip ok"><i class="bi bi-check-circle-fill"></i>Équilibré</span>
+              {% else %}
+              <span class="balance-chip bad"><i class="bi bi-x-circle-fill"></i>Écart {{ row.diff|floatformat:0|intcomma }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7">
+              <div class="rpt-empty">
+                <i class="bi bi-journal-text"></i>
+                Aucune pièce comptable trouvée pour la période sélectionnée.
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if rows %}
+        <tfoot>
+          <tr class="grand-total-row">
+            <td colspan="4" class="text-end pe-3 small text-uppercase" style="letter-spacing:.06em;">Grand Total — {{ rows|length }} Pièce{{ rows|length|pluralize }}</td>
+            <td class="text-end"><span class="font-monospace">{{ grand_dr|floatformat:0|intcomma }}</span></td>
+            <td class="text-end"><span class="font-monospace">{{ grand_cr|floatformat:0|intcomma }}</span></td>
+            <td class="text-center">
+              {% if grand_dr == grand_cr %}
+              <span class="balance-chip ok"><i class="bi bi-check-circle-fill"></i>Équilibré</span>
+              {% else %}
+              <span class="balance-chip bad"><i class="bi bi-x-circle-fill"></i>Déséquilibré</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+</div><!-- /rpt-wrap -->
 
 <div class="print-footer">
-  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Printed: <span id="vwPrintDate2"></span> &nbsp;&bull;&nbsp; Voucher-Wise Balance &nbsp;&bull;&nbsp; {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Balance par Pièce Comptable (OHADA) &nbsp;&bull;&nbsp; {{ date_from|date:"d F Y" }} — {{ date_to|date:"d F Y" }} &nbsp;&bull;&nbsp;
+  Imprimé le : <span id="vwPrintDate"></span>
 </div>
 <script>
-  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
-  ['vwPrintDate','vwPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+  (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var el=document.getElementById('vwPrintDate'); if(el) el.textContent=s; })();
 </script>
 {% endblock %}

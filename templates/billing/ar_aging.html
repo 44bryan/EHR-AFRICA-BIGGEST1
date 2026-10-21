@@ -1,25 +1,44 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}Accounts Receivable{% endblock %}
+{% block title %}Balance Âgée Clients — AR Aging{% endblock %}
 
 {% block extra_css %}
 <style>
-.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
-.rpt-table td { font-size:.83rem; vertical-align:middle; }
-.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
-.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
-.bucket-header { padding:.5rem 1rem; background:#f8f9fa; border-bottom:1px solid #e9ecef;
-  display:flex; justify-content:space-between; align-items:center; font-size:.83rem; }
-@media print {
-  .no-print { display:none !important; }
-  @page { size: A4 landscape; margin: 10mm 8mm 18mm 8mm; }
-  body { font-size:7.5pt !important; }
-  .print-only-header { display:block !important; }
-  .print-footer { display:block !important; }
+.rpt-wrap { max-width: 1100px; margin: 0 auto; }
+.bucket-band {
+  font-size: .7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .08em; color: #fff; padding: .35rem 1rem;
+  border-radius: 4px 4px 0 0; display: flex; justify-content: space-between; align-items: center;
 }
-.print-only-header { display:none; }
-.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
-  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
+.bucket-band.current  { background: #15803d; }
+.bucket-band.days31   { background: #b45309; }
+.bucket-band.days61   { background: #dc2626; }
+.bucket-band.days90   { background: #7c3aed; }
+.bucket-band.corporate{ background: #1d4ed8; }
+
+.rpt-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b; font-weight: 700; background: #f8fafc; }
+.rpt-table td { font-size: .82rem; vertical-align: middle; }
+.rpt-table tbody tr:hover td { background: #f0f9ff; }
+
+.kpi-pill { border-radius: 8px; padding: .7rem 1rem; }
+.kpi-pill .lbl { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.kpi-pill .val { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.rpt-empty { text-align: center; padding: 2.5rem 1rem; color: #adb5bd; }
+.rpt-empty i { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
+
+@media print {
+  .no-print { display: none !important; }
+  @page { size: A4 landscape; margin: 8mm 8mm 15mm 8mm; }
+  body, .rpt-table td { font-size: 7pt !important; }
+  .bucket-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-footer { display: block !important; }
+}
+.print-footer {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 2mm 10mm; font-size: 7pt; color: #666;
+  border-top: 1px solid #ccc; background: #fff; text-align: center;
+}
 </style>
 {% endblock %}
 
@@ -29,16 +48,13 @@
     <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <span class="fw-bold fs-6">Accounts Receivable</span>
-    <span class="text-muted small ms-2">As of {{ today|date:"d M Y" }}</span>
+    <span class="fw-bold fs-6">Balance Âgée Clients</span>
+    <span class="text-muted small ms-2">AR Aging Report — As of {{ today|date:"d M Y" }}</span>
   </div>
   <div class="d-flex gap-2 no-print">
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print
-    </button>
-    <a href="?format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank">
-      <i class="bi bi-download me-1"></i>Export
-    </a>
+    <a href="?format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-file-earmark-pdf me-1 text-danger"></i>PDF</a>
+    <a href="?export=csv" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-csv me-1 text-primary"></i>CSV</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i>Print</button>
   </div>
 </div>
 {% endblock %}
@@ -46,149 +62,170 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-<!-- Print-only report header -->
-<div class="print-only-header mb-3">
-  <h5 class="fw-bold mb-1">Accounts Receivable Aging Report</h5>
-  <div class="small text-muted">As of {{ today|date:"d M Y" }}</div>
-  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="arPrintDate"></span></div>
-</div>
+<div class="rpt-wrap">
 
-<!-- Summary strip -->
-<div class="row g-2 mb-4 no-print">
-  <div class="col-6 col-md-3">
-    <div class="p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
-      <div class="text-muted small">Current (0–30 days)</div>
-      <div class="fw-bold text-success font-monospace">{{ buckets.current.total|floatformat:0|intcomma }}</div>
-      <div class="text-muted" style="font-size:.72rem;">{{ buckets.current.rows|length }} invoice{{ buckets.current.rows|length|pluralize }}</div>
+  <!-- ── Report title ── -->
+  <div class="text-center mb-4">
+    <div class="fw-bold fs-5 mb-1">BALANCE ÂGÉE DES CRÉANCES CLIENTS</div>
+    <div class="text-muted small">Au : <strong>{{ today|date:"d F Y" }}</strong></div>
+    <div class="text-muted" style="font-size:.72rem;">Compte 411 — Clients / Accounts Receivable Aging (OHADA)</div>
+  </div>
+
+  <!-- ── KPI summary strip ── -->
+  <div class="row g-2 mb-4 no-print">
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#f0fdf4;border:1px solid #86efac;">
+        <div class="lbl text-success">Courant (0–30 j.)</div>
+        <div class="val text-success font-monospace">{{ buckets.current.total|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">{{ buckets.current.rows|length }} invoice{{ buckets.current.rows|length|pluralize }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#fffbeb;border:1px solid #fde68a;">
+        <div class="lbl" style="color:#b45309;">31–60 Jours</div>
+        <div class="val font-monospace" style="color:#b45309;">{{ buckets.days31.total|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">{{ buckets.days31.rows|length }} invoice{{ buckets.days31.rows|length|pluralize }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#fef2f2;border:1px solid #fca5a5;">
+        <div class="lbl text-danger">61–90 Jours</div>
+        <div class="val text-danger font-monospace">{{ buckets.days61.total|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">{{ buckets.days61.rows|length }} invoice{{ buckets.days61.rows|length|pluralize }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="kpi-pill" style="background:#f5f3ff;border:1px solid #ddd6fe;">
+        <div class="lbl" style="color:#7c3aed;">91+ Jours (Critique)</div>
+        <div class="val font-monospace" style="color:#7c3aed;">{{ buckets.days90.total|floatformat:0|intcomma }}</div>
+        <div style="font-size:.7rem;color:#64748b;">{{ buckets.days90.rows|length }} invoice{{ buckets.days90.rows|length|pluralize }}</div>
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="p-3 rounded" style="background:#fffbeb;border:1px solid #fde68a;">
-      <div class="text-muted small">31–60 Days</div>
-      <div class="fw-bold text-warning font-monospace">{{ buckets.days31.total|floatformat:0|intcomma }}</div>
-      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days31.rows|length }} invoice{{ buckets.days31.rows|length|pluralize }}</div>
+
+  <!-- ── Grand Total ── -->
+  <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+    <div class="fw-bold text-muted small">TOTAL CRÉANCES IMPAYÉES</div>
+    <div class="fw-bold fs-5 font-monospace text-danger">{{ grand_total|floatformat:0|intcomma }} XAF</div>
+  </div>
+
+  <!-- ── Aging buckets ── -->
+  {% for key, bucket in buckets.items %}
+  {% if bucket.rows %}
+  <div class="mb-3">
+    <div class="bucket-band
+      {% if key == 'current' %}current
+      {% elif key == 'days31' %}days31
+      {% elif key == 'days61' %}days61
+      {% else %}days90{% endif %}">
+      <span>{{ bucket.label }}</span>
+      <span class="font-monospace">{{ bucket.total|floatformat:0|intcomma }} XAF &nbsp;·&nbsp; {{ bucket.rows|length }} facture{{ bucket.rows|length|pluralize }}</span>
+    </div>
+    <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 rpt-table">
+          <thead>
+            <tr>
+              <th>N° Facture</th>
+              <th>Patient / Compte</th>
+              <th>Date Émission</th>
+              <th class="text-end">Montant TTC</th>
+              <th class="text-end">Payé</th>
+              <th class="text-end">Solde (XAF)</th>
+              <th class="text-end">Âge (j.)</th>
+              <th>Statut</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in bucket.rows %}
+            <tr>
+              <td class="font-monospace small">{{ row.invoice.invoice_number }}</td>
+              <td>
+                <div class="fw-semibold">{{ row.invoice.patient.full_name }}</div>
+                {% if row.invoice.corporate_account %}
+                <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-building me-1"></i>{{ row.invoice.corporate_account.name }}</div>
+                {% endif %}
+              </td>
+              <td class="text-muted small">{{ row.invoice.issue_date|date:"d/m/Y" }}</td>
+              <td class="text-end font-monospace small">{{ row.total|floatformat:0|intcomma }}</td>
+              <td class="text-end font-monospace small text-success">{{ row.paid|floatformat:0|intcomma }}</td>
+              <td class="text-end font-monospace fw-bold
+                {% if key == 'current' %}text-success
+                {% elif key == 'days31' %}{% endif %}"
+                style="{% if key == 'days31' %}color:#b45309;{% elif key == 'days90' %}color:#7c3aed;{% endif %}">
+                {{ row.balance|floatformat:0|intcomma }}
+              </td>
+              <td class="text-end small">{{ row.age_days }}</td>
+              <td>
+                <span class="badge {% if row.invoice.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-primary{% endif %}" style="font-size:.68rem;">
+                  {{ row.invoice.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="btn btn-sm btn-outline-secondary py-0" style="font-size:.7rem;padding:1px 8px;">Voir</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+            <tr>
+              <td colspan="5" class="fw-bold small text-muted text-end pe-3">Sous-total</td>
+              <td class="text-end font-monospace fw-bold">{{ bucket.total|floatformat:0|intcomma }}</td>
+              <td colspan="3"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="p-3 rounded" style="background:#fef2f2;border:1px solid #fecaca;">
-      <div class="text-muted small">61–90 Days</div>
-      <div class="fw-bold text-danger font-monospace">{{ buckets.days61.total|floatformat:0|intcomma }}</div>
-      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days61.rows|length }} invoice{{ buckets.days61.rows|length|pluralize }}</div>
+  {% endif %}
+  {% endfor %}
+
+  <!-- ── Corporate AR Summary ── -->
+  {% if corporate_ar %}
+  <div class="mt-4 mb-3">
+    <div class="bucket-band corporate">
+      <span><i class="bi bi-building me-2"></i>Comptes Corporatifs — Corporate Account AR Summary</span>
+      <span class="font-monospace">{{ corporate_ar|length }} compte{{ corporate_ar|length|pluralize }}</span>
+    </div>
+    <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
+      <table class="table table-sm mb-0 rpt-table">
+        <thead>
+          <tr>
+            <th>Entreprise / Company</th>
+            <th class="text-end">Solde Impayé (XAF)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for corp in corporate_ar %}
+          <tr>
+            <td class="fw-semibold">{{ corp.account.name }}</td>
+            <td class="text-end font-monospace fw-bold text-danger">{{ corp.balance|floatformat:0|intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="p-3 rounded" style="background:#f5f3ff;border:1px solid #ddd6fe;">
-      <div class="text-muted small">91+ Days (Critical)</div>
-      <div class="fw-bold font-monospace" style="color:#7c3aed;">{{ buckets.days90.total|floatformat:0|intcomma }}</div>
-      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days90.rows|length }} invoice{{ buckets.days90.rows|length|pluralize }}</div>
-    </div>
-  </div>
-</div>
+  {% endif %}
 
-<!-- One section per bucket -->
-{% for key, bucket in buckets.items %}
-{% if bucket.rows %}
-<div class="mb-4" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
-  <div class="bucket-header">
-    <span class="fw-semibold
-      {% if key == 'current' %}text-success
-      {% elif key == 'days31' %}text-warning
-      {% elif key == 'days61' %}text-danger
-      {% else %}{% endif %}"
-      {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
-      {{ bucket.label }}
-    </span>
-    <span class="fw-bold font-monospace">{{ bucket.total|floatformat:0|intcomma }} XAF</span>
+  {% if not buckets.current.rows and not buckets.days31.rows and not buckets.days61.rows and not buckets.days90.rows %}
+  <div class="rpt-empty">
+    <i class="bi bi-inbox"></i>
+    Aucune créance impayée trouvée.
   </div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover mb-0 rpt-table">
-      <thead>
-        <tr style="border-bottom:2px solid #e9ecef;">
-          <th>Invoice #</th>
-          <th>Patient / Account</th>
-          <th>Issue Date</th>
-          <th class="text-end">Outstanding (XAF)</th>
-          <th class="text-end">Age (days)</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in bucket.rows %}
-        <tr>
-          <td class="font-monospace small">{{ row.invoice.invoice_number }}</td>
-          <td>
-            <div class="fw-semibold">{{ row.invoice.patient.full_name }}</div>
-            {% if row.invoice.corporate_account %}
-            <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-building me-1"></i>{{ row.invoice.corporate_account.company_name }}</div>
-            {% endif %}
-          </td>
-          <td class="text-muted small">{{ row.invoice.issue_date|date:"d M Y" }}</td>
-          <td class="text-end font-monospace fw-bold
-            {% if key == 'current' %}text-success
-            {% elif key == 'days31' %}text-warning
-            {% elif key == 'days61' %}text-danger{% endif %}"
-            {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
-            {{ row.balance|floatformat:0|intcomma }}
-          </td>
-          <td class="text-end small">{{ row.age_days }}</td>
-          <td>
-            <span class="badge {% if row.invoice.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-primary{% endif %}" style="font-size:.7rem;">
-              {{ row.invoice.get_status_display }}
-            </span>
-          </td>
-          <td>
-            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="btn btn-sm btn-outline-secondary py-0" style="font-size:.72rem;padding:2px 8px;">View</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-{% endfor %}
+  {% endif %}
 
-<!-- Corporate AR Summary -->
-{% if corporate_ar %}
-<div class="mt-4" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
-  <div class="bucket-header">
-    <span class="fw-semibold"><i class="bi bi-building me-2 text-warning"></i>Corporate Account AR Summary</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-sm mb-0 rpt-table">
-      <thead>
-        <tr style="border-bottom:2px solid #e9ecef;">
-          <th>Company</th>
-          <th class="text-end">Outstanding Balance (XAF)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for corp in corporate_ar %}
-        <tr>
-          <td class="fw-semibold">{{ corp.company_name }}</td>
-          <td class="text-end font-monospace fw-bold text-danger">{{ corp.outstanding|floatformat:0|intcomma }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-{% if not buckets.current.rows and not buckets.days31.rows and not buckets.days61.rows and not buckets.days90.rows %}
-<div class="rpt-empty">
-  <i class="bi bi-inbox"></i>
-  No outstanding invoices for the selected period.
-</div>
-{% endif %}
+</div><!-- /rpt-wrap -->
 
 <div class="print-footer">
-  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Printed: <span id="arPrintDate2"></span> &nbsp;&bull;&nbsp; AR Aging Report &nbsp;&bull;&nbsp; As of {{ today|date:"d M Y" }}
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Balance Âgée Clients (OHADA Cpte 411) &nbsp;&bull;&nbsp; Au {{ today|date:"d F Y" }} &nbsp;&bull;&nbsp;
+  Imprimé le : <span id="arPrintDate"></span>
 </div>
 <script>
-  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
-  ['arPrintDate','arPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+  (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+    var el=document.getElementById('arPrintDate'); if(el) el.textContent=s; })();
 </script>
 {% endblock %}
