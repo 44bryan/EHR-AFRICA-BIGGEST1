@@ -3356,6 +3356,8 @@ def service_price_create(request):
     stock_var_gl = request.POST.get('stock_variation_gl_account', '').strip()
 
     is_item = entry_type == 'ITEM'
+    shelf_life = request.POST.get('shelf_life_days', '').strip()
+    alert_days = request.POST.get('expiry_alert_days', '').strip()
     ServicePrice.objects.create(
         entry_type=entry_type,
         name=name,
@@ -3376,6 +3378,11 @@ def service_price_create(request):
         is_taxable=bool(request.POST.get('is_taxable')),
         requires_price_entry=bool(request.POST.get('requires_price_entry')),
         is_active='is_active' in request.POST,
+        track_batch='track_batch' in request.POST,
+        track_expiry='track_expiry' in request.POST,
+        shelf_life_days=int(shelf_life) if shelf_life else None,
+        expiry_alert_days=int(alert_days) if alert_days else 30,
+        valuation_method=request.POST.get('valuation_method', 'AVCO'),
         created_by=request.user,
     )
     label = 'Item' if is_item else 'Service'
@@ -3470,6 +3477,14 @@ def service_price_edit_form(request, price_id):
         sp.is_stockable          = (sp.entry_type == 'ITEM') or ('is_stockable' in request.POST)
         sp.requires_price_entry  = 'requires_price_entry' in request.POST
         sp.is_active             = 'is_active' in request.POST
+        # Tracking fields (items only)
+        sp.track_batch       = 'track_batch' in request.POST
+        sp.track_expiry      = 'track_expiry' in request.POST
+        shelf_life = request.POST.get('shelf_life_days', '').strip()
+        alert_days = request.POST.get('expiry_alert_days', '').strip()
+        sp.shelf_life_days   = int(shelf_life) if shelf_life else None
+        sp.expiry_alert_days = int(alert_days) if alert_days else 30
+        sp.valuation_method  = request.POST.get('valuation_method', 'AVCO')
         sp.updated_by = request.user
         sp.save()
         messages.success(request, f'"{sp.name}" updated.')

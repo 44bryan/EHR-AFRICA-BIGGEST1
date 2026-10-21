@@ -203,6 +203,29 @@ class ServicePrice(AuditModel):
         help_text='If True, cashier must enter price at point of sale (e.g. glasses frames)'
     )
 
+    # ── Item tracking (ITEM entry_type only) ──
+    track_batch = models.BooleanField(
+        default=False,
+        help_text='Require batch number on every receipt and dispensing.'
+    )
+    track_expiry = models.BooleanField(
+        default=False,
+        help_text='Track expiry dates; enables FEFO dispatch and expiry alerts.'
+    )
+    shelf_life_days = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Expected shelf life in days; used to auto-calculate expiry from manufacture date.'
+    )
+    expiry_alert_days = models.PositiveIntegerField(
+        null=True, blank=True, default=30,
+        help_text='Alert this many days before expiry. Default 30.'
+    )
+    valuation_method = models.CharField(
+        max_length=10, default='AVCO',
+        choices=[('AVCO', 'Average Cost (AVCO)'), ('FIFO', 'First In First Out (FIFO)'), ('FEFO', 'First Expiry First Out (FEFO)')],
+        help_text='Inventory valuation method used when calculating COGS.'
+    )
+
     class Meta:
         ordering = ['category', 'name']
         verbose_name = 'Service Price'

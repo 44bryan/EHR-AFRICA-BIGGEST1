@@ -104,14 +104,14 @@
             <div class="col-md-4">
               <label class="form-label fw-semibold">Entry Type <span class="text-danger">*</span></label>
               <select name="entry_type" id="entryTypeSelect" class="form-select" onchange="onTypeChange(this.value)">
-                <option value="SERVICE" {% if not sp or sp.entry_type == 'SERVICE' %}selected{% endif %}>Service (intangible)</option>
-                <option value="ITEM" {% if sp and sp.entry_type == 'ITEM' %}selected{% endif %}>Item (physical good)</option>
+                <option value="SERVICE" {% if sp and sp.entry_type == 'ITEM' %}{% elif default_type == 'ITEM' %}{% else %}selected{% endif %}>Service (intangible)</option>
+                <option value="ITEM" {% if sp and sp.entry_type == 'ITEM' %}selected{% elif not sp and default_type == 'ITEM' %}selected{% endif %}>Item (physical good)</option>
               </select>
               <div class="form-text">Services = consultations, procedures. Items = drugs, consumables.</div>
             </div>
             <div class="col-md-4">
               <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
-              <select name="category" class="form-select" required>
+              <select name="category" id="categorySelect" class="form-select" required>
                 <option value="">— Select —</option>
                 {% for val, label in categories %}
                 <option value="{{ val }}" {% if sp and sp.category == val %}selected{% endif %}>{{ label }}</option>
@@ -120,10 +120,10 @@
             </div>
             <div class="col-md-4">
               <label class="form-label fw-semibold">Sub-Category / Family</label>
-              <select name="sub_category" class="form-select">
+              <select name="sub_category" id="subCategorySelect" class="form-select" onchange="onSubCatChange(this.value)">
                 <option value="">— None —</option>
                 {% for sc in sub_categories %}
-                <option value="{{ sc.id }}" {% if sp and sp.sub_category_id == sc.id %}selected{% endif %}>{{ sc.name }}</option>
+                <option value="{{ sc.id }}" data-cat="{{ sc.category }}" {% if sp and sp.sub_category_id == sc.id %}selected{% endif %}>{{ sc.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -248,7 +248,6 @@
                 </option>
                 {% endfor %}
               </select>
-              <div class="form-text">e.g. 7061 — Services Rendered, 7071 — Sales of Goods</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">
@@ -263,7 +262,6 @@
                 </option>
                 {% endfor %}
               </select>
-              <div class="form-text">e.g. 6011 — Purchases of Goods, 6211 — External Services</div>
             </div>
           </div>
 
@@ -283,7 +281,6 @@
                   </option>
                   {% endfor %}
                 </select>
-                <div class="form-text">e.g. 3111 — Stock of Goods</div>
               </div>
               <div class="col-md-6">
                 <label class="form-label fw-semibold">
@@ -298,7 +295,6 @@
                   </option>
                   {% endfor %}
                 </select>
-                <div class="form-text">e.g. 6031 — Variation of Stock of Goods</div>
               </div>
             </div>
           </div>
@@ -493,6 +489,17 @@ document.getElementById('spForm').addEventListener('submit', function(e) {
     return false;
   }
 });
+
+function onSubCatChange(val) {
+  if (!val) return;
+  const opt = document.querySelector('#subCategorySelect option[value="' + val + '"]');
+  if (opt && opt.dataset.cat) {
+    const catSel = document.getElementById('categorySelect');
+    if (!catSel.value) {
+      catSel.value = opt.dataset.cat;
+    }
+  }
+}
 
 // Init
 onTypeChange(document.getElementById('entryTypeSelect').value);
