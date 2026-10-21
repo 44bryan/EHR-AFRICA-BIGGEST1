@@ -774,10 +774,12 @@ def item_create(request):
         item = InventoryItem.objects.create(
             name=request.POST.get('name', '').strip(),
             item_code=request.POST.get('item_code', '').strip(),
+            barcode=request.POST.get('barcode', '').strip() or None,
             category=request.POST.get('category', ''),
             unit=request.POST.get('unit', 'unit').strip(),
             unit_cost=request.POST.get('unit_cost') or 0,
             reorder_level=int(request.POST.get('reorder_level', 5) or 5),
+            max_stock_level=int(request.POST.get('max_stock_level', 0) or 0),
             current_stock=int(request.POST.get('current_stock', 0) or 0),
             location=request.POST.get('location', '').strip(),
             store_location=store_loc,
@@ -786,6 +788,8 @@ def item_create(request):
             is_consignment='is_consignment' in request.POST,
             udi_code=request.POST.get('udi_code', '').strip(),
             storage_conditions=request.POST.get('storage_conditions', '').strip(),
+            abc_class=request.POST.get('abc_class', '').strip(),
+            ven_class=request.POST.get('ven_class', '').strip(),
             preferred_vendor=preferred_vendor,
             created_by=request.user,
         )
@@ -875,16 +879,20 @@ def item_edit(request, item_id):
         sl_id = request.POST.get('store_location') or None
         item.store_location = StoreLocation.objects.filter(id=sl_id).first() if sl_id else None
         item.name               = request.POST.get('name', item.name).strip()
+        item.barcode            = request.POST.get('barcode', '').strip() or None
         item.category           = request.POST.get('category', item.category)
         item.unit               = request.POST.get('unit', 'unit').strip()
         item.unit_cost          = request.POST.get('unit_cost') or 0
         item.reorder_level      = int(request.POST.get('reorder_level', 5) or 5)
+        item.max_stock_level    = int(request.POST.get('max_stock_level', 0) or 0)
         item.location           = request.POST.get('location', '').strip()
         item.description        = request.POST.get('description', '').strip()
         item.requires_expiry_tracking = 'requires_expiry_tracking' in request.POST
         item.is_consignment     = 'is_consignment' in request.POST
         item.udi_code           = request.POST.get('udi_code', '').strip()
         item.storage_conditions = request.POST.get('storage_conditions', '').strip()
+        item.abc_class          = request.POST.get('abc_class', '').strip()
+        item.ven_class          = request.POST.get('ven_class', '').strip()
         item.save()
         # Update or create linked ServicePrice
         price_str = request.POST.get('price', '0').strip()

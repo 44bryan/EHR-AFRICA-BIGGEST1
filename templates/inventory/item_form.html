@@ -39,6 +39,7 @@
 .gl-chip { display:inline-flex; align-items:center; gap:.3rem;
   background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px;
   padding:.2rem .6rem; font-size:.72rem; font-weight:600; color:#0369a1; }
+.tab-pane > .tab-card { background:#fff; border:1px solid #e9ecef; border-radius:12px; padding:1.5rem; }
 </style>
 {% endblock %}
 
@@ -100,78 +101,90 @@
       </div>
 
       <div id="tab-basic" class="tab-pane active">
-        <div class="row g-3">
-          <div class="col-8">
-            <label class="form-label fw-semibold">Product Name <span class="text-danger">*</span></label>
-            <input type="text" name="name" class="form-control" required
-                   value="{{ item.name|default:'' }}" placeholder="e.g. Timolol 0.5% Eye Drops">
-          </div>
-          <div class="col-4">
-            <label class="form-label fw-semibold">
-              Item Code / SKU <span class="text-danger">*</span>
-              {% if action == 'Edit' %}<small class="text-muted ms-1">(locked)</small>{% endif %}
-            </label>
-            <input type="text" name="item_code" class="form-control"
-                   value="{{ item.item_code|default:'' }}" placeholder="e.g. PHR-TIM05"
-                   {% if action == 'Edit' %}readonly{% else %}required{% endif %}>
-          </div>
-
-          <div class="col-6">
-            <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
-            <select name="category" class="form-select" required>
-              {% for val, label in categories %}
-              <option value="{{ val }}"
-                {% if item.category == val %}selected
-                {% elif not item and prefill_category == val %}selected
-                {% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">Base Unit</label>
-            <input type="text" name="unit" class="form-control"
-                   value="{{ item.unit|default:'unit' }}" placeholder="box, ml, tablet">
-          </div>
-
-          <div class="col-12">
-            <label class="form-label fw-semibold">Store Location</label>
-            <select name="store_location" class="form-select ts-select">
-              <option value="">— Select Store —</option>
-              {% for sl in store_locations %}
-              <option value="{{ sl.id }}" {% if item.store_location_id == sl.id %}selected{% endif %}>
-                {{ sl.name }} ({{ sl.get_location_type_display }}) &mdash; GL {{ sl.gl_account_code }}
-              </option>
-              {% endfor %}
-            </select>
-            <div class="form-text">OHADA Class 3 GL account for stock valuation</div>
+        <div class="tab-card">
+          <div class="section-label mb-3">Identification</div>
+          <div class="row g-3 mb-4">
+            <div class="col-8">
+              <label class="form-label fw-semibold">Product Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     value="{{ item.name|default:'' }}" placeholder="e.g. Timolol 0.5% Eye Drops">
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">
+                Item Code / SKU <span class="text-danger">*</span>
+                {% if action == 'Edit' %}<small class="text-muted ms-1">(locked)</small>{% endif %}
+              </label>
+              <input type="text" name="item_code" class="form-control"
+                     value="{{ item.item_code|default:'' }}" placeholder="e.g. PHR-TIM05"
+                     {% if action == 'Edit' %}readonly{% else %}required{% endif %}>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Barcode</label>
+              <input type="text" name="barcode" class="form-control font-monospace"
+                     value="{{ item.barcode|default:'' }}" placeholder="Scan or enter barcode">
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" class="form-select" required>
+                {% for val, label in categories %}
+                <option value="{{ val }}"
+                  {% if item.category == val %}selected
+                  {% elif not item and prefill_category == val %}selected
+                  {% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Base Unit</label>
+              <input type="text" name="unit" class="form-control"
+                     value="{{ item.unit|default:'unit' }}" placeholder="box, ml, tablet">
+            </div>
           </div>
 
-          <div class="col-6">
-            <label class="form-label fw-semibold">Preferred Vendor</label>
-            <select name="preferred_vendor" class="form-select ts-select">
-              <option value="">None</option>
-              {% for vendor in vendors %}
-              <option value="{{ vendor.id }}" {% if item.preferred_vendor_id == vendor.id %}selected{% endif %}>
-                {{ vendor.name }}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-6">
-            <label class="form-label fw-semibold">Storage Conditions</label>
-            <input type="text" name="storage_conditions" class="form-control"
-                   value="{{ item.storage_conditions|default:'' }}" placeholder="Room temp / 2-8°C / Frozen">
+          <div class="section-label mb-3">Location &amp; Vendor</div>
+          <div class="row g-3 mb-4">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Store Location</label>
+              <select name="store_location" class="form-select ts-select">
+                <option value="">— Select Store —</option>
+                {% for sl in store_locations %}
+                <option value="{{ sl.id }}" {% if item.store_location_id == sl.id %}selected{% endif %}>
+                  {{ sl.name }} ({{ sl.get_location_type_display }}) &mdash; GL {{ sl.gl_account_code }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">OHADA Class 3 GL account for stock valuation</div>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Preferred Vendor</label>
+              <select name="preferred_vendor" class="form-select ts-select">
+                <option value="">None</option>
+                {% for vendor in vendors %}
+                <option value="{{ vendor.id }}" {% if item.preferred_vendor_id == vendor.id %}selected{% endif %}>
+                  {{ vendor.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Storage Conditions</label>
+              <input type="text" name="storage_conditions" class="form-control"
+                     value="{{ item.storage_conditions|default:'' }}" placeholder="Room temp / 2-8°C / Frozen">
+            </div>
           </div>
 
-          <div class="col-12">
-            <label class="form-label fw-semibold">Description</label>
-            <textarea name="description" class="form-control" rows="3"
-                      placeholder="Product description, indications, notes...">{{ item.description|default:'' }}</textarea>
+          <div class="section-label mb-3">Description</div>
+          <div class="row g-3">
+            <div class="col-12">
+              <textarea name="description" class="form-control" rows="3"
+                        placeholder="Product description, indications, notes...">{{ item.description|default:'' }}</textarea>
+            </div>
           </div>
         </div>
       </div>
 
       <div id="tab-pricing" class="tab-pane">
+        <div class="tab-card">
         <div class="row g-3">
 
           <div class="col-12">
@@ -271,9 +284,11 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
 
       <div id="tab-accounting" class="tab-pane">
+        <div class="tab-card">
         <div class="alert alert-light border small mb-4 d-flex gap-2">
           <i class="bi bi-info-circle text-primary flex-shrink-0 mt-1"></i>
           <div>
@@ -340,61 +355,98 @@
                    value="{{ item.udi_code|default:'' }}" placeholder="Unique Device Identifier">
           </div>
         </div>
+        </div>
       </div>
 
       <div id="tab-tracking" class="tab-pane">
-        <div class="row g-4">
+        <div class="tab-card">
+          <div class="section-label mb-3">Stock Levels</div>
+          <div class="row g-3 mb-4">
+            <div class="col-4">
+              <label class="form-label fw-semibold">Reorder Level <span class="text-danger">*</span></label>
+              <input type="number" name="reorder_level" class="form-control" min="0"
+                     value="{{ item.reorder_level|default:'5' }}">
+              <div class="form-text">Alert when stock falls below this</div>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-semibold">Max Stock Level</label>
+              <input type="number" name="max_stock_level" class="form-control" min="0"
+                     value="{{ item.max_stock_level|default:'0' }}">
+              <div class="form-text">0 = no upper limit (ISO 9001 §8.5.4)</div>
+            </div>
+            {% if action == 'Create' %}
+            <div class="col-4">
+              <label class="form-label fw-semibold">Opening Stock</label>
+              <input type="number" name="current_stock" class="form-control" min="0" value="0">
+              <div class="form-text">Initial quantity on hand</div>
+            </div>
+            {% else %}
+            <div class="col-4">
+              <label class="form-label fw-semibold">Current Stock</label>
+              <div class="form-control bg-light fw-bold {% if item.current_stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
+                {{ item.current_stock|default:0 }} {{ item.unit|default:'units' }}
+              </div>
+              <div class="form-text">Live count from stock movements</div>
+            </div>
+            {% endif %}
+            <div class="col-4">
+              <label class="form-label fw-semibold">Shelf / Bin Location</label>
+              <input type="text" name="location" class="form-control"
+                     value="{{ item.location|default:'' }}" placeholder="Shelf 3, Bin A-12">
+            </div>
+          </div>
 
-          <div class="col-12">
-            <div class="section-label"><i class="bi bi-boxes text-primary"></i>Stock Levels</div>
-          </div>
-          <div class="col-4">
-            <label class="form-label fw-semibold">Reorder Level</label>
-            <input type="number" name="reorder_level" class="form-control" min="0"
-                   value="{{ item.reorder_level|default:'5' }}">
-            <div class="form-text">Alert when stock falls below this</div>
-          </div>
-          {% if action == 'Create' %}
-          <div class="col-4">
-            <label class="form-label fw-semibold">Opening Stock</label>
-            <input type="number" name="current_stock" class="form-control" min="0" value="0">
-            <div class="form-text">Initial quantity on hand</div>
-          </div>
-          {% endif %}
-          <div class="col-4">
-            <label class="form-label fw-semibold">Shelf / Bin Location</label>
-            <input type="text" name="location" class="form-control"
-                   value="{{ item.location|default:'' }}" placeholder="Shelf 3, Bin A-12">
+          <div class="section-label mb-3">Classification</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">ABC Class
+                <small class="text-muted fw-normal ms-1">Pareto analysis</small>
+              </label>
+              <select name="abc_class" class="form-select">
+                <option value="">— Not set —</option>
+                <option value="A" {% if item.abc_class == 'A' %}selected{% endif %}>A — High Value (top 20% items ≈ 80% cost)</option>
+                <option value="B" {% if item.abc_class == 'B' %}selected{% endif %}>B — Medium Value (next 30% items ≈ 15% cost)</option>
+                <option value="C" {% if item.abc_class == 'C' %}selected{% endif %}>C — Low Value (bottom 50% items ≈ 5% cost)</option>
+              </select>
+              <div class="form-text">Used for procurement prioritisation &amp; cycle counts</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">VEN Class
+                <small class="text-muted fw-normal ms-1">WHO essential medicine</small>
+              </label>
+              <select name="ven_class" class="form-select">
+                <option value="">— Not set —</option>
+                <option value="V" {% if item.ven_class == 'V' %}selected{% endif %}>V — Vital (life-saving, must never stock out)</option>
+                <option value="E" {% if item.ven_class == 'E' %}selected{% endif %}>E — Essential (important, short stock tolerable)</option>
+                <option value="N" {% if item.ven_class == 'N' %}selected{% endif %}>N — Non-Essential (substitutes available)</option>
+              </select>
+              <div class="form-text">Used for budget protection &amp; emergency procurement</div>
+            </div>
           </div>
 
-          <div class="col-12 mt-1">
-            <div class="section-label"><i class="bi bi-calendar-check text-warning"></i>Batch &amp; Expiry Tracking</div>
-          </div>
-          <div class="col-12">
-            <div class="card border-0 bg-light p-3">
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <div class="form-check form-switch">
-                    <input type="checkbox" name="requires_expiry_tracking" class="form-check-input" id="chk_expiry" role="switch"
-                           {% if item.requires_expiry_tracking %}checked{% endif %}>
-                    <label class="form-check-label fw-semibold" for="chk_expiry">
-                      Batch &amp; Expiry Tracking
-                    </label>
-                    <div class="text-muted small">Requires batch number on every receipt and dispensing. Enables FEFO dispatch and expiry alerts.</div>
-                  </div>
+          <div class="section-label mb-3">Batch &amp; Expiry Tracking</div>
+          <div class="card border-0 bg-light p-3">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input type="checkbox" name="requires_expiry_tracking" class="form-check-input" id="chk_expiry" role="switch"
+                         {% if item.requires_expiry_tracking %}checked{% endif %}>
+                  <label class="form-check-label fw-semibold" for="chk_expiry">
+                    Batch &amp; Expiry Tracking
+                  </label>
+                  <div class="text-muted small">Requires batch number on every receipt and dispensing. Enables FEFO dispatch and expiry alerts.</div>
                 </div>
-                <div class="col-md-6">
-                  <div class="form-check form-switch">
-                    <input type="checkbox" name="is_consignment" class="form-check-input" id="chk_cons" role="switch"
-                           {% if item.is_consignment %}checked{% endif %}>
-                    <label class="form-check-label fw-semibold" for="chk_cons">Consignment Stock</label>
-                    <div class="text-muted small">Item is held on behalf of a vendor — not owned by the hospital.</div>
-                  </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input type="checkbox" name="is_consignment" class="form-check-input" id="chk_cons" role="switch"
+                         {% if item.is_consignment %}checked{% endif %}>
+                  <label class="form-check-label fw-semibold" for="chk_cons">Consignment Stock</label>
+                  <div class="text-muted small">Item is held on behalf of a vendor — not owned by the hospital.</div>
                 </div>
               </div>
             </div>
           </div>
-
         </div>
       </div>
 
