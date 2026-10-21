@@ -1,40 +1,71 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
 {% block title %}Cash Flow Statement{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  @page { size: A4 portrait; margin: 10mm 10mm 18mm 10mm; }
+  body { font-size: 8pt !important; }
+  .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+  .print-only-header { display: block !important; }
+  .print-footer { display: block !important; }
+}
+.print-only-header { display: none; }
+.print-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 2mm 10mm;
+  font-size: 7.5pt; color: #666; border-top: 1px solid #ccc; background: #fff; text-align: center; }
+</style>
+{% endblock %}
+
 {% block page_header %}
-<div class="mb-3">
-  <h5 class="fw-bold mb-0">Cash Flow Statement</h5>
-  <p class="page-subtitle text-muted small mb-0">Statement of Cash Flows — Operating, Investing, Financing activities</p>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Cash Flow Statement</span>
+    <span class="text-muted small ms-2">{{ date_from }} — {{ date_to }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <div class="btn-group" role="group">
+      <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-download me-1"></i>Export</a>
+      <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"><span class="visually-hidden">Select format</span></button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:220px;">
+        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i><strong>PDF Report</strong><small class="text-muted d-block ms-4">With hospital letterhead</small></a></li>
+        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=excel" target="_blank"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel Spreadsheet (.xlsx)<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
+        <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
+      </ul>
+    </div>
+  </div>
 </div>
 {% endblock %}
+
 {% block content %}
 {% include 'components/letterhead.html' %}
-<form method="get" class="row g-2 mb-4 align-items-end">
+
+<!-- Print-only report header -->
+<div class="print-only-header mb-3">
+  <h5 class="fw-bold mb-1">Cash Flow Statement</h5>
+  <div class="small text-muted">Period: {{ date_from }} — {{ date_to }}</div>
+  <div class="small text-muted">Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp; Printed: <span id="cfPrintDate"></span></div>
+</div>
+
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
   <div class="col-md-2">
     <label class="form-label fw-semibold small">From</label>
-    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request.GET.date_from }}">
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
   </div>
   <div class="col-md-2">
     <label class="form-label fw-semibold small">To</label>
-    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request.GET.date_to }}">
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
   </div>
   <div class="col-md-2">
     <button type="submit" class="btn btn-sm btn-primary w-100">
       <i class="bi bi-calculator me-1"></i>Generate
     </button>
-  </div>
-  <div class="col-auto ms-auto">
-    <div class="btn-group no-print" role="group">
-    <a href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export as PDF with hospital letterhead"><i class="bi bi-download me-1"></i>Export</a>
-    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"><span class="visually-hidden">Select format</span></button>
-    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:220px;">
-      <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i><strong>PDF Report</strong><small class="text-muted d-block ms-4">With hospital letterhead</small></a></li>
-      <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=excel" target="_blank"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel Spreadsheet (.xlsx)<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><a class="dropdown-item py-2" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><hr class="dropdown-divider"></li>
-      <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
-    </ul>
-  </div>
   </div>
 </form>
 
@@ -182,4 +213,13 @@
 
   </div>
 </div>
+
+<div class="print-footer">
+  Prepared by: {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Printed: <span id="cfPrintDate2"></span> &nbsp;&bull;&nbsp; Cash Flow Statement &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }}
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  ['cfPrintDate','cfPrintDate2'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=s;});})();
+</script>
 {% endblock %}
