@@ -23,6 +23,9 @@
 .tab-pane > .tab-card { background:#fff; border:1px solid #e9ecef; border-radius:12px; padding:1.5rem; }
 .form-sidebar { position: sticky; top: 80px; }
 .status-toggle-wrap { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.75rem 1rem; }
+.ven-badge { display:inline-flex; align-items:center; justify-content:center;
+  width:2rem; height:2rem; border-radius:50%; font-weight:700; font-size:.85rem;
+  border:2px solid; cursor:pointer; transition:all .15s; }
 </style>
 {% endblock %}
 
@@ -47,10 +50,8 @@
   {% endif %}
 
   <div class="row g-4">
-    <!-- Main tabs column -->
     <div class="col-lg-9">
 
-      <!-- Tab nav -->
       <div class="product-tabs mb-0">
         <button type="button" class="tab-btn active" onclick="switchTab('basic', this)">
           <i class="bi bi-capsule"></i>Drug Info
@@ -61,9 +62,11 @@
         <button type="button" class="tab-btn" onclick="switchTab('storage', this)">
           <i class="bi bi-thermometer-half"></i>Storage &amp; Control
         </button>
+        <button type="button" class="tab-btn" onclick="switchTab('tracking', this)">
+          <i class="bi bi-arrow-repeat"></i>Tracking
+        </button>
       </div>
 
-      <!-- Tab 1: Drug Info -->
       <div id="tab-basic" class="tab-pane active">
         <div class="tab-card">
           <div class="section-label mb-3">Identification</div>
@@ -138,7 +141,6 @@
         </div>
       </div>
 
-      <!-- Tab 2: Pricing -->
       <div id="tab-pricing" class="tab-pane">
         <div class="tab-card">
           {% if not can_edit_prices %}
@@ -209,7 +211,6 @@
         </div>
       </div>
 
-      <!-- Tab 3: Storage & Control -->
       <div id="tab-storage" class="tab-pane">
         <div class="tab-card">
           <div class="section-label mb-3">Storage</div>
@@ -217,11 +218,6 @@
             <div class="col-md-6">
               <label class="form-label fw-semibold">Storage Condition</label>
               {{ form.storage_condition }}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Reorder Level</label>
-              {{ form.reorder_level }}
-              <div class="form-text">Alert triggered when stock falls below this quantity</div>
             </div>
           </div>
 
@@ -236,13 +232,77 @@
         </div>
       </div>
 
-    </div><!-- /col-lg-9 -->
+      <div id="tab-tracking" class="tab-pane">
+        <div class="tab-card">
+          <div class="section-label mb-3">Stock Levels</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Reorder Level</label>
+              {{ form.reorder_level }}
+              <div class="form-text">Alert triggered when stock falls below this quantity</div>
+            </div>
+            {% if drug %}
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Current Stock</label>
+              <div class="form-control bg-light fw-bold {% if drug.current_stock <= drug.reorder_level %}text-danger{% else %}text-success{% endif %}">
+                {{ drug.current_stock }} {{ drug.unit }}s
+              </div>
+              <div class="form-text">Live count from stock batches</div>
+            </div>
+            {% endif %}
+          </div>
 
-    <!-- Right Sidebar -->
+          <div class="section-label mb-3">Pharmacy Location</div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Dispensing Location</label>
+              {{ form.location }}
+              <div class="form-text">Primary pharmacy store for this drug</div>
+            </div>
+          </div>
+
+          <div class="section-label mb-3">WHO VEN Classification</div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">VEN Class</label>
+              {{ form.ven_class }}
+              <div class="form-text">
+                <strong>V</strong> = Vital &nbsp;|&nbsp;
+                <strong>E</strong> = Essential &nbsp;|&nbsp;
+                <strong>N</strong> = Non-essential
+              </div>
+            </div>
+            <div class="col-md-8">
+              <div class="alert alert-light border small mt-4 mb-0 d-flex gap-2">
+                <i class="bi bi-info-circle text-primary flex-shrink-0 mt-1"></i>
+                <div>
+                  VEN analysis (WHO) classifies drugs by therapeutic importance.
+                  <strong>Vital</strong> = life-saving, cannot be out of stock;
+                  <strong>Essential</strong> = significant morbidity if unavailable;
+                  <strong>Non-essential</strong> = beneficial but not critical.
+                  Used for procurement prioritisation and budget allocation.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label mt-4 mb-3">Batch &amp; Expiry Tracking</div>
+          <div class="alert alert-info small d-flex gap-2 mb-0">
+            <i class="bi bi-calendar-check flex-shrink-0 mt-1"></i>
+            <div>
+              Batch numbers and expiry dates are recorded at the stock receipt level
+              (when adding stock batches), not at the drug master level. The system
+              uses <strong>FEFO</strong> (First-Expiry, First-Out) dispatch automatically.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <div class="col-lg-3">
       <div class="form-sidebar d-flex flex-column gap-3">
 
-        <!-- Status -->
         <div class="card border-0 shadow-sm">
           <div class="card-body">
             <div class="section-label mb-3">Status</div>
@@ -259,7 +319,6 @@
         </div>
 
         {% if drug %}
-        <!-- Stock info -->
         <div class="card border-0 shadow-sm">
           <div class="card-body">
             <div class="section-label mb-3">Current Stock</div>
@@ -275,7 +334,6 @@
         </div>
         {% endif %}
 
-        <!-- Save -->
         <div class="card border-0 shadow-sm">
           <div class="card-body d-grid gap-2">
             <button type="submit" class="btn btn-primary">
@@ -289,7 +347,7 @@
       </div>
     </div>
 
-  </div><!-- /row -->
+  </div>
 </form>
 
 <script>

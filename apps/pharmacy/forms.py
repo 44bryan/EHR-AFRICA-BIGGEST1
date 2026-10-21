@@ -18,6 +18,7 @@ class DrugCreateForm(forms.ModelForm):
             'price_express', 'price_vip', 'price_executive_vip',
             'price_staff', 'price_outreach', 'insurance_markup_pct',
             'storage_condition', 'is_controlled', 'controlled_schedule',
+            'location', 'ven_class',
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -40,6 +41,8 @@ class DrugCreateForm(forms.ModelForm):
             'insurance_markup_pct': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0, 'placeholder': 'e.g. 30 = cost + 30%'}),
             'storage_condition': forms.Select(attrs={'class': 'form-select'}),
             'controlled_schedule': forms.Select(attrs={'class': 'form-select'}),
+            'location': forms.Select(attrs={'class': 'form-select'}),
+            'ven_class': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'V, E, or N', 'maxlength': '1'}),
         }
 
 
