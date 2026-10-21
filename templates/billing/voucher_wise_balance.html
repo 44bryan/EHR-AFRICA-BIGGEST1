@@ -1,0 +1,131 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Voucher-Wise Balance{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 landscape; margin: 10mm 8mm; }
+  body { font-size:7.5pt !important; }
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Voucher-Wise Balance</span>
+    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?date_from={{ date_from_str }}&date_to={{ date_to_str }}&export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<!-- Filters -->
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">From</label>
+    <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">To</label>
+    <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">Journal Type</label>
+    <select name="journal_type" class="form-select form-select-sm">
+      <option value="">All Types</option>
+      {% for jt in journal_types %}
+      <option value="{{ jt.id }}" {% if request.GET.journal_type == jt.id|stringformat:"s" %}selected{% endif %}>{{ jt.code }} — {{ jt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+  </div>
+</form>
+
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
+          <th>Date</th>
+          <th>Voucher #</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th class="text-end">Total Debits</th>
+          <th class="text-end">Total Credits</th>
+          <th class="text-center">Balanced</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="font-monospace small text-muted">{{ row.entry.entry_date|date:"d/m/Y" }}</td>
+          <td>
+            <a href="{% url 'billing:journal_entry_detail' row.entry.pk %}" class="fw-semibold text-primary text-decoration-none">
+              {{ row.entry.entry_number }}
+            </a>
+          </td>
+          <td class="small text-muted">{{ row.entry.journal_type.code|default:"—" }}</td>
+          <td>{{ row.entry.description|truncatechars:60 }}</td>
+          <td class="text-end font-monospace fw-semibold">{{ row.total_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-semibold">{{ row.total_cr|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if row.balanced %}
+            <span class="badge bg-success" style="font-size:.68rem;">Balanced</span>
+            {% else %}
+            <span class="badge bg-danger" style="font-size:.68rem;">Off by {{ row.diff|floatformat:0|intcomma }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">
+            <div class="rpt-empty">
+              <i class="bi bi-journal-text"></i>
+              No vouchers found for the selected period.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+        <tr>
+          <td colspan="4" class="fw-semibold small text-uppercase text-muted text-end pe-3">Total</td>
+          <td class="text-end font-monospace fw-bold">{{ grand_dr|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold">{{ grand_cr|floatformat:0|intcomma }}</td>
+          <td class="text-center">
+            {% if grand_dr == grand_cr %}
+            <span class="badge bg-success" style="font-size:.68rem;">Balanced</span>
+            {% else %}
+            <span class="badge bg-danger" style="font-size:.68rem;">Unbalanced</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

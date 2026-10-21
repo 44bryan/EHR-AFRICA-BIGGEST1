@@ -1,0 +1,111 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Customer Ledger Summary{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 portrait; margin: 10mm; }
+  body { font-size:8pt !important; }
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:ar_aging' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Customer Ledger Summary</span>
+    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?date_from={{ date_from_str }}&date_to={{ date_to_str }}&export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<!-- Filters -->
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">From</label>
+    <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">To</label>
+    <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">Show</label>
+    <select name="show" class="form-select form-select-sm">
+      <option value="all" {% if show == 'all' %}selected{% endif %}>All Customers</option>
+      <option value="outstanding" {% if show == 'outstanding' %}selected{% endif %}>With Outstanding Balance</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+  </div>
+</form>
+
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
+          <th>Customer</th>
+          <th>Patient ID</th>
+          <th class="text-end">Total Invoiced</th>
+          <th class="text-end">Total Paid</th>
+          <th class="text-end">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="fw-semibold">{{ row.name }}</td>
+          <td class="text-muted font-monospace small">{{ row.patient_id }}</td>
+          <td class="text-end font-monospace">{{ row.total_invoiced|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-success">{{ row.total_paid|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold {% if row.outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+            {{ row.outstanding|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">
+            <div class="rpt-empty">
+              <i class="bi bi-people"></i>
+              No customer ledger data for the selected period.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+        <tr>
+          <td colspan="2" class="fw-semibold small text-uppercase text-muted text-end pe-3">Totals ({{ rows|length }} customers)</td>
+          <td class="text-end font-monospace fw-bold">{{ grand_invoiced|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-success">{{ grand_paid|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-danger">{{ grand_outstanding|floatformat:0|intcomma }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

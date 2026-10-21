@@ -8413,6 +8413,207 @@ def auxiliary_balance(request):
     })
 
 
+# ── Voucher-Wise Balance ───────────────────────────────────────────────────────
+
+@login_required
+def voucher_wise_balance(request):
+    if not _can_access_gl(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    from django.db.models import Sum as _Sum
+    today = _date.today()
+    date_from_str = request.GET.get('date_from', today.replace(day=1).isoformat())
+    date_to_str   = request.GET.get('date_to',   today.isoformat())
+    jt_filter     = request.GET.get('journal_type', '')
+    try:
+        df = _date.fromisoformat(date_from_str)
+        dt = _date.fromisoformat(date_to_str)
+    except ValueError:
+        df = today.replace(day=1)
+        dt = today
+
+    qs = JournalEntry.objects.filter(
+        is_deleted=False, entry_date__range=[df, dt]
+    ).select_related('journal_type').order_by('entry_date', 'entry_number')
+    if jt_filter:
+        qs = qs.filter(journal_type_id=jt_filter)
+
+    rows = []
+    grand_dr = grand_cr = 0
+    for entry in qs:
+        dr = entry.lines.filter(is_deleted=False).aggregate(t=_Sum('debit_amount'))['t'] or 0
+        cr = entry.lines.filter(is_deleted=False).aggregate(t=_Sum('credit_amount'))['t'] or 0
+        diff = abs(dr - cr)
+        rows.append({'entry': entry, 'total_dr': dr, 'total_cr': cr,
+                     'balanced': diff < Decimal('0.01'), 'diff': diff})
+        grand_dr += dr
+        grand_cr += cr
+
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse as _HR
+        resp = _HR(content_type='text/csv')
+        resp['Content-Disposition'] = 'attachment; filename="voucher_balance.csv"'
+        w = csv.writer(resp)
+        w.writerow(['Date', 'Voucher #', 'Type', 'Description', 'Total Debits', 'Total Credits', 'Balanced'])
+        for r in rows:
+            w.writerow([r['entry'].entry_date, r['entry'].entry_number,
+                        r['entry'].journal_type.code if r['entry'].journal_type else '',
+                        r['entry'].description, r['total_dr'], r['total_cr'], r['balanced']])
+        return resp
+
+    return render(request, 'billing/voucher_wise_balance.html', {
+        'rows': rows, 'grand_dr': grand_dr, 'grand_cr': grand_cr,
+        'date_from': df, 'date_to': dt,
+        'date_from_str': date_from_str, 'date_to_str': date_to_str,
+        'journal_types': JournalType.objects.filter(is_deleted=False).order_by('code'),
+    })
+
+
+# ── AP Aging ───────────────────────────────────────────────────────────────────
+
+@login_required
+def ap_aging_report(request):
+    if not _can_authorize_billing(request.user) and not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    from .models import APBill, APBillStatus
+    today = _date.today()
+
+    bills = APBill.objects.filter(
+        is_deleted=False, status__in=['PENDING', 'PARTIAL']
+    ).select_related('vendor').order_by('vendor__name', 'due_date')
+
+    rows = []
+    summary = {'current': 0, 'days1_30': 0, 'days31_60': 0, 'days61_90': 0, 'days91_plus': 0}
+    grand_outstanding = 0
+
+    for bill in bills:
+        paid = bill.total_paid
+        outstanding = bill.balance_due
+        if outstanding <= 0:
+            continue
+        due = bill.due_date or bill.bill_date
+        days_overdue = (today - due).days
+        is_overdue = days_overdue > 0
+        if days_overdue <= 0:
+            bucket = 'current'
+            summary['current'] += outstanding
+        elif days_overdue <= 30:
+            bucket = 'd1_30'
+            summary['days1_30'] += outstanding
+        elif days_overdue <= 60:
+            bucket = 'd31_60'
+            summary['days31_60'] += outstanding
+        elif days_overdue <= 90:
+            bucket = 'd61_90'
+            summary['days61_90'] = summary.get('days61_90', 0) + outstanding
+        else:
+            bucket = 'd91plus'
+            summary['days91_plus'] += outstanding
+        grand_outstanding += outstanding
+        rows.append({'bill': bill, 'paid': paid, 'outstanding': outstanding,
+                     'bucket': bucket, 'days_overdue': days_overdue, 'is_overdue': is_overdue})
+
+    summary['days61_plus'] = summary.get('days61_90', 0) + summary['days91_plus']
+
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse as _HR
+        resp = _HR(content_type='text/csv')
+        resp['Content-Disposition'] = 'attachment; filename="ap_aging.csv"'
+        w = csv.writer(resp)
+        w.writerow(['Supplier', 'Bill #', 'Date', 'Due Date', 'Total', 'Paid', 'Outstanding', 'Current', '1-30', '31-60', '61-90', '91+'])
+        for r in rows:
+            b = r['bucket']
+            w.writerow([r['bill'].vendor.name, r['bill'].bill_number, r['bill'].bill_date,
+                        r['bill'].due_date, r['bill'].amount_due, r['paid'], r['outstanding'],
+                        r['outstanding'] if b=='current' else 0, r['outstanding'] if b=='d1_30' else 0,
+                        r['outstanding'] if b=='d31_60' else 0, r['outstanding'] if b=='d61_90' else 0,
+                        r['outstanding'] if b=='d91plus' else 0])
+        return resp
+
+    return render(request, 'billing/ap_aging.html', {
+        'rows': rows, 'summary': summary,
+        'grand_outstanding': grand_outstanding, 'today': today,
+    })
+
+
+# ── Customer Ledger Summary ────────────────────────────────────────────────────
+
+@login_required
+def customer_ledger_summary(request):
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    from django.db.models import Sum as _Sum
+    today = _date.today()
+    date_from_str = request.GET.get('date_from', today.replace(day=1).isoformat())
+    date_to_str   = request.GET.get('date_to',   today.isoformat())
+    show          = request.GET.get('show', 'all')
+    try:
+        df = _date.fromisoformat(date_from_str)
+        dt = _date.fromisoformat(date_to_str)
+    except ValueError:
+        df = today.replace(day=1)
+        dt = today
+
+    from django.db.models import Sum as _Sum, Value, CharField, F, Q
+    from django.db.models.functions import Concat
+    from apps.patients.models import Patient
+
+    # Group invoices by patient
+    qs = Invoice.objects.filter(
+        is_deleted=False, issue_date__range=[df, dt]
+    ).exclude(status='VOID').select_related('patient')
+
+    patient_map = {}
+    for inv in qs:
+        pid = inv.patient_id
+        if pid not in patient_map:
+            patient_map[pid] = {
+                'name': inv.patient.full_name,
+                'patient_id': inv.patient.patient_id,
+                'total_invoiced': Decimal('0'),
+                'total_paid': Decimal('0'),
+            }
+        patient_map[pid]['total_invoiced'] += inv.total_amount or Decimal('0')
+        patient_map[pid]['total_paid'] += inv.amount_paid or Decimal('0')
+
+    rows = []
+    grand_invoiced = grand_paid = grand_outstanding = Decimal('0')
+    for data in sorted(patient_map.values(), key=lambda x: x['name']):
+        outstanding = data['total_invoiced'] - data['total_paid']
+        if show == 'outstanding' and outstanding <= 0:
+            continue
+        data['outstanding'] = outstanding
+        rows.append(data)
+        grand_invoiced += data['total_invoiced']
+        grand_paid += data['total_paid']
+        grand_outstanding += outstanding
+
+    if request.GET.get('export') == 'csv':
+        import csv
+        from django.http import HttpResponse as _HR
+        resp = _HR(content_type='text/csv')
+        resp['Content-Disposition'] = 'attachment; filename="customer_ledger_summary.csv"'
+        w = csv.writer(resp)
+        w.writerow(['Customer', 'Patient ID', 'Total Invoiced', 'Total Paid', 'Outstanding'])
+        for r in rows:
+            w.writerow([r['name'], r['patient_id'], r['total_invoiced'], r['total_paid'], r['outstanding']])
+        return resp
+
+    return render(request, 'billing/customer_ledger_summary.html', {
+        'rows': rows, 'grand_invoiced': grand_invoiced,
+        'grand_paid': grand_paid, 'grand_outstanding': grand_outstanding,
+        'date_from': df, 'date_to': dt,
+        'date_from_str': date_from_str, 'date_to_str': date_to_str, 'show': show,
+    })
+
+
 # ── Balance Sheet ─────────────────────────────────────────────────────────────
 
 @login_required

@@ -1,0 +1,138 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Accounts Payable{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 landscape; margin: 10mm 8mm; }
+  body { font-size:7.5pt !important; }
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:ap_bill_list' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Accounts Payable</span>
+    <span class="text-muted small ms-2">As of {{ today|date:"d M Y" }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<!-- Summary strip -->
+<div class="row g-2 mb-4 no-print">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+      <div class="text-muted small">Current</div>
+      <div class="fw-bold text-success font-monospace">{{ summary.current|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#fffbeb;border:1px solid #fde68a;">
+      <div class="text-muted small">1–30 Days</div>
+      <div class="fw-bold text-warning font-monospace">{{ summary.days1_30|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#fef2f2;border:1px solid #fecaca;">
+      <div class="text-muted small">31–60 Days</div>
+      <div class="fw-bold text-danger font-monospace">{{ summary.days31_60|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f5f3ff;border:1px solid #ddd6fe;">
+      <div class="text-muted small">61–90 / 91+ Days</div>
+      <div class="fw-bold font-monospace" style="color:#7c3aed;">{{ summary.days61_plus|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+</div>
+
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
+          <th>Supplier</th>
+          <th>Bill #</th>
+          <th>Date</th>
+          <th>Due Date</th>
+          <th class="text-end">Total</th>
+          <th class="text-end">Paid</th>
+          <th class="text-end">Outstanding</th>
+          <th class="text-end">Current</th>
+          <th class="text-end">1–30</th>
+          <th class="text-end">31–60</th>
+          <th class="text-end">61–90</th>
+          <th class="text-end">91+</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="fw-semibold">{{ row.bill.vendor.name }}</td>
+          <td>
+            <a href="{% url 'billing:ap_bill_detail' row.bill.pk %}" class="text-primary text-decoration-none font-monospace small">
+              {{ row.bill.bill_number }}
+            </a>
+          </td>
+          <td class="text-muted small">{{ row.bill.bill_date|date:"d/m/Y" }}</td>
+          <td class="text-muted small {% if row.is_overdue %}text-danger fw-semibold{% endif %}">
+            {{ row.bill.due_date|date:"d/m/Y"|default:"—" }}
+          </td>
+          <td class="text-end font-monospace small">{{ row.bill.amount_due|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace small text-success">{{ row.paid|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold {% if row.outstanding > 0 %}text-danger{% endif %}">{{ row.outstanding|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace small">{% if row.bucket == 'current' %}{{ row.outstanding|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-end font-monospace small">{% if row.bucket == 'd1_30' %}{{ row.outstanding|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-end font-monospace small">{% if row.bucket == 'd31_60' %}{{ row.outstanding|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-end font-monospace small">{% if row.bucket == 'd61_90' %}{{ row.outstanding|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-end font-monospace small" style="{% if row.bucket == 'd91plus' %}color:#7c3aed;font-weight:700;{% endif %}">{% if row.bucket == 'd91plus' %}{{ row.outstanding|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="12">
+            <div class="rpt-empty">
+              <i class="bi bi-inbox"></i>
+              No outstanding bills for the selected period.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+        <tr>
+          <td colspan="6" class="fw-semibold small text-uppercase text-muted text-end pe-3">Totals</td>
+          <td class="text-end font-monospace fw-bold text-danger">{{ grand_outstanding|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-success">{{ summary.current|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-warning">{{ summary.days1_30|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-danger">{{ summary.days31_60|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-danger">{{ summary.days61_90|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold" style="color:#7c3aed;">{{ summary.days91_plus|floatformat:0|intcomma }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

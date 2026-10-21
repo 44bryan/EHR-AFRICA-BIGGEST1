@@ -1,205 +1,160 @@
 {% extends "layouts/base_authenticated.html" %}
-{% load humanize %}
-{% block title %}Sales Journal{% endblock %}
-
-{% load static %}
-{% block page_header %}
-<div class="flex-wrap gap-2 d-flex justify-content-between align-items-start mb-1">
-  <div>
-    <h5 class="fw-bold mb-0">Sales Journal</h5>
-    <p class="page-subtitle text-muted small mb-0">All invoiced revenue for the selected period</p>
-  </div>
-  <div class="d-flex gap-2">
-    <a href="{% url 'billing:export_sales_journal' %}?date_from={{ date_from_str }}&date_to={{ date_to_str }}&cashier={{ selected_cashier }}"
-       class="btn btn-sm btn-success">
-      <i class="bi bi-filetype-csv me-1"></i>CSV
-    </a>
-    
-  </div>
-</div>
-{% endblock %}
+{% load humanize ehr_tags %}
+{% block title %}Sales Register{% endblock %}
 
 {% block extra_css %}
 <style>
-  .journal-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d; }
-  .journal-table td { font-size: 0.82rem; vertical-align: middle; }
-  @media print {
-    @page { size: A4 landscape; margin: 10mm 8mm; }
-    body { font-size: 7pt !important; }
-    .btn, .dropdown, nav, header, .sidebar, [class*="topbar"], [class*="navbar"], form { display:none !important; }
-    #printHeader { display:block !important; }
-    .card { box-shadow:none !important; border:none !important; }
-    .card-header { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    tfoot { background:#1e3a5f !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    tfoot td { color:#fff !important; }
-    table { font-size:7pt !important; }
-    th, td { padding:2px 3px !important; }
-    .row.g-3.mb-4 { display:none !important; }
-  }
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 landscape; margin: 10mm 8mm; }
+  body { font-size:7.5pt !important; }
+  table { font-size:7pt !important; }
+  th, td { padding:2px 3px !important; }
+}
 </style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Sales Register</span>
+    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="{% url 'billing:export_sales_journal' %}?date_from={{ date_from_str }}&date_to={{ date_to_str }}&cashier={{ selected_cashier }}"
+       class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
 {% endblock %}
 
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-{# ── Filters ── #}
-<div class="card border-0 shadow-sm mb-4 no-print">
-  <div class="card-body py-2">
-    <form method="get" class="row g-2 align-items-end">
-      <div class="col-sm-3">
-        <label class="form-label form-label-sm mb-1">From</label>
-        <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm" />
-      </div>
-      <div class="col-sm-3">
-        <label class="form-label form-label-sm mb-1">To</label>
-        <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm" />
-      </div>
-      <div class="col-sm-3">
-        <label class="form-label form-label-sm mb-1">Cashier</label>
-        <select name="cashier" class="form-select form-select-sm">
-          <option value="">All cashiers</option>
-          {% for c in cashiers %}
-          <option value="{{ c.id }}" {% if selected_cashier == c.id|stringformat:"s" %}selected{% endif %}>
-            {{ c|user_display }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-sm-3">
-        <button type="submit" class="btn btn-primary btn-sm w-100">
-          <i class="bi bi-search me-1"></i>Filter
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
-{# ── Summary totals ── #}
-<div class="row g-3 mb-4">
+<!-- Filters -->
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
   <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
+    <label class="form-label small fw-semibold mb-1">From</label>
+    <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">To</label>
+    <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">Cashier</label>
+    <select name="cashier" class="form-select form-select-sm">
+      <option value="">All cashiers</option>
+      {% for c in cashiers %}
+      <option value="{{ c.id }}" {% if selected_cashier == c.id|stringformat:"s" %}selected{% endif %}>
+        {{ c|user_display }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+  </div>
+</form>
+
+<!-- Summary strip -->
+<div class="row g-2 mb-3 no-print">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
       <div class="text-muted small">Total Revenue</div>
-      <div class="fw-bold fs-5 text-primary">{{ grand_total|floatformat:0|intcomma }} FCFA</div>
+      <div class="fw-bold text-primary font-monospace">{{ grand_total|floatformat:0|intcomma }}</div>
     </div>
   </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
       <div class="text-muted small">Insurance Covered</div>
-      <div class="fw-bold fs-5 text-info">{{ grand_insurance|floatformat:0|intcomma }} FCFA</div>
+      <div class="fw-bold text-info font-monospace">{{ grand_insurance|floatformat:0|intcomma }}</div>
     </div>
   </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
       <div class="text-muted small">Patient Paid</div>
-      <div class="fw-bold fs-5 text-success">{{ grand_patient|floatformat:0|intcomma }} FCFA</div>
+      <div class="fw-bold text-success font-monospace">{{ grand_patient|floatformat:0|intcomma }}</div>
     </div>
   </div>
-  <div class="col-sm-3">
-    <div class="card border-0 shadow-sm text-center py-3">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
       <div class="text-muted small">Invoices</div>
-      <div class="fw-bold fs-5">{{ row_count }}</div>
+      <div class="fw-bold font-monospace">{{ row_count }}</div>
     </div>
   </div>
 </div>
 
-{# ── By payment method summary ── #}
-{% if totals_by_method %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white"><h6 class="mb-0">Revenue by Payment Method</h6></div>
-  <div class="card-body p-0">
-    <table class="table table-sm mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Method</th>
-          <th class="text-end">Amount (FCFA)</th>
-          <th class="text-end">%</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in totals_by_method %}
-        <tr>
-          <td>{{ row.label }}</td>
-          <td class="text-end fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
-          <td class="text-end text-muted small">
-            {% if grand_total > 0 %}{{ row.total|floatformat:0|stringformat:"s" }}{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot class="table-light fw-bold">
-        <tr>
-          <td>TOTAL</td>
-          <td class="text-end">{{ grand_total|floatformat:0|intcomma }}</td>
-          <td></td>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-{# ── Journal entries table ── #}
-<div class="card mb-3 border-0 shadow-sm">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0">Journal Entries
-      <span class="text-muted fw-normal small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
-    </h6>
-    <small class="text-muted">{{ row_count }} invoice{{ row_count|pluralize }}</small>
-  </div>
+<!-- Main table -->
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
   <div class="table-responsive">
-    <table class="table table-hover mb-0 journal-table">
-      <thead class="table-light">
-        <tr>
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
           <th>Date</th>
           <th>Invoice #</th>
           <th>Patient</th>
           <th>Cashier</th>
           <th class="text-end">Insurance</th>
-          <th class="text-end">Patient</th>
-          <th class="text-end">Total Paid</th>
+          <th class="text-end">Patient Paid</th>
+          <th class="text-end">Total</th>
           <th>Methods</th>
         </tr>
       </thead>
       <tbody>
         {% for row in journal_rows %}
         <tr>
-          <td class="text-muted">{{ row.date|date:"d/m/Y" }}</td>
+          <td class="text-muted font-monospace small">{{ row.date|date:"d/m/Y" }}</td>
           <td>
-            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="fw-semibold text-primary">
+            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="fw-semibold text-primary text-decoration-none">
               {{ row.invoice.invoice_number }}
             </a>
           </td>
           <td>
-            <div>{{ row.patient.full_name }}</div>
-            <small class="text-muted">{{ row.patient.patient_id }}</small>
+            <div class="fw-semibold">{{ row.patient.full_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;">{{ row.patient.patient_id }}</div>
           </td>
           <td class="text-muted small">{{ row.cashier|user_display }}</td>
-          <td class="text-end text-info">
-            {% if row.insurance_amount > 0 %}{{ row.insurance_amount|floatformat:0|intcomma }}{% else %}—{% endif %}
+          <td class="text-end font-monospace small">
+            {% if row.insurance_amount > 0 %}{{ row.insurance_amount|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
-          <td class="text-end text-success fw-semibold">{{ row.patient_amount|floatformat:0|intcomma }}</td>
-          <td class="text-end fw-bold text-primary">{{ row.total_paid|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace small fw-semibold">{{ row.patient_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold">{{ row.total_paid|floatformat:0|intcomma }}</td>
           <td>
             {% for p in row.payments %}
-            <span class="badge bg-light text-dark border" style="font-size:0.7rem;">
-              {{ p.get_payment_method_display }}
-            </span>
+            <span class="badge bg-light text-dark border" style="font-size:.68rem;">{{ p.get_payment_method_display }}</span>
             {% endfor %}
           </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="8" class="text-center text-muted py-4">No transactions in this period.</td>
+          <td colspan="8">
+            <div class="rpt-empty">
+              <i class="bi bi-receipt"></i>
+              No invoices found for the selected period.
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
       {% if journal_rows %}
-      <tfoot class="table-light fw-bold">
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
         <tr>
-          <td colspan="4">TOTAL</td>
-          <td class="text-end text-info">{{ grand_insurance|floatformat:0|intcomma }}</td>
-          <td class="text-end text-success">{{ grand_patient|floatformat:0|intcomma }}</td>
-          <td class="text-end text-primary">{{ grand_total|floatformat:0|intcomma }}</td>
+          <td colspan="4" class="fw-semibold small text-uppercase text-muted text-end pe-3">Total</td>
+          <td class="text-end font-monospace fw-bold">{{ grand_insurance|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold">{{ grand_patient|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold text-primary">{{ grand_total|floatformat:0|intcomma }}</td>
           <td></td>
         </tr>
       </tfoot>
@@ -208,14 +163,38 @@
   </div>
 </div>
 
-<div id="printHeader" style="display:none">
-  <div style="display:flex;align-items:center;gap:16px;padding-bottom:10px;border-bottom:3px solid #1e3a5f;margin-bottom:10px">
-    <img src="{% static 'img/gludd_logo.svg' %}" alt="Logo" style="height:50px;width:auto;flex-shrink:0;">
-    <div style="flex:1">
-      <div style="font-size:13pt;font-weight:800;text-transform:uppercase;color:#1e3a5f">{{ hconfig.hospital_name }}</div>
-      <div style="font-size:8pt;color:#555">Sales Journal &mdash; {{ date_from|date:"d M Y" }} to {{ date_to|date:"d M Y" }}</div>
-    </div>
-    <div style="text-align:right;font-size:8pt;color:#888">Printed: {% now "d/m/Y H:i" %}</div>
+{% if totals_by_method %}
+<div class="mt-3" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden; max-width:400px;">
+  <div class="px-3 py-2" style="background:#f8f9fa; border-bottom:1px solid #e9ecef;">
+    <span class="fw-semibold small text-uppercase text-muted">Revenue by Payment Method</span>
   </div>
+  <table class="table table-sm mb-0 rpt-table">
+    <thead>
+      <tr style="border-bottom:1px solid #e9ecef;">
+        <th>Method</th>
+        <th class="text-end">Amount (XAF)</th>
+        <th class="text-end">%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in totals_by_method %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="text-end font-monospace fw-semibold">{{ row.total|floatformat:0|intcomma }}</td>
+        <td class="text-end text-muted small">
+          {% if grand_total > 0 %}{% widthratio row.total grand_total 100 %}%{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+      <tr>
+        <td class="fw-bold small text-uppercase">Total</td>
+        <td class="text-end font-monospace fw-bold">{{ grand_total|floatformat:0|intcomma }}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
 </div>
+{% endif %}
 {% endblock %}

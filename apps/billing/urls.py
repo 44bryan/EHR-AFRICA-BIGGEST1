@@ -183,6 +183,9 @@ urlpatterns = [
     path('gl/auxiliary-balance/', views.auxiliary_balance, name='auxiliary_balance'),
     path('gl/balance-sheet/', views.balance_sheet, name='balance_sheet'),
     path('gl/cash-flow/', views.cash_flow_statement, name='cash_flow_statement'),
+    path('gl/voucher-balance/', views.voucher_wise_balance, name='voucher_wise_balance'),
+    path('reports/ap-aging/', views.ap_aging_report, name='ap_aging'),
+    path('reports/customer-ledger/', views.customer_ledger_summary, name='customer_ledger_summary'),
 
     # Accounts Payable
     path('ap/vendors/', views.ap_vendor_list, name='ap_vendor_list'),

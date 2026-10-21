@@ -4,43 +4,50 @@
 
 {% block extra_css %}
 <style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+.acct-header { background:#f8f9fa; border-bottom:1px solid #e9ecef; padding:.6rem 1rem;
+  display:flex; justify-content:space-between; align-items:center; }
+.acct-header .acct-code { font-weight:700; color:#0891b2; font-family:monospace; }
+.acct-header .acct-name { font-weight:600; margin-left:.5rem; }
+.acct-type-badge { font-size:.68rem; font-weight:600; padding:.2rem .45rem; border-radius:3px;
+  background:#e2e8f0; color:#475569; }
 @media print {
-  .no-print { display: none !important; }
-  .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; page-break-inside: avoid; }
+  .no-print { display:none !important; }
+  .acct-header { background:#f8f9fa !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
 </style>
 {% endblock %}
 
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
-    <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary mb-2 no-print">
+    <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Chart of Accounts
     </a>
-    <h5 class="fw-bold mb-0">General Ledger</h5>
-    <p class="page-subtitle text-muted small mb-0">Full transaction history per account with running balance</p>
+    <span class="fw-bold fs-6">General Ledger</span>
+    <span class="text-muted small ms-2">Full transaction history per account</span>
   </div>
   <div class="d-flex gap-2 no-print">
-    <div class="btn-group no-print">
-      <a href="?{{ request.GET.urlencode }}&export=csv" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-download me-1"></i>Export
-      </a>
-      <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"><span class="visually-hidden">Select format</span></button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:200px;">
-        <li><a class="dropdown-item py-2" href="?{{ request.GET.urlencode }}&export=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="page-subtitle text-muted d-block ms-4">With hospital header rows</small></a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
-      </ul>
-    </div>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?{{ request.GET.urlencode }}&export=csv" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
   </div>
 </div>
-{% include 'components/letterhead.html' %}
 {% endblock %}
+
 {% block content %}
+{% include 'components/letterhead.html' %}
+
 <!-- Filters -->
-<form method="get" class="row g-2 mb-4 align-items-end">
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
   <div class="col-md-4">
-    <label class="form-label fw-semibold small">Account</label>
+    <label class="form-label small fw-semibold mb-1">Account</label>
     <select name="account" class="form-select form-select-sm">
       <option value="">— All Accounts —</option>
       {% for a in all_accounts %}
@@ -51,93 +58,84 @@
     </select>
   </div>
   <div class="col-md-2">
-    <label class="form-label fw-semibold small">From</label>
+    <label class="form-label small fw-semibold mb-1">From</label>
     <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request.GET.date_from }}">
   </div>
   <div class="col-md-2">
-    <label class="form-label fw-semibold small">To</label>
+    <label class="form-label small fw-semibold mb-1">To</label>
     <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request.GET.date_to }}">
   </div>
-  <div class="col-md-2">
-    <button type="submit" class="btn btn-sm btn-primary w-100">
-      <i class="bi bi-funnel me-1"></i>Filter
-    </button>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
   </div>
-  <div class="col-md-2">
-    <a href="{% url 'billing:general_ledger' %}" class="btn btn-sm btn-outline-secondary w-100">Clear</a>
+  <div class="col-auto">
+    <a href="{% url 'billing:general_ledger' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
   </div>
 </form>
 
 {% if ledger_data %}
   {% for group in ledger_data %}
-  <div class="card shadow-sm mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center py-2">
+  <div class="mb-4" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+    <div class="acct-header">
       <div>
-        <span class="fw-bold text-primary">{{ group.account.code }}</span>
-        <span class="fw-semibold ms-2">{{ group.account.name }}</span>
-        <span class="badge ms-2
-          {% if group.account.account_type == 'ASSET' %}bg-primary
-          {% elif group.account.account_type == 'LIABILITY' %}bg-warning text-dark
-          {% elif group.account.account_type == 'EQUITY' %}bg-success
-          {% elif group.account.account_type == 'REVENUE' %}bg-info
-          {% else %}bg-secondary{% endif %}">
-          {{ group.account.get_account_type_display }}
-        </span>
+        <span class="acct-code">{{ group.account.code }}</span>
+        <span class="acct-name">{{ group.account.name }}</span>
+        <span class="acct-type-badge ms-2">{{ group.account.get_account_type_display }}</span>
       </div>
       <div class="text-end">
-        <small class="text-muted">Closing Balance:</small>
-        <span class="fw-bold ms-1 {% if group.closing_balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+        <span class="text-muted small">Closing Balance</span>
+        <span class="fw-bold ms-2 {% if group.closing_balance >= 0 %}text-success{% else %}text-danger{% endif %}">
           {{ group.closing_balance|floatformat:0|intcomma }} XAF
         </span>
       </div>
     </div>
     <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0">
-        <thead class="table-light">
-          <tr>
-            <th style="width:110px">Date</th>
+      <table class="table table-sm table-hover mb-0 rpt-table">
+        <thead>
+          <tr style="border-bottom:2px solid #e9ecef;">
+            <th style="width:100px">Date</th>
             <th>Description</th>
-            <th style="width:120px">Ref</th>
-            <th class="text-end" style="width:130px">Debit (XAF)</th>
-            <th class="text-end" style="width:130px">Credit (XAF)</th>
-            <th class="text-end" style="width:140px">Balance (XAF)</th>
+            <th style="width:110px">Doc #</th>
+            <th class="text-end" style="width:120px">Debit</th>
+            <th class="text-end" style="width:120px">Credit</th>
+            <th class="text-end" style="width:130px">Balance</th>
           </tr>
         </thead>
         <tbody>
-          <tr class="table-secondary">
-            <td colspan="5" class="fw-semibold">Opening Balance</td>
-            <td class="text-end fw-semibold">{{ group.opening_balance|floatformat:0|intcomma }}</td>
+          <tr style="background:#fafafa;">
+            <td colspan="5" class="fw-semibold text-muted small">Opening Balance</td>
+            <td class="text-end fw-semibold font-monospace">{{ group.opening_balance|floatformat:0|intcomma }}</td>
           </tr>
           {% for line in group.lines %}
           <tr>
-            <td class="text-muted small">{{ line.entry.entry_date|date:"d/m/Y" }}</td>
+            <td class="text-muted small font-monospace">{{ line.entry.entry_date|date:"d/m/Y" }}</td>
             <td>
-              <a href="{% url 'billing:journal_entry_detail' line.entry.pk %}" class="text-decoration-none">
-                {{ line.entry.description|truncatechars:60 }}
+              <a href="{% url 'billing:journal_entry_detail' line.entry.pk %}" class="text-decoration-none text-dark">
+                {{ line.entry.description|truncatechars:55 }}
               </a>
-              <small class="d-block text-muted">{{ line.entry.entry_number }}</small>
+              <div class="text-muted" style="font-size:.7rem;">{{ line.entry.entry_number }}</div>
             </td>
-            <td class="small text-muted">{{ line.entry.reference|default:"—" }}</td>
-            <td class="text-end {% if line.debit_amount %}text-success fw-semibold{% else %}text-muted{% endif %}">
+            <td class="small text-muted font-monospace">{{ line.entry.reference|default:"—" }}</td>
+            <td class="text-end font-monospace {% if line.debit_amount %}text-dark{% else %}text-muted{% endif %}">
               {% if line.debit_amount %}{{ line.debit_amount|floatformat:0|intcomma }}{% else %}—{% endif %}
             </td>
-            <td class="text-end {% if line.credit_amount %}text-danger fw-semibold{% else %}text-muted{% endif %}">
+            <td class="text-end font-monospace {% if line.credit_amount %}text-dark{% else %}text-muted{% endif %}">
               {% if line.credit_amount %}{{ line.credit_amount|floatformat:0|intcomma }}{% else %}—{% endif %}
             </td>
-            <td class="text-end fw-semibold {% if line.running_balance >= 0 %}text-dark{% else %}text-danger{% endif %}">
+            <td class="text-end font-monospace fw-semibold {% if line.running_balance >= 0 %}text-dark{% else %}text-danger{% endif %}">
               {{ line.running_balance|floatformat:0|intcomma }}
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="6" class="text-center text-muted py-3">No transactions in this period</td></tr>
+          <tr><td colspan="6" class="text-center text-muted py-3 small">No transactions in this period.</td></tr>
           {% endfor %}
         </tbody>
-        <tfoot class="table-light fw-bold">
+        <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
           <tr>
-            <td colspan="3" class="text-end">Period Totals</td>
-            <td class="text-end text-success">{{ group.total_debits|floatformat:0|intcomma }}</td>
-            <td class="text-end text-danger">{{ group.total_credits|floatformat:0|intcomma }}</td>
-            <td class="text-end">{{ group.closing_balance|floatformat:0|intcomma }}</td>
+            <td colspan="3" class="fw-semibold small text-uppercase text-muted text-end pe-3">Period Totals</td>
+            <td class="text-end fw-bold font-monospace">{{ group.total_debits|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-bold font-monospace">{{ group.total_credits|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-bold font-monospace">{{ group.closing_balance|floatformat:0|intcomma }}</td>
           </tr>
         </tfoot>
       </table>
@@ -145,8 +143,8 @@
   </div>
   {% endfor %}
 {% else %}
-  <div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>
+  <div class="rpt-empty">
+    <i class="bi bi-journal-text"></i>
     {% if request.GET.account %}No transactions found for the selected account and period.
     {% else %}Select an account above to view its transaction history.{% endif %}
   </div>

@@ -1,32 +1,38 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}AR Aging Report{% endblock %}
+{% block title %}Accounts Receivable{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+.rpt-empty i { font-size:2.5rem; display:block; margin-bottom:.5rem; }
+.bucket-header { padding:.5rem 1rem; background:#f8f9fa; border-bottom:1px solid #e9ecef;
+  display:flex; justify-content:space-between; align-items:center; font-size:.83rem; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 landscape; margin: 10mm 8mm; }
+  body { font-size:7.5pt !important; }
+}
+</style>
+{% endblock %}
 
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <h5 class="mb-0 fw-bold">Accounts Receivable Aging</h5>
-      <div class="page-subtitle text-muted small">As of {{ today|date:"l, d F Y" }}</div>
-    </div>
-  </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <div class="btn-group no-print" role="group">
-    <a href="?format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export as PDF with hospital letterhead"><i class="bi bi-download me-1"></i>Export</a>
-    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"><span class="visually-hidden">Select format</span></button>
-    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:220px;">
-      <li><a class="dropdown-item py-2" href="?format=pdf" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i><strong>PDF Report</strong><small class="page-subtitle text-muted d-block ms-4">With hospital letterhead</small></a></li>
-      <li><a class="dropdown-item py-2" href="?format=excel" target="_blank"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel Spreadsheet (.xlsx)<small class="page-subtitle text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><a class="dropdown-item py-2" href="?format=csv"><i class="bi bi-filetype-csv me-2 text-primary"></i>CSV Data File<small class="page-subtitle text-muted d-block ms-4">With hospital header rows</small></a></li>
-      <li><hr class="dropdown-divider"></li>
-      <li><a class="dropdown-item" href="javascript:window.print()"><i class="bi bi-printer me-2 text-secondary"></i>Print</a></li>
-    </ul>
-  </div>
-    <a href="{% url 'billing:reconciliation' %}" class="btn btn-outline-primary btn-sm">
-      Daily Reconciliation
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <a href="{% url 'billing:dashboard' %}" class="btn btn-outline-secondary btn-sm">
-      Back to Billing
+    <span class="fw-bold fs-6">Accounts Receivable</span>
+    <span class="text-muted small ms-2">As of {{ today|date:"d M Y" }}</span>
+  </div>
+  <div class="d-flex gap-2 no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print
+    </button>
+    <a href="?format=pdf" class="btn btn-sm btn-outline-secondary" target="_blank">
+      <i class="bi bi-download me-1"></i>Export
     </a>
   </div>
 </div>
@@ -35,69 +41,61 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-{# Summary KPI strip #}
-<div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="small text-muted mb-1">0 – 30 Days</div>
-      <div class="fw-bold fs-5 text-success">{{ buckets.current.total|floatformat:0|intcomma }}</div>
-      <div class="small text-muted">{{ buckets.current.rows|length }} invoice{{ buckets.current.rows|length|pluralize }}</div>
+<!-- Summary strip -->
+<div class="row g-2 mb-4 no-print">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+      <div class="text-muted small">Current (0–30 days)</div>
+      <div class="fw-bold text-success font-monospace">{{ buckets.current.total|floatformat:0|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;">{{ buckets.current.rows|length }} invoice{{ buckets.current.rows|length|pluralize }}</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="small text-muted mb-1">31 – 60 Days</div>
-      <div class="fw-bold fs-5 text-warning">{{ buckets.days31.total|floatformat:0|intcomma }}</div>
-      <div class="small text-muted">{{ buckets.days31.rows|length }} invoice{{ buckets.days31.rows|length|pluralize }}</div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#fffbeb;border:1px solid #fde68a;">
+      <div class="text-muted small">31–60 Days</div>
+      <div class="fw-bold text-warning font-monospace">{{ buckets.days31.total|floatformat:0|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days31.rows|length }} invoice{{ buckets.days31.rows|length|pluralize }}</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="small text-muted mb-1">61 – 90 Days</div>
-      <div class="fw-bold fs-5 text-danger">{{ buckets.days61.total|floatformat:0|intcomma }}</div>
-      <div class="small text-muted">{{ buckets.days61.rows|length }} invoice{{ buckets.days61.rows|length|pluralize }}</div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#fef2f2;border:1px solid #fecaca;">
+      <div class="text-muted small">61–90 Days</div>
+      <div class="fw-bold text-danger font-monospace">{{ buckets.days61.total|floatformat:0|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days61.rows|length }} invoice{{ buckets.days61.rows|length|pluralize }}</div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
-    <div class="card border-0 shadow-sm text-center p-3">
-      <div class="small text-muted mb-1">91+ Days (Critical)</div>
-      <div class="fw-bold fs-5" style="color:#7c3aed;">{{ buckets.days90.total|floatformat:0|intcomma }}</div>
-      <div class="small text-muted">{{ buckets.days90.rows|length }} invoice{{ buckets.days90.rows|length|pluralize }}</div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded" style="background:#f5f3ff;border:1px solid #ddd6fe;">
+      <div class="text-muted small">91+ Days (Critical)</div>
+      <div class="fw-bold font-monospace" style="color:#7c3aed;">{{ buckets.days90.total|floatformat:0|intcomma }}</div>
+      <div class="text-muted" style="font-size:.72rem;">{{ buckets.days90.rows|length }} invoice{{ buckets.days90.rows|length|pluralize }}</div>
     </div>
   </div>
 </div>
 
-<div class="alert alert-secondary d-flex align-items-center gap-2 py-2 mb-4">
-  <i class="bi bi-info-circle fs-5"></i>
-  <div>
-    Total outstanding: <strong>{{ grand_total|floatformat:0|intcomma }} FCFA</strong>
-    across <strong>{{ buckets.current.rows|length|add:buckets.days31.rows|length|add:buckets.days61.rows|length|add:buckets.days90.rows|length }}</strong> invoices.
-    <a href="{% url 'billing:invoice_list' %}?status=ISSUED" class="ms-2">View all unpaid →</a>
-  </div>
-</div>
-
-{# One card per bucket — dict is insertion-ordered (current, days31, days61, days90) #}
+<!-- One section per bucket -->
 {% for key, bucket in buckets.items %}
 {% if bucket.rows %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+<div class="mb-4" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="bucket-header">
     <span class="fw-semibold
       {% if key == 'current' %}text-success
       {% elif key == 'days31' %}text-warning
       {% elif key == 'days61' %}text-danger
-      {% else %}{% endif %}" {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
+      {% else %}{% endif %}"
+      {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
       {{ bucket.label }}
     </span>
-    <span class="fw-bold">{{ bucket.total|floatformat:0|intcomma }} FCFA</span>
+    <span class="fw-bold font-monospace">{{ bucket.total|floatformat:0|intcomma }} XAF</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover table-sm mb-0 small">
-      <thead class="table-light">
-        <tr>
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
           <th>Invoice #</th>
           <th>Patient / Account</th>
           <th>Issue Date</th>
-          <th class="text-end">Balance Due</th>
+          <th class="text-end">Outstanding</th>
           <th class="text-end">Age (days)</th>
           <th>Status</th>
           <th></th>
@@ -106,30 +104,29 @@
       <tbody>
         {% for row in bucket.rows %}
         <tr>
-          <td><code class="small">{{ row.invoice.invoice_number }}</code></td>
-          <td class="fw-semibold">
-            {{ row.invoice.patient.full_name }}
+          <td class="font-monospace small">{{ row.invoice.invoice_number }}</td>
+          <td>
+            <div class="fw-semibold">{{ row.invoice.patient.full_name }}</div>
             {% if row.invoice.corporate_account %}
-            <div class="small text-muted"><i class="bi bi-building me-1"></i>{{ row.invoice.corporate_account.company_name }}</div>
+            <div class="text-muted" style="font-size:.72rem;"><i class="bi bi-building me-1"></i>{{ row.invoice.corporate_account.company_name }}</div>
             {% endif %}
           </td>
-          <td class="text-muted">{{ row.invoice.issue_date|date:"d M Y" }}</td>
-          <td class="text-end fw-bold
-            {% if key == 'days90' %}
-            {% elif key == 'days61' %}text-danger
+          <td class="text-muted small">{{ row.invoice.issue_date|date:"d M Y" }}</td>
+          <td class="text-end font-monospace fw-bold
+            {% if key == 'current' %}text-success
             {% elif key == 'days31' %}text-warning
-            {% else %}text-success{% endif %}"
+            {% elif key == 'days61' %}text-danger{% endif %}"
             {% if key == 'days90' %}style="color:#7c3aed;"{% endif %}>
             {{ row.balance|floatformat:0|intcomma }}
           </td>
-          <td class="text-end">{{ row.age_days }}</td>
+          <td class="text-end small">{{ row.age_days }}</td>
           <td>
-            <span class="badge {% if row.invoice.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-primary{% endif %}">
+            <span class="badge {% if row.invoice.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-primary{% endif %}" style="font-size:.7rem;">
               {{ row.invoice.get_status_display }}
             </span>
           </td>
           <td>
-            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="btn btn-sm btn-outline-secondary py-0" style="font-size:.75rem;padding:2px 8px;">View</a>
+            <a href="{% url 'billing:invoice_detail' row.invoice.id %}" class="btn btn-sm btn-outline-secondary py-0" style="font-size:.72rem;padding:2px 8px;">View</a>
           </td>
         </tr>
         {% endfor %}
@@ -140,25 +137,25 @@
 {% endif %}
 {% endfor %}
 
-{# Corporate AR Summary #}
+<!-- Corporate AR Summary -->
 {% if corporate_ar %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white fw-semibold">
-    <i class="bi bi-building me-2 text-warning"></i>Corporate Account AR Summary
+<div class="mt-4" style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="bucket-header">
+    <span class="fw-semibold"><i class="bi bi-building me-2 text-warning"></i>Corporate Account AR Summary</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-sm mb-0 small">
-      <thead class="table-light">
-        <tr>
+    <table class="table table-sm mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
           <th>Company</th>
-          <th class="text-end">Outstanding Balance (FCFA)</th>
+          <th class="text-end">Outstanding Balance (XAF)</th>
         </tr>
       </thead>
       <tbody>
-        {% for c in corporate_ar %}
+        {% for corp in corporate_ar %}
         <tr>
-          <td class="fw-semibold">{{ c.account.company_name }}</td>
-          <td class="text-end text-warning fw-bold">{{ c.balance|floatformat:0|intcomma }}</td>
+          <td class="fw-semibold">{{ corp.company_name }}</td>
+          <td class="text-end font-monospace fw-bold text-danger">{{ corp.outstanding|floatformat:0|intcomma }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -167,12 +164,10 @@
 </div>
 {% endif %}
 
-{% if not grand_total %}
-<div class="text-center text-muted py-5">
-  <i class="bi bi-check-circle-fill fs-1 text-success d-block mb-3"></i>
-  <strong>No outstanding receivables.</strong><br>
-  All invoices are paid, waived, or cancelled.
+{% if not buckets.current.rows and not buckets.days31.rows and not buckets.days61.rows and not buckets.days90.rows %}
+<div class="rpt-empty">
+  <i class="bi bi-inbox"></i>
+  No outstanding invoices for the selected period.
 </div>
 {% endif %}
-
 {% endblock %}
