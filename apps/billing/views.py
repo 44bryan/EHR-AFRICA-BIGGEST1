@@ -6633,15 +6633,18 @@ def journal_entry_create(request):
                 'accounts': accounts, 'cost_centers': cost_centers,
             })
 
+        journal_type_id = request.POST.get('journal_type') or None
         cc = CostCenter.objects.filter(pk=cost_center_id).first() if cost_center_id else None
         from apps.billing.models import BillingOperationCC as _BOpCC
         op_obj = _BOpCC.objects.filter(operation_code=operation_code, is_deleted=False).first() if operation_code else None
+        jt_obj = JournalType.objects.filter(pk=journal_type_id, is_active=True).first() if journal_type_id else None
         entry = JournalEntry.objects.create(
             entry_date=entry_date,
             description=description,
             reference=reference,
             cost_center=cc,
             operation=op_obj,
+            journal_type=jt_obj,
             source_type='manual',
             source_id='',
             is_posted=False,  # NOT posted yet — goes through approval
@@ -6673,11 +6676,110 @@ def journal_entry_create(request):
         op['operation_code']: str(op['cost_center_id']) if op['cost_center_id'] else ''
         for op in operations
     }
+    journal_types = list(JournalType.objects.filter(is_active=True).order_by('code'))
     return render(request, 'billing/journal_entry_form.html', {
         'accounts': accounts, 'cost_centers': cost_centers,
         'operations': operations,
         'op_cc_map_json': _json.dumps(op_cc_map),
+        'journal_types': journal_types,
     })
+
+
+@login_required
+@require_POST
+def journal_ai_suggest(request):
+    """
+    AJAX endpoint: given a plain-language transaction description,
+    use AI to suggest OHADA double-entry journal lines.
+    Returns JSON: {lines: [{account_code, account_name, debit, credit, description}],
+                   journal_type_code, summary, error}
+    """
+    import json as _json
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT,
+                                  UserRole.ACCOUNTANT, UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        return JsonResponse({'error': 'Accès refusé.'}, status=403)
+
+    try:
+        body = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Corps de requête invalide.'}, status=400)
+
+    description = (body.get('description') or '').strip()
+    if not description:
+        return JsonResponse({'error': 'Description requise.'}, status=400)
+
+    # Load active GL accounts for context
+    accounts_qs = GLAccount.objects.filter(is_deleted=False, is_active=True, allow_manual_posting=True
+                                           ).order_by('code').values('code', 'name')[:200]
+    accounts_ctx = '\n'.join(f"{a['code']} — {a['name']}" for a in accounts_qs)
+
+    system_prompt = (
+        "Tu es un expert-comptable OHADA. Ton rôle est de générer les lignes d'écriture comptable "
+        "en partie double à partir d'une description en langage naturel.\n\n"
+        "Plan comptable OHADA disponible:\n"
+        f"{accounts_ctx}\n\n"
+        "Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown, pas de texte autour):\n"
+        "{\n"
+        '  "journal_type_code": "BQ",  // BQ=Banque, CA=Caisse, AC=Achats, VE=Ventes, SA=Salaires, OD=Opérations Diverses\n'
+        '  "summary": "Résumé court de l\'opération",\n'
+        '  "lines": [\n'
+        '    {"account_code": "521", "account_name": "Banques locales", "debit": 500000, "credit": 0, "description": "Paiement salaires"},\n'
+        '    {"account_code": "661", "account_name": "Rémunérations directes", "debit": 0, "credit": 500000, "description": "Salaires juin"}\n'
+        '  ]\n'
+        "}\n\n"
+        "Règles:\n"
+        "- total débits = total crédits\n"
+        "- Utilise uniquement les codes du plan comptable fourni\n"
+        "- Montants en XAF (entiers)\n"
+        "- Minimum 2 lignes"
+    )
+
+    try:
+        from apps.ai_assistant.claude_client import _get_json_fn
+        json_fn = _get_json_fn()
+        result = json_fn(
+            system=system_prompt,
+            user=description,
+            model=None,
+        )
+        if result.get('error'):
+            return JsonResponse({'error': f"IA indisponible: {result['error']}"}, status=503)
+        content = result.get('content', '')
+        # Strip markdown code fences if present
+        content = content.strip()
+        if content.startswith('```'):
+            content = content.split('```')[1]
+            if content.startswith('json'):
+                content = content[4:]
+        data = _json.loads(content)
+        lines = data.get('lines', [])
+        if not lines:
+            return JsonResponse({'error': 'Aucune ligne générée par l\'IA.'}, status=400)
+        # Match account codes to PKs from our DB
+        acct_map = {a.code: {'pk': str(a.pk), 'name': a.name}
+                    for a in GLAccount.objects.filter(is_deleted=False, is_active=True, allow_manual_posting=True)}
+        enriched = []
+        for line in lines:
+            code = str(line.get('account_code', '')).strip()
+            acct = acct_map.get(code)
+            enriched.append({
+                'account_code': code,
+                'account_name': line.get('account_name', '') if not acct else acct['name'],
+                'account_pk': acct['pk'] if acct else '',
+                'debit': int(line.get('debit') or 0),
+                'credit': int(line.get('credit') or 0),
+                'description': line.get('description', ''),
+            })
+        return JsonResponse({
+            'lines': enriched,
+            'journal_type_code': data.get('journal_type_code', ''),
+            'summary': data.get('summary', description),
+        })
+    except _json.JSONDecodeError as e:
+        return JsonResponse({'error': f"Réponse IA invalide: {e}"}, status=500)
+    except Exception as e:
+        logger.exception('journal_ai_suggest error')
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @login_required

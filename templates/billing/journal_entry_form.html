@@ -1,35 +1,139 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Manual Journal Entry{% endblock %}
+{% block title %}Saisie d'écriture comptable{% endblock %}
 {% block extra_css %}
 <style>
   .line-row td { vertical-align: middle; }
   .amount-input { text-align: right; font-family: monospace; }
+  /* AI panel */
+  .ai-panel { background: linear-gradient(135deg,#f0f9ff,#e0f2fe); border: 1.5px solid #bae6fd; border-radius: 10px; }
+  .ai-panel-title { color: #0369a1; font-weight: 700; font-size: .9rem; }
+  .ai-spinner { display: none; }
+  .ai-spinner.visible { display: inline-block; }
+  .ai-result-card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; }
+  .tab-nav .nav-link { font-size: .85rem; font-weight: 600; color: #64748b; }
+  .tab-nav .nav-link.active { color: #0891b2; border-bottom: 2px solid #0891b2; }
 </style>
 {% endblock %}
 {% block page_header %}
-<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-  <div><div class="mb-3">
-  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
-    Back
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="fw-bold mb-0">Saisie d'écriture comptable</h5>
+    <p class="page-subtitle text-muted small mb-0">Partie double — total débit = total crédit avant enregistrement</p>
+  </div>
+  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Retour
   </a>
-  <h5 class="fw-bold mb-0">Manual Journal Entry</h5>
-  <p class="page-subtitle text-muted small mb-0">Double-entry: total debits must equal total credits before posting</p>
-</div></div>
 </div>
 {% endblock %}
+
 {% block content %}
+{% include 'components/letterhead.html' %}
+
+{# ── Entry mode tabs ── #}
+<ul class="nav tab-nav border-bottom mb-4" id="entryTabs">
+  <li class="nav-item">
+    <button class="nav-link active px-3 py-2 bg-transparent border-0" id="tab-manual-btn" onclick="switchTab('manual')">
+      <i class="bi bi-pencil-square me-1"></i>Saisie manuelle
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link px-3 py-2 bg-transparent border-0" id="tab-ai-btn" onclick="switchTab('ai')">
+      <i class="bi bi-stars me-1"></i>Saisie avec IA
+    </button>
+  </li>
+</ul>
+
+{# ═══════════════════════════════════════════════════════════════
+   AI PANEL
+   ═══════════════════════════════════════════════════════════════ #}
+<div id="ai-panel" class="ai-panel p-4 mb-4" style="display:none;">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-stars text-info fs-5"></i>
+    <span class="ai-panel-title">Décrire votre opération en langage naturel</span>
+    <span class="badge bg-info text-white ms-1" style="font-size:.65rem;">BÊTA</span>
+  </div>
+  <div class="mb-3">
+    <textarea id="aiDescription" class="form-control" rows="3"
+      placeholder="Ex : Paiement de 500 000 XAF de salaires pour le mois de juin 2026 par virement bancaire.&#10;Ex : Règlement facture fournisseur SAGEM 250 000 XAF en espèces.&#10;Ex : Encaissement patients du jour 1 200 000 XAF en banque."></textarea>
+    <div class="form-text">
+      <i class="bi bi-info-circle me-1"></i>L'IA génère les lignes comptables OHADA en partie double.
+      Vérifiez avant d'enregistrer.
+    </div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label small fw-semibold text-muted">Pièce justificative (optionnel)</label>
+    <input type="file" id="aiAttachment" class="form-control form-control-sm"
+      accept=".pdf,.docx,.xlsx,.csv,.jpg,.jpeg,.png" multiple>
+    <div class="form-text">PDF, Word, Excel, image, CSV — max 10 Mo chaque.</div>
+  </div>
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <button type="button" class="btn btn-primary btn-sm" onclick="runAI()">
+      <i class="bi bi-stars me-1"></i>Générer les écritures
+      <span class="ai-spinner spinner-border spinner-border-sm ms-1" role="status"></span>
+    </button>
+    <span id="aiError" class="text-danger small" style="display:none;"></span>
+  </div>
+
+  {# AI result preview #}
+  <div id="aiResult" class="ai-result-card p-3 mt-3" style="display:none;">
+    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+      <div>
+        <div class="fw-semibold text-dark" id="aiSummary"></div>
+        <div class="text-muted small" id="aiJournalType"></div>
+      </div>
+      <button type="button" class="btn btn-sm btn-success" onclick="applyAI()">
+        <i class="bi bi-check2-all me-1"></i>Appliquer dans le formulaire
+      </button>
+    </div>
+    <div class="alert alert-warning py-2 small mb-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      L'IA peut faire des erreurs. Vérifiez les comptes et les montants avant d'enregistrer.
+    </div>
+    <table class="table table-sm table-bordered mb-0" id="aiLineTable">
+      <thead class="table-light">
+        <tr>
+          <th>Compte</th>
+          <th>Libellé</th>
+          <th class="text-end">Débit (XAF)</th>
+          <th class="text-end">Crédit (XAF)</th>
+        </tr>
+      </thead>
+      <tbody id="aiLineBody"></tbody>
+      <tfoot class="table-light fw-bold">
+        <tr>
+          <td colspan="2" class="text-end">Totaux</td>
+          <td class="text-end font-monospace" id="aiTotalDr">0</td>
+          <td class="text-end font-monospace" id="aiTotalCr">0</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   MANUAL ENTRY FORM
+   ═══════════════════════════════════════════════════════════════ #}
 <form method="post" id="jnlForm">
   {% csrf_token %}
   <div class="row g-3 mb-4">
     <div class="col-md-2">
-      <label class="form-label fw-semibold">Entry Date <span class="text-danger">*</span></label>
+      <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
       <input type="date" name="entry_date" class="form-control" value="{% now 'Y-m-d' %}" required>
     </div>
     <div class="col-md-2">
-      <label class="form-label fw-semibold">Operation</label>
+      <label class="form-label fw-semibold">Type de journal</label>
+      <select name="journal_type" id="journalTypeSelect" class="form-select">
+        <option value="">— Sélectionner —</option>
+        {% for jt in journal_types %}
+        <option value="{{ jt.pk }}">{{ jt.code }} — {{ jt.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label fw-semibold">Opération</label>
       <select id="operationSelect" name="operation" class="form-select" onchange="onOperationChange(this)">
-        <option value="">— Select operation —</option>
+        <option value="">— Sélectionner —</option>
         {% for op in operations %}
         <option value="{{ op.operation_code }}" data-cc="{{ op.cost_center_id|default:'' }}">
           {{ op.operation_code }}: {{ op.operation_name }}
@@ -38,17 +142,17 @@
       </select>
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
-      <input type="text" name="description" id="descField" class="form-control" placeholder="e.g. Correction — rent payment double-posted" required>
+      <label class="form-label fw-semibold">Libellé <span class="text-danger">*</span></label>
+      <input type="text" name="description" id="descField" class="form-control" placeholder="Ex : Correction — loyer double-imputé" required>
+    </div>
+    <div class="col-md-1">
+      <label class="form-label fw-semibold">Référence</label>
+      <input type="text" name="reference" class="form-control" placeholder="N° pièce">
     </div>
     <div class="col-md-2">
-      <label class="form-label fw-semibold">Reference</label>
-      <input type="text" name="reference" class="form-control" placeholder="Receipt #, memo">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label fw-semibold">Cost Center <small class="text-muted">(auto-filled from operation)</small></label>
+      <label class="form-label fw-semibold">Centre de coût</label>
       <select name="cost_center" id="costCenterSelect" class="form-select">
-        <option value="">— None —</option>
+        <option value="">— Aucun —</option>
         {% for cc in cost_centers %}
         <option value="{{ cc.pk }}">{{ cc.code }} — {{ cc.name }}</option>
         {% endfor %}
@@ -58,24 +162,25 @@
 
   <script>
   var OP_CC_MAP = {{ op_cc_map_json|safe }};
-  // pk lookup: build map from cc_pk (UUID string) to option value
+  var JOURNAL_TYPES = [
+    {% for jt in journal_types %}
+    {pk: '{{ jt.pk }}', code: '{{ jt.code|escapejs }}', name: '{{ jt.name|escapejs }}'},
+    {% endfor %}
+  ];
   function onOperationChange(sel) {
     var opCode = sel.value;
     if (!opCode) return;
-    // Auto-fill description if empty
     var descEl = document.getElementById('descField');
     if (!descEl.value.trim()) {
       var txt = sel.options[sel.selectedIndex].text;
       descEl.value = txt.substring(txt.indexOf(':')+2);
     }
-    // Auto-select cost center
     var ccId = OP_CC_MAP[opCode] || '';
     if (!ccId) return;
     var ccSel = document.getElementById('costCenterSelect');
     for (var i = 0; i < ccSel.options.length; i++) {
       if (ccSel.options[i].value === ccId) {
         ccSel.selectedIndex = i;
-        // Flash yellow highlight
         ccSel.style.background = '#fef9c3';
         setTimeout(function(){ ccSel.style.background = ''; }, 1200);
         break;
@@ -86,35 +191,33 @@
 
   <div class="card shadow-sm mb-3">
     <div class="card-header d-flex justify-content-between align-items-center py-2">
-      <span class="fw-semibold">Journal Lines</span>
+      <span class="fw-semibold">Lignes d'écriture</span>
       <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
-        <i class="bi bi-plus-lg me-1"></i>Add Line
+        <i class="bi bi-plus-lg me-1"></i>Ajouter une ligne
       </button>
     </div>
     <div class="table-responsive">
       <table class="table table-sm mb-0" id="linesTable">
         <thead class="table-light">
           <tr>
-            <th style="width:35%">Account</th>
-            <th>Line Description</th>
-            <th style="width:14%" class="text-end">Debit (XAF)</th>
-            <th style="width:14%" class="text-end">Credit (XAF)</th>
+            <th style="width:35%">Compte</th>
+            <th>Libellé de ligne</th>
+            <th style="width:14%" class="text-end">Débit (XAF)</th>
+            <th style="width:14%" class="text-end">Crédit (XAF)</th>
             <th style="width:4%"></th>
           </tr>
         </thead>
-        <tbody id="linesBody">
-          <!-- JS lines -->
-        </tbody>
+        <tbody id="linesBody"></tbody>
         <tfoot class="table-light fw-bold">
           <tr>
-            <td colspan="2" class="text-end">Totals (XAF)</td>
+            <td colspan="2" class="text-end">Totaux (XAF)</td>
             <td class="text-end text-success font-monospace" id="totalDr">0</td>
             <td class="text-end text-danger font-monospace" id="totalCr">0</td>
             <td></td>
           </tr>
           <tr>
             <td colspan="4" class="text-end">
-              <span id="balanceMsg" class="fw-semibold text-muted">Enter at least 2 lines</span>
+              <span id="balanceMsg" class="fw-semibold text-muted">Saisir au moins 2 lignes</span>
             </td>
             <td></td>
           </tr>
@@ -124,65 +227,164 @@
   </div>
 
   <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
-    <i class="bi bi-check-lg me-1"></i>Record Journal Entry (Draft)
+    <i class="bi bi-check-lg me-1"></i>Enregistrer (Brouillon)
   </button>
-  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-outline-secondary ms-2">Annuler</a>
 </form>
 
 <script>
 const accounts = [
   {% for a in accounts %}
-  {id: '{{ a.pk }}', code: '{{ a.code }}', name: '{{ a.name }}'},
+  {id: '{{ a.pk }}', code: '{{ a.code }}', name: '{{ a.name|escapejs }}'},
   {% endfor %}
 ];
 
-function buildSelect(name, selected) {
+const AI_SUGGEST_URL = '{% url "billing:journal_ai_suggest" %}';
+const CSRF = '{{ csrf_token }}';
+
+// ── Tab switch ──────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('ai-panel').style.display = tab === 'ai' ? 'block' : 'none';
+  document.getElementById('tab-manual-btn').classList.toggle('active', tab === 'manual');
+  document.getElementById('tab-ai-btn').classList.toggle('active', tab === 'ai');
+}
+
+// ── Manual form helpers ─────────────────────────────────────
+function buildSelect(name, selectedId) {
   let html = `<select name="${name}" class="form-select form-select-sm" onchange="recalc()" required>
-    <option value="">— Select Account —</option>`;
+    <option value="">— Compte —</option>`;
   accounts.forEach(a => {
-    html += `<option value="${a.id}" ${a.id === selected ? 'selected' : ''}>${a.code} — ${a.name}</option>`;
+    html += `<option value="${a.id}" ${a.id === selectedId ? 'selected' : ''}>${a.code} — ${a.name}</option>`;
   });
   html += '</select>';
   return html;
 }
 
-function addLine() {
+function addLine(acctId, dr, cr, desc) {
   const body = document.getElementById('linesBody');
   const row = document.createElement('tr');
   row.className = 'line-row';
   row.innerHTML = `
-    <td>${buildSelect('account_id[]', '')}</td>
-    <td><input type="text" name="line_desc[]" class="form-control form-control-sm" placeholder="Description"></td>
-    <td><input type="number" name="debit[]" class="form-control form-control-sm amount-input" min="0" step="1" placeholder="0" onchange="recalc()" oninput="recalc()"></td>
-    <td><input type="number" name="credit[]" class="form-control form-control-sm amount-input" min="0" step="1" placeholder="0" onchange="recalc()" oninput="recalc()"></td>
+    <td>${buildSelect('account_id[]', acctId||'')}</td>
+    <td><input type="text" name="line_desc[]" class="form-control form-control-sm" value="${desc||''}" placeholder="Libellé"></td>
+    <td><input type="number" name="debit[]" class="form-control form-control-sm amount-input" value="${dr||''}" min="0" step="1" placeholder="0" oninput="recalc()"></td>
+    <td><input type="number" name="credit[]" class="form-control form-control-sm amount-input" value="${cr||''}" min="0" step="1" placeholder="0" oninput="recalc()"></td>
     <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); recalc()"><i class="bi bi-trash"></i></button></td>`;
   body.appendChild(row);
 }
 
-function fmt(n) { return n.toLocaleString(undefined, {minimumFractionDigits: 0}); }
+function fmt(n) { return Math.round(n).toLocaleString('fr-FR'); }
 
 function recalc() {
-  const debits  = [...document.querySelectorAll('input[name="debit[]"]')].map(i => parseFloat(i.value)||0);
-  const credits = [...document.querySelectorAll('input[name="credit[]"]')].map(i => parseFloat(i.value)||0);
-  const dr = debits.reduce((a,b)=>a+b,0);
-  const cr = credits.reduce((a,b)=>a+b,0);
+  const dr = [...document.querySelectorAll('input[name="debit[]"]')].reduce((s,i)=>s+(parseFloat(i.value)||0),0);
+  const cr = [...document.querySelectorAll('input[name="credit[]"]')].reduce((s,i)=>s+(parseFloat(i.value)||0),0);
   document.getElementById('totalDr').textContent = fmt(dr);
   document.getElementById('totalCr').textContent = fmt(cr);
   const msg = document.getElementById('balanceMsg');
   const btn = document.getElementById('submitBtn');
-  const diff = Math.abs(dr - cr);
   if (dr === 0 && cr === 0) {
-    msg.textContent = 'Enter at least 2 lines'; msg.className = 'fw-semibold text-muted'; btn.disabled = true;
-  } else if (diff < 0.01) {
-    msg.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Balanced — ready to record';
+    msg.textContent = 'Saisir au moins 2 lignes'; msg.className = 'fw-semibold text-muted'; btn.disabled = true;
+  } else if (Math.abs(dr-cr) < 0.01) {
+    msg.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Équilibré — prêt à enregistrer';
     msg.className = 'fw-semibold text-success'; btn.disabled = false;
   } else {
-    msg.innerHTML = `<i class="bi bi-x-circle-fill text-danger me-1"></i>Difference: ${fmt(diff)} XAF`;
+    msg.innerHTML = `<i class="bi bi-x-circle-fill text-danger me-1"></i>Différence : ${fmt(Math.abs(dr-cr))} XAF`;
     msg.className = 'fw-semibold text-danger'; btn.disabled = true;
   }
 }
 
-// Start with 2 lines
+// Start with 2 blank lines
 addLine(); addLine();
+
+// ── AI Journal helpers ──────────────────────────────────────
+var _aiLines = [];
+var _aiJournalTypeCode = '';
+
+function runAI() {
+  const desc = document.getElementById('aiDescription').value.trim();
+  if (!desc) { showAIError('Veuillez saisir une description.'); return; }
+  hideAIError();
+  document.getElementById('aiResult').style.display = 'none';
+  setAILoading(true);
+
+  fetch(AI_SUGGEST_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+    body: JSON.stringify({description: desc}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    setAILoading(false);
+    if (data.error) { showAIError(data.error); return; }
+    _aiLines = data.lines || [];
+    _aiJournalTypeCode = data.journal_type_code || '';
+    renderAIResult(data);
+  })
+  .catch(err => { setAILoading(false); showAIError('Erreur réseau: ' + err); });
+}
+
+function renderAIResult(data) {
+  document.getElementById('aiSummary').textContent = data.summary || '';
+  const jtLabel = _aiJournalTypeCode ? `Type journal suggéré : ${_aiJournalTypeCode}` : '';
+  document.getElementById('aiJournalType').textContent = jtLabel;
+  const tbody = document.getElementById('aiLineBody');
+  tbody.innerHTML = '';
+  let totalDr = 0, totalCr = 0;
+  (data.lines||[]).forEach(l => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><span class="badge bg-light text-dark border me-1">${l.account_code}</span>${l.account_name}</td>
+      <td class="text-muted small">${l.description}</td>
+      <td class="text-end font-monospace">${l.debit ? fmt(l.debit) : ''}</td>
+      <td class="text-end font-monospace">${l.credit ? fmt(l.credit) : ''}</td>`;
+    tbody.appendChild(tr);
+    totalDr += l.debit||0; totalCr += l.credit||0;
+  });
+  document.getElementById('aiTotalDr').textContent = fmt(totalDr);
+  document.getElementById('aiTotalCr').textContent = fmt(totalCr);
+  document.getElementById('aiResult').style.display = 'block';
+}
+
+function applyAI() {
+  // Clear existing lines
+  document.getElementById('linesBody').innerHTML = '';
+  // Add AI lines
+  _aiLines.forEach(l => addLine(l.account_pk, l.debit||'', l.credit||'', l.description));
+  recalc();
+  // Set description from AI summary
+  const desc = document.getElementById('aiDescription').value.trim();
+  const descField = document.getElementById('descField');
+  if (!descField.value.trim()) descField.value = desc;
+  // Auto-select journal type
+  if (_aiJournalTypeCode) {
+    const jtSel = document.getElementById('journalTypeSelect');
+    for (let i = 0; i < jtSel.options.length; i++) {
+      if (jtSel.options[i].text.startsWith(_aiJournalTypeCode + ' —') ||
+          jtSel.options[i].text.startsWith(_aiJournalTypeCode + ' -')) {
+        jtSel.selectedIndex = i;
+        jtSel.style.background = '#dcfce7';
+        setTimeout(()=>{ jtSel.style.background=''; }, 1500);
+        break;
+      }
+    }
+  }
+  // Switch to manual tab to review
+  switchTab('manual');
+  // Scroll to form
+  document.getElementById('jnlForm').scrollIntoView({behavior:'smooth'});
+}
+
+function setAILoading(on) {
+  const spinner = document.querySelector('.ai-spinner');
+  const btn = document.querySelector('#ai-panel .btn-primary');
+  if (on) { spinner.classList.add('visible'); btn.disabled = true; }
+  else     { spinner.classList.remove('visible'); btn.disabled = false; }
+}
+function showAIError(msg) {
+  const el = document.getElementById('aiError');
+  el.textContent = msg; el.style.display = 'inline';
+}
+function hideAIError() {
+  document.getElementById('aiError').style.display = 'none';
+}
 </script>
 {% endblock %}

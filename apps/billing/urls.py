@@ -155,6 +155,7 @@ urlpatterns = [
     path('gl/accounts/<uuid:account_id>/delete/', views.gl_account_delete, name='gl_account_delete'),
     path('gl/journal/', views.journal_entry_list, name='journal_entry_list'),
     path('gl/journal/create/', views.journal_entry_create, name='journal_entry_create'),
+    path('gl/journal/ai-suggest/', views.journal_ai_suggest, name='journal_ai_suggest'),
     path('gl/journal/<uuid:entry_id>/', views.journal_entry_detail, name='journal_entry_detail'),
     path('gl/journal/<uuid:entry_id>/review/', views.journal_entry_review, name='journal_entry_review'),
     path('gl/journal/<uuid:entry_id>/post/', views.journal_entry_post, name='journal_entry_post'),
