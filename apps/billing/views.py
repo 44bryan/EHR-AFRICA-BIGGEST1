@@ -20,7 +20,9 @@ from .models import (Invoice, InvoiceItem, Payment, InvoiceStatus, ServiceCatego
                      CashVarianceRegister, AssetDisposal, DisposalMethod,
                      DisposalStatus, AssetRegister, AssetStatus,
                      BudgetAmendment, CashierSession,
-                     FiscalPeriod, FiscalPeriodStatus)
+                     FiscalPeriod, FiscalPeriodStatus,
+                     JournalType, JournalEntry, JournalLine, JournalEntryStatus,
+                     GLAccount, CostCenter)
 from .utils import get_or_create_today_invoice
 from apps.patients.models import Patient
 from apps.accounts.models import UserRole
