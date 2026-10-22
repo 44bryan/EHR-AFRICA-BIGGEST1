@@ -5,42 +5,17 @@
 {% block extra_css %}
 <style>
 .rpt-wrap { width: 100%; }
-.cf-band {
-  font-size: .68rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
-  border-radius: 4px 4px 0 0;
-}
-.cf-band.operating  { background: #0891b2; }
-.cf-band.investing  { background: #7c3aed; }
-.cf-band.financing  { background: #b45309; }
-.cf-band.summary    { background: #334155; }
-
 .cf-table { width: 100%; border-collapse: collapse; }
-.cf-table td { padding: .3rem 1rem; font-size: .83rem; border-bottom: 1px solid #f1f5f9; }
+.cf-table td { padding: .3rem 1rem; font-size: .83rem; border-bottom: 1px solid var(--bs-border-color-translucent, #dee2e680); }
 .cf-table td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--bs-font-monospace); }
-.cf-table tr:hover td { background: #f8fafc; }
-.cf-sub-head td { font-weight: 700; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; background: #f8fafc !important; color: #64748b; border-bottom: 1px solid #e9ecef; }
-.cf-sub-total td { font-weight: 700; background: #f1f5f9 !important; border-top: 1.5px solid #e2e8f0; border-bottom: 1.5px solid #e2e8f0; }
-.cf-net td { font-weight: 800; font-size: .88rem; border-top: 2px solid currentColor; }
-.cf-net.operating td { color: #0891b2; }
-.cf-net.investing  td { color: #7c3aed; }
-.cf-net.financing  td { color: #b45309; }
-
-.cf-summary-row td { padding: .4rem 1rem; font-size: .85rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
-.cf-summary-final td { font-weight: 800; font-size: 1rem; border-top: 2px solid #334155; }
-
 @media print {
   .no-print { display: none !important; }
   @page { size: A4 portrait; margin: 8mm 10mm 15mm 10mm; }
   body, .cf-table td { font-size: 7.5pt !important; }
-  .cf-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .card-header, .table-primary td, .table-secondary td, .table-warning td, .table-dark td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-footer { display: block !important; }
 }
-.print-footer {
-  display: none; position: fixed; bottom: 0; left: 0; right: 0;
-  padding: 2mm 10mm; font-size: 7pt; color: #666;
-  border-top: 1px solid #ccc; background: #fff; text-align: center;
-}
+.print-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 2mm 10mm; font-size: 7pt; color: #666; border-top: 1px solid #ccc; background: #fff; text-align: center; }
 </style>
 {% endblock %}
 
@@ -62,13 +37,6 @@
 
 <div class="rpt-wrap">
 
-  <!-- ── Report title ── -->
-  <div class="text-center mb-4">
-    <div class="fw-bold fs-5 mb-1">TABLEAU DES FLUX DE TRÉSORERIE</div>
-    <div class="text-muted small">Période : <strong>{{ date_from }}</strong> — <strong>{{ date_to }}</strong></div>
-    <div class="text-muted" style="font-size:.72rem;">Méthode directe — Normes OHADA / SYSCOHADA</div>
-  </div>
-
   <!-- ── Date filter ── -->
   <form method="get" class="row g-2 mb-4 align-items-end no-print">
     <div class="col-auto">
@@ -85,12 +53,12 @@
   </form>
 
   <!-- ══ I. OPERATING ACTIVITIES ══ -->
-  <div class="cf-band operating">
-    <i class="bi bi-gear me-2"></i>I. Flux des Activités d'Exploitation (Operating Activities)
+  <div class="card-header fw-semibold small text-uppercase border-start border-3 border-primary">
+    <i class="bi bi-gear me-2 text-primary"></i>I. Flux des Activités d'Exploitation (Operating Activities)
   </div>
   <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <table class="cf-table">
-      <tr class="cf-sub-head"><td colspan="2">Encaissements (Cash Inflows)</td></tr>
+      <tr class="table-light"><td colspan="2">Encaissements (Cash Inflows)</td></tr>
       {% for row in operating_inflows %}
       <tr>
         <td class="ps-4">{{ row.label }}</td>
@@ -99,11 +67,11 @@
       {% empty %}
       <tr><td colspan="2" class="text-center text-muted small py-2">Aucun encaissement</td></tr>
       {% endfor %}
-      <tr class="cf-sub-total">
+      <tr class="table-secondary fw-semibold">
         <td class="ps-3">Total Encaissements</td>
         <td class="text-success">{{ total_op_inflows|floatformat:0|intcomma }}</td>
       </tr>
-      <tr class="cf-sub-head"><td colspan="2" style="padding-top:.5rem;">Décaissements (Cash Outflows)</td></tr>
+      <tr class="table-light"><td colspan="2" style="padding-top:.5rem;">Décaissements (Cash Outflows)</td></tr>
       {% for row in operating_outflows %}
       <tr>
         <td class="ps-4">{{ row.label }}</td>
@@ -112,13 +80,13 @@
       {% empty %}
       <tr><td colspan="2" class="text-center text-muted small py-2">Aucun décaissement</td></tr>
       {% endfor %}
-      <tr class="cf-sub-total">
+      <tr class="table-secondary fw-semibold">
         <td class="ps-3">Total Décaissements</td>
         <td class="text-danger">({{ total_op_outflows|floatformat:0|intcomma }})</td>
       </tr>
     </table>
     <table class="cf-table">
-      <tr class="cf-net operating">
+      <tr class="table-primary fw-bold">
         <td>FLUX NET D'EXPLOITATION (Net Operating Cash Flow)</td>
         <td class="{% if net_operating >= 0 %}text-success{% else %}text-danger{% endif %}">
           {% if net_operating < 0 %}({{ net_operating|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_operating|floatformat:0|intcomma }}{% endif %} XAF
@@ -128,8 +96,8 @@
   </div>
 
   <!-- ══ II. INVESTING ACTIVITIES ══ -->
-  <div class="cf-band investing">
-    <i class="bi bi-building me-2"></i>II. Flux des Activités d'Investissement (Investing Activities)
+  <div class="card-header fw-semibold small text-uppercase border-start border-3 border-secondary">
+    <i class="bi bi-building me-2 text-secondary"></i>II. Flux des Activités d'Investissement (Investing Activities)
   </div>
   <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <table class="cf-table">
@@ -145,7 +113,7 @@
       {% endfor %}
     </table>
     <table class="cf-table">
-      <tr class="cf-net investing">
+      <tr class="table-secondary fw-bold">
         <td>FLUX NET D'INVESTISSEMENT (Net Investing Cash Flow)</td>
         <td class="{% if net_investing >= 0 %}text-success{% else %}text-danger{% endif %}">
           {% if net_investing < 0 %}({{ net_investing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_investing|floatformat:0|intcomma }}{% endif %} XAF
@@ -155,8 +123,8 @@
   </div>
 
   <!-- ══ III. FINANCING ACTIVITIES ══ -->
-  <div class="cf-band financing">
-    <i class="bi bi-cash-coin me-2"></i>III. Flux des Activités de Financement (Financing Activities)
+  <div class="card-header fw-semibold small text-uppercase border-start border-3 border-warning">
+    <i class="bi bi-cash-coin me-2 text-warning"></i>III. Flux des Activités de Financement (Financing Activities)
   </div>
   <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <table class="cf-table">
@@ -172,7 +140,7 @@
       {% endfor %}
     </table>
     <table class="cf-table">
-      <tr class="cf-net financing">
+      <tr class="table-warning fw-bold">
         <td>FLUX NET DE FINANCEMENT (Net Financing Cash Flow)</td>
         <td class="{% if net_financing >= 0 %}text-success{% else %}text-danger{% endif %}">
           {% if net_financing < 0 %}({{ net_financing|floatformat:0|intcomma|slice:"1:" }}){% else %}{{ net_financing|floatformat:0|intcomma }}{% endif %} XAF
@@ -182,16 +150,16 @@
   </div>
 
   <!-- ══ IV. NET CHANGE SUMMARY ══ -->
-  <div class="cf-band summary">
+  <div class="card-header fw-bold small text-uppercase border-start border-3 border-dark">
     <i class="bi bi-calculator me-2"></i>IV. Variation Nette de Trésorerie (Net Change in Cash)
   </div>
   <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <table class="cf-table">
-      <tr class="cf-summary-row">
+      <tr class="table-light fw-semibold">
         <td>Trésorerie d'Ouverture (Opening Cash Balance)</td>
         <td class="font-monospace">{{ opening_cash|floatformat:0|intcomma }} XAF</td>
       </tr>
-      <tr class="cf-summary-row">
+      <tr class="table-light fw-semibold">
         <td>Flux nets de la période (Net Change in Cash)</td>
         <td class="font-monospace {% if net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
           {% if net_change >= 0 %}+{% endif %}{{ net_change|floatformat:0|intcomma }} XAF
@@ -199,7 +167,7 @@
       </tr>
     </table>
     <table class="cf-table">
-      <tr class="cf-summary-final">
+      <tr class="table-dark fw-bold">
         <td>TRÉSORERIE DE CLÔTURE (Closing Cash Balance)</td>
         <td class="font-monospace {% if closing_cash >= 0 %}text-success{% else %}text-danger{% endif %}">
           {{ closing_cash|floatformat:0|intcomma }} XAF

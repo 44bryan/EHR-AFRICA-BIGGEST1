@@ -5,75 +5,18 @@
 {% block extra_css %}
 <style>
 .rpt-wrap { width: 100%; }
-
-.ohada-band {
-  font-size: .68rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: .1em; color: #fff; padding: .35rem 1rem;
-  border-radius: 4px 4px 0 0; background: #1e3a5f;
-  display: flex; justify-content: space-between; align-items: center;
-}
-
-.sec-header {
-  display: flex; justify-content: space-between; align-items: center;
-  background: #1e3a5f; color: #fff;
-  padding: .5rem 1rem; border-radius: 4px 4px 0 0;
-}
-.sec-header .sec-code { font-size: .95rem; font-weight: 800; font-family: var(--bs-font-monospace); }
-.sec-header .sec-name { font-size: .84rem; font-weight: 700; }
-.sec-header .sec-note { font-size: .68rem; opacity: .75; margin-top: 2px; }
-
-.recon-bar {
-  padding: .4rem 1rem; border-bottom: 1px solid #e2e8f0;
-  display: flex; gap: 2rem; align-items: center; flex-wrap: wrap;
-  font-size: .8rem;
-}
-.recon-bar.ok  { background: #f0fdf4; }
-.recon-bar.bad { background: #fef2f2; }
-
 .aux-table { width: 100%; border-collapse: collapse; }
-.aux-table th {
-  font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
-  color: #64748b; font-weight: 700; background: #f8fafc;
-  padding: .3rem .9rem; border-bottom: 2px solid #e2e8f0;
-}
-.aux-table td { padding: .28rem .9rem; font-size: .82rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-.aux-table tbody tr:hover td { background: #f0f9ff; }
-
-.aux-subtotal td {
-  font-weight: 700; background: #e8eef7 !important;
-  border-top: 2px solid #1e3a5f; border-bottom: 1px solid #c8d5e8;
-  font-size: .8rem;
-}
-.aux-gl-row td {
-  background: #f5f7fb !important; font-size: .8rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-.aux-diff-row td { font-weight: 700; font-size: .8rem; }
-.aux-diff-row.ok  td { background: #f0fdf4 !important; }
-.aux-diff-row.bad td { background: #fef2f2 !important; }
-
-.balance-chip {
-  display: inline-flex; align-items: center; gap: .3rem;
-  border-radius: 4px; padding: .18rem .55rem; font-size: .68rem; font-weight: 700;
-}
-.balance-chip.ok  { background: #dcfce7; color: #15803d; }
-.balance-chip.bad { background: #fee2e2; color: #dc2626; }
-
+.aux-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: .3rem .9rem; border-bottom: 2px solid var(--bs-border-color, #dee2e6); }
+.aux-table td { padding: .28rem .9rem; font-size: .82rem; border-bottom: 1px solid var(--bs-border-color-translucent, #dee2e680); vertical-align: middle; }
 @media print {
   .no-print { display: none !important; }
   @page { size: A4 portrait; margin: 8mm 10mm 15mm 10mm; }
   body, .aux-table td { font-size: 7.5pt !important; }
-  .sec-header, .ohada-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .recon-bar.ok, .recon-bar.bad { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .aux-subtotal td, .aux-diff-row td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .table-success td, .table-danger td, .table-secondary td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .card { box-shadow: none !important; break-inside: avoid; }
   .print-footer { display: block !important; }
 }
-.print-footer {
-  display: none; position: fixed; bottom: 0; left: 0; right: 0;
-  padding: 2mm 10mm; font-size: 7pt; color: #666;
-  border-top: 1px solid #ccc; background: #fff; text-align: center;
-}
+.print-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 2mm 10mm; font-size: 7pt; color: #666; border-top: 1px solid #ccc; background: #fff; text-align: center; }
 </style>
 {% endblock %}
 
@@ -95,13 +38,6 @@
 
 <div class="rpt-wrap">
 
-  <!-- ── Report title ── -->
-  <div class="text-center mb-4">
-    <div class="fw-bold fs-5 mb-1">BALANCE AUXILIAIRE — COMPTES DE TIERS</div>
-    <div class="text-muted small">Au : <strong>{{ as_of }}</strong></div>
-    <div class="text-muted" style="font-size:.72rem;">Rapprochement des soldes subsidiaires avec le Grand Livre — Normes OHADA / SYSCOHADA</div>
-  </div>
-
   <!-- ── Date filter ── -->
   <form method="get" class="row g-2 mb-4 align-items-end no-print">
     <div class="col-auto">
@@ -118,37 +54,37 @@
   <div class="mb-4">
 
     <!-- Section header -->
-    <div class="sec-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
       <div>
-        <span class="sec-code me-2">{{ sec.code }}</span>
-        <span class="sec-name">{{ sec.name }}</span>
-        <div class="sec-note">{{ sec.note }}</div>
+        <span class="fw-bold font-monospace me-2">{{ sec.code }}</span>
+        <span class="fw-semibold">{{ sec.name }}</span>
+        <div class="small text-muted mt-1">{{ sec.note }}</div>
       </div>
-      <div class="text-end">
+      <div>
         {% if sec.balanced %}
-        <span class="balance-chip ok" style="font-size:.75rem;"><i class="bi bi-check-circle-fill me-1"></i>Réconcilié</span>
+        <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Réconcilié</span>
         {% else %}
-        <span class="balance-chip bad" style="font-size:.75rem;"><i class="bi bi-x-circle-fill me-1"></i>Écart : {{ sec.diff|floatformat:0|intcomma }} XAF</span>
+        <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Écart : {{ sec.diff|floatformat:0|intcomma }} XAF</span>
         {% endif %}
       </div>
     </div>
 
     <!-- Reconciliation banner -->
-    <div class="recon-bar {% if sec.balanced %}ok{% else %}bad{% endif %}">
+    <div class="alert {% if sec.balanced %}alert-success{% else %}alert-danger{% endif %} d-flex gap-3 flex-wrap py-2 mb-0 border-0 rounded-0">
       <div>
-        <span class="text-muted small">Solde subsidiaire :</span>
+        <span class="small">Solde subsidiaire :</span>
         <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
           {{ sec.subtotal|floatformat:0|intcomma }} XAF {{ sec.side }}
         </strong>
       </div>
       <div>
-        <span class="text-muted small">Solde GL {{ sec.code }}xxx :</span>
+        <span class="small">Solde GL {{ sec.code }}xxx :</span>
         <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
           {{ sec.gl_bal|floatformat:0|intcomma }} XAF {{ sec.side }}
         </strong>
       </div>
       {% if not sec.balanced %}
-      <div class="text-danger fw-semibold small">
+      <div class="fw-semibold small">
         <i class="bi bi-exclamation-triangle-fill me-1"></i>
         Écart de {{ sec.diff|floatformat:0|intcomma }} XAF — erreur de saisie ou écriture non validée
       </div>
@@ -195,7 +131,7 @@
           </tbody>
           {% if sec.rows %}
           <tfoot>
-            <tr class="aux-subtotal">
+            <tr class="table-secondary fw-semibold">
               <td colspan="2" class="text-end pe-3 small text-uppercase" style="letter-spacing:.05em;">
                 Sous-total Subsidiaire ({{ sec.rows|length }} tiers)
               </td>
@@ -205,7 +141,7 @@
                 {{ sec.subtotal|floatformat:0|intcomma }}
               </td>
             </tr>
-            <tr class="aux-gl-row">
+            <tr class="table-light">
               <td colspan="2" class="text-end pe-3 small text-muted">
                 Solde Grand Livre — {{ sec.code }}xxx
               </td>
@@ -215,7 +151,7 @@
                 {{ sec.gl_bal|floatformat:0|intcomma }}
               </td>
             </tr>
-            <tr class="aux-diff-row {% if sec.balanced %}ok{% else %}bad{% endif %}">
+            <tr class="{% if sec.balanced %}table-success{% else %}table-danger{% endif %} fw-bold">
               <td colspan="2" class="text-end pe-3 small fw-semibold">
                 {% if sec.balanced %}
                 <i class="bi bi-check-circle-fill text-success me-1"></i>Différence

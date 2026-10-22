@@ -4,61 +4,19 @@
 
 {% block extra_css %}
 <style>
-/* ── Report wrapper ── */
 .rpt-wrap { width: 100%; }
-
-/* ── Section heading ── */
-.bs-section-head {
-  font-size: .7rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: .1em; color: #fff; padding: .4rem 1rem;
-  border-radius: 4px 4px 0 0; margin-bottom: 0;
-}
-.bs-section-head.assets   { background: #0891b2; }
-.bs-section-head.liab     { background: #dc2626; }
-.bs-section-head.equity   { background: #15803d; }
-
-/* ── Sub-section label ── */
-.bs-sub {
-  font-size: .68rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: #64748b; background: #f8fafc;
-  padding: .3rem .9rem; border-bottom: 1px solid #e9ecef;
-}
-
-/* ── Table rows ── */
 .bs-table { width: 100%; border-collapse: collapse; }
-.bs-table td { padding: .28rem .9rem; font-size: .82rem; border-bottom: 1px solid #f1f5f9; }
+.bs-table td { padding: .28rem .9rem; font-size: .82rem; border-bottom: 1px solid var(--bs-border-color-translucent, #dee2e680); }
 .bs-table td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.bs-table tr:hover td { background: #f0f9ff; }
-.bs-sub-total td { font-weight: 700; background: #f1f5f9 !important; border-top: 1.5px solid #e2e8f0; border-bottom: 1.5px solid #e2e8f0; font-size: .8rem; }
-.bs-sub-total td:first-child { color: #374151; padding-left: 1.2rem; }
-.bs-grand td { font-weight: 800; font-size: .88rem; border-top: 2px solid #334155; }
-.bs-grand.assets-grand td { color: #0891b2; }
-.bs-grand.liab-grand td { color: #dc2626; }
-.bs-grand.equity-grand td { color: #15803d; }
-
-/* ── Balance card ── */
-.balance-check {
-  border-radius: 8px; padding: .8rem 1.1rem;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-}
-.balance-check.balanced { background: #f0fdf4; border: 1.5px solid #86efac; }
-.balance-check.unbalanced { background: #fef2f2; border: 1.5px solid #fca5a5; }
-
-/* ── Print ── */
 @media print {
   .no-print { display: none !important; }
   @page { size: A4 portrait; margin: 8mm 10mm 15mm 10mm; }
   body, .bs-table td { font-size: 7.5pt !important; }
-  .card, .rpt-card { box-shadow: none !important; border: 1px solid #ccc !important; }
-  .bs-section-head { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bs-sub-total td, .bs-grand td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; }
+  .card-header, .table-secondary td, .table-primary td, .table-danger td, .table-success td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-footer { display: block !important; }
 }
-.print-footer {
-  display: none; position: fixed; bottom: 0; left: 0; right: 0;
-  padding: 2mm 10mm; font-size: 7pt; color: #666;
-  border-top: 1px solid #ccc; background: #fff; text-align: center;
-}
+.print-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 2mm 10mm; font-size: 7pt; color: #666; border-top: 1px solid #ccc; background: #fff; text-align: center; }
 </style>
 {% endblock %}
 
@@ -93,26 +51,19 @@
     </div>
   </form>
 
-  <!-- ── Report title block ── -->
-  <div class="text-center mb-4">
-    <div class="fw-bold fs-5 mb-1">STATEMENT OF FINANCIAL POSITION</div>
-    <div class="text-muted small">As at <strong>{{ date_to|date:"d F Y" }}</strong></div>
-    <div class="small text-muted mt-1">Prepared in accordance with OHADA / SYSCOHADA accounting standards</div>
-  </div>
-
   <!-- ── T-Account layout: Assets | Liabilities + Equity ── -->
   <div class="row g-3">
 
     <!-- ══ LEFT: ASSETS ══ -->
     <div class="col-lg-6">
-      <div class="bs-section-head assets">
-        <i class="bi bi-building me-2"></i>ACTIF — ASSETS
+      <div class="card-header fw-bold small text-uppercase border-start border-3 border-primary">
+        <i class="bi bi-building me-2 text-primary"></i>ACTIF — ASSETS
       </div>
       <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
         <table class="bs-table">
           {% for group in assets %}
           <tr>
-            <td colspan="2" class="bs-sub">{{ group.label }}</td>
+            <td colspan="2" class="small fw-semibold text-muted text-uppercase py-1 px-3 table-light">{{ group.label }}</td>
           </tr>
           {% for row in group.rows %}
           <tr>
@@ -121,7 +72,7 @@
             <td>{{ row.balance|floatformat:0|intcomma }}</td>
           </tr>
           {% endfor %}
-          <tr class="bs-sub-total">
+          <tr class="table-secondary fw-semibold">
             <td colspan="2" class="ps-3">Sub-total — {{ group.label }}</td>
             <td class="text-primary">{{ group.total|floatformat:0|intcomma }}</td>
           </tr>
@@ -130,7 +81,7 @@
           {% endfor %}
         </table>
         <table class="bs-table">
-          <tr class="bs-grand assets-grand">
+          <tr class="table-primary fw-bold">
             <td colspan="2" class="ps-3">TOTAL ASSETS (Actif)</td>
             <td>{{ total_assets|floatformat:0|intcomma }} XAF</td>
           </tr>
@@ -142,14 +93,14 @@
     <div class="col-lg-6">
 
       <!-- Liabilities -->
-      <div class="bs-section-head liab">
-        <i class="bi bi-arrow-return-left me-2"></i>PASSIF — LIABILITIES
+      <div class="card-header fw-bold small text-uppercase border-start border-3 border-danger">
+        <i class="bi bi-arrow-return-left me-2 text-danger"></i>PASSIF — LIABILITIES
       </div>
       <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
         <table class="bs-table">
           {% for group in liabilities %}
           <tr>
-            <td colspan="2" class="bs-sub">{{ group.label }}</td>
+            <td colspan="2" class="small fw-semibold text-muted text-uppercase py-1 px-3 table-light">{{ group.label }}</td>
           </tr>
           {% for row in group.rows %}
           <tr>
@@ -158,16 +109,16 @@
             <td>{{ row.balance|floatformat:0|intcomma }}</td>
           </tr>
           {% endfor %}
-          <tr class="bs-sub-total">
+          <tr class="table-secondary fw-semibold">
             <td colspan="2" class="ps-3">Sub-total — {{ group.label }}</td>
-            <td style="color:#dc2626;">{{ group.total|floatformat:0|intcomma }}</td>
+            <td class="text-danger">{{ group.total|floatformat:0|intcomma }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="3" class="text-center text-muted small py-3">No liability accounts with balance</td></tr>
           {% endfor %}
         </table>
         <table class="bs-table">
-          <tr class="bs-grand liab-grand">
+          <tr class="table-danger fw-bold">
             <td colspan="2" class="ps-3">TOTAL LIABILITIES (Passif)</td>
             <td>{{ total_liabilities|floatformat:0|intcomma }} XAF</td>
           </tr>
@@ -175,8 +126,8 @@
       </div>
 
       <!-- Equity -->
-      <div class="bs-section-head equity">
-        <i class="bi bi-graph-up-arrow me-2"></i>CAPITAUX PROPRES — EQUITY
+      <div class="card-header fw-bold small text-uppercase border-start border-3 border-success">
+        <i class="bi bi-graph-up-arrow me-2 text-success"></i>CAPITAUX PROPRES — EQUITY
       </div>
       <div class="card border-0 shadow-sm mb-3" style="border-radius:0 0 8px 8px; overflow:hidden;">
         <table class="bs-table">
@@ -190,7 +141,7 @@
           <tr><td colspan="3" class="text-center text-muted small py-2">No equity accounts</td></tr>
           {% endfor %}
           <!-- Net Income line -->
-          <tr class="bs-sub-total">
+          <tr class="table-secondary fw-semibold">
             <td colspan="2" class="ps-3">
               Résultat de l'exercice
               <small class="fw-normal text-muted ms-1">(Net Income — current period)</small>
@@ -201,7 +152,7 @@
           </tr>
         </table>
         <table class="bs-table">
-          <tr class="bs-grand equity-grand">
+          <tr class="table-success fw-bold">
             <td colspan="2" class="ps-3">TOTAL EQUITY (Capitaux propres)</td>
             <td>{{ total_equity|floatformat:0|intcomma }} XAF</td>
           </tr>
@@ -209,7 +160,7 @@
       </div>
 
       <!-- Balance check -->
-      <div class="balance-check {% if is_balanced %}balanced{% else %}unbalanced{% endif %}">
+      <div class="alert {% if is_balanced %}alert-success{% else %}alert-danger{% endif %} d-flex align-items-center justify-content-between gap-2 mt-2">
         <div>
           <div class="fw-bold small">TOTAL LIABILITIES + EQUITY</div>
           <div class="text-muted" style="font-size:.75rem;">Must equal Total Assets</div>
@@ -237,7 +188,7 @@
         </div>
         <div class="col-4 border-end">
           <div class="text-muted small">Total Liabilities</div>
-          <div class="fw-bold font-monospace" style="color:#dc2626;">{{ total_liabilities|floatformat:0|intcomma }} XAF</div>
+          <div class="fw-bold font-monospace text-danger">{{ total_liabilities|floatformat:0|intcomma }} XAF</div>
         </div>
         <div class="col-4">
           <div class="text-muted small">Total Equity</div>
