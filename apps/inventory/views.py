@@ -3571,6 +3571,7 @@ def stock_validation_list(request):
 @login_required
 def stock_validation_detail(request, validation_id):
     """View details of a stock validation with source transaction info."""
+    from datetime import timedelta
     sv = get_object_or_404(StockValidation, pk=validation_id, is_deleted=False)
     if not _can_validate_stock(request.user) and not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
@@ -3581,26 +3582,66 @@ def stock_validation_detail(request, validation_id):
     if sv.validation_type == StockValidationType.GRN:
         source_obj = GoodsReceivedNote.objects.filter(pk=sv.source_id).select_related('purchase_order__vendor').first()
         if source_obj:
-            source_items = source_obj.items.select_related('po_item__item').all()
+            source_items = list(source_obj.items.select_related('po_item__item').all())
     elif sv.validation_type == StockValidationType.ISSUE:
         source_obj = DepartmentRequisition.objects.filter(pk=sv.source_id).first()
         if source_obj:
-            source_items = source_obj.items.select_related('item').all()
+            source_items = list(source_obj.items.select_related('item').all())
     elif sv.validation_type == StockValidationType.DISPOSAL:
         source_obj = DisposalRecord.objects.filter(pk=sv.source_id).first()
         if source_obj:
-            source_items = source_obj.items.select_related('item', 'batch').all()
+            source_items = list(source_obj.items.select_related('item', 'batch').all())
     elif sv.validation_type == StockValidationType.COUNT:
         source_obj = StockCount.objects.filter(pk=sv.source_id).first()
         if source_obj:
-            source_items = source_obj.items.select_related('item').exclude(variance=0)
+            source_items = list(source_obj.items.select_related('item').exclude(variance=0))
     elif sv.validation_type == StockValidationType.RETURN:
         source_obj = DepartmentReturn.objects.filter(pk=sv.source_id).first()
         if source_obj:
-            source_items = source_obj.items.select_related('item').filter(condition='GOOD')
+            source_items = list(source_obj.items.select_related('item').filter(condition='GOOD'))
+    elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT,
+                                 StockValidationType.ADJUSTMENT):
+        # source_id = primary StockMovement pk; find all movements in the same session
+        primary_m = StockMovement.objects.filter(pk=sv.source_id).select_related(
+            'item', 'item__store_location', 'batch'
+        ).first()
+        if primary_m:
+            source_obj = primary_m
+            t_start = primary_m.created_at - timedelta(seconds=90)
+            t_end   = primary_m.created_at + timedelta(seconds=90)
+            source_items = list(
+                StockMovement.objects.filter(
+                    performed_by=primary_m.performed_by,
+                    movement_type=primary_m.movement_type,
+                    created_at__range=(t_start, t_end),
+                ).select_related('item', 'item__store_location', 'batch').order_by('created_at')
+            )
+            if not source_items:
+                source_items = [primary_m]
+
+    # Build GL preview: show what Dr/Cr will post on validation
+    gl_preview = None
+    op_type = getattr(sv, 'operation_type', None)
+    if op_type and op_type.debit_account and op_type.credit_account:
+        gl_preview = {
+            'dr': op_type.debit_account,
+            'cr': op_type.credit_account,
+            'op': op_type,
+        }
+    elif op_type and op_type.billing_operation:
+        bop = op_type.billing_operation
+        if bop.default_debit_account and bop.default_credit_account:
+            gl_preview = {
+                'dr': bop.default_debit_account,
+                'cr': bop.default_credit_account,
+                'op': bop,
+            }
 
     return render(request, 'inventory/stock_validation_detail.html', {
-        'sv': sv, 'source_obj': source_obj, 'source_items': source_items,
+        'sv': sv,
+        'source_obj': source_obj,
+        'source_items': source_items,
+        'gl_preview': gl_preview,
         'can_validate': _can_validate_stock(request.user),
     })
 
@@ -3734,6 +3775,29 @@ def stock_validation_approve(request, validation_id):
         messages.success(request, f'{sv.get_validation_type_display()} — {sv.reference} validated. GL journal entry {journal_entry.entry_number} posted.')
     else:
         messages.warning(request, f'{sv.reference} validated but GL posting skipped (accounts not seeded or zero value).')
+
+    # Notify the store keeper who submitted this transaction
+    try:
+        from apps.notifications.utils import notify
+        from apps.notifications.models import NotificationType, NotificationPriority
+        from django.urls import reverse
+        detail_url = reverse('inventory:stock_validation_detail', args=[sv.pk])
+        je_ref = journal_entry.entry_number if journal_entry else 'No GL Entry'
+        notify(
+            sv.submitted_by,
+            title=f'✅ Stock Entry Validated — {sv.reference}',
+            message=(
+                f'Your stock transaction "{sv.description}" has been validated by '
+                f'{request.user.get_full_name() or request.user.username}. '
+                f'GL Journal Entry {je_ref} has been posted to the ledger.'
+            ),
+            link=detail_url,
+            notification_type=NotificationType.SUCCESS,
+            priority=NotificationPriority.HIGH,
+        )
+    except Exception:
+        pass
+
     return redirect('inventory:stock_validation_list')
 
 
@@ -3750,6 +3814,29 @@ def stock_validation_reject(request, validation_id):
     sv.validation_notes = request.POST.get('notes', '').strip()
     sv.save(update_fields=['status', 'validated_by', 'validated_at', 'validation_notes'])
     messages.warning(request, f'{sv.reference} rejected — no GL posting.')
+
+    # Notify the store keeper who submitted this transaction
+    try:
+        from apps.notifications.utils import notify
+        from apps.notifications.models import NotificationType, NotificationPriority
+        from django.urls import reverse
+        detail_url = reverse('inventory:stock_validation_detail', args=[sv.pk])
+        notify(
+            sv.submitted_by,
+            title=f'❌ Stock Entry Rejected — {sv.reference}',
+            message=(
+                f'Your stock transaction "{sv.description}" was rejected by '
+                f'{request.user.get_full_name() or request.user.username}. '
+                f'Reason: {sv.validation_notes or "No reason provided"}. '
+                f'Please review and resubmit.'
+            ),
+            link=detail_url,
+            notification_type=NotificationType.ALERT,
+            priority=NotificationPriority.HIGH,
+        )
+    except Exception:
+        pass
+
     return redirect('inventory:stock_validation_list')
 
 
