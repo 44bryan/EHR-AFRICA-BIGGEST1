@@ -1321,6 +1321,11 @@ class GLAccount(AuditModel):
         return f"{self.code} — {self.name}"
 
     @property
+    def account_class(self):
+        """First digit of OHADA code — used for COA grouping (Class 1-9)."""
+        return str(self.code)[0] if self.code else '0'
+
+    @property
     def balance(self):
         """Running balance: sum of debits minus credits (for assets/expenses) or reverse."""
         from django.db.models import Sum as _S
@@ -1553,6 +1558,12 @@ class JournalLine(models.Model):
     debit_amount  = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     credit_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     sequence      = models.PositiveSmallIntegerField(default=1)
+    # OHADA analytical: cost center per line — Class 6 & 7 only; Class 3/4/5 = None
+    cost_center   = models.ForeignKey(
+        CostCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='journal_lines',
+        help_text='OHADA: assign only for Class 6 (Charges) and Class 7 (Produits) lines'
+    )
 
     class Meta:
         ordering = ['sequence', 'id']

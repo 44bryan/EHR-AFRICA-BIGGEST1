@@ -70,6 +70,12 @@
         <i class="bi bi-sliders me-1"></i>System GL Accounts
       </a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'coa' %}active fw-semibold{% endif %}"
+         href="?tab=coa">
+        <i class="bi bi-list-columns me-1"></i>COA Map
+      </a>
+    </li>
   </ul>
 
   <div class="tab-content pt-3">
@@ -931,6 +937,128 @@
   </div>
   {% endif %}
 
+  {% if active_tab == 'coa' %}
+  <div class="tab-pane show active">
+
+    <div class="alert alert-info border-0 py-2 mb-3 small">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>OHADA Rule:</strong> Only <span class="badge bg-success">Class 6</span> and <span class="badge bg-success">Class 7</span> get a Cost Center.
+      Classes 3, 4, 5 are balance sheet accounts — they never have a cost center.
+    </div>
+
+    <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+      <input type="text" id="coaSearch" class="form-control form-control-sm" style="max-width:260px;"
+             placeholder="Search code or name…" oninput="filterCoa()">
+      <select id="coaClassFilter" class="form-select form-select-sm" style="max-width:160px;" onchange="filterCoa()">
+        <option value="">All Classes</option>
+        <option value="1">Class 1 — Capital</option>
+        <option value="2">Class 2 — Fixed Assets</option>
+        <option value="3">Class 3 — Stock</option>
+        <option value="4">Class 4 — Tiers / AR / AP</option>
+        <option value="5">Class 5 — Treasury / Cash</option>
+        <option value="6">Class 6 — Charges / Expenses</option>
+        <option value="7">Class 7 — Revenue</option>
+        <option value="8">Class 8 — Other</option>
+        <option value="9">Class 9 — Management</option>
+      </select>
+      <select id="coaCcFilter" class="form-select form-select-sm" style="max-width:180px;" onchange="filterCoa()">
+        <option value="">All CC Status</option>
+        <option value="yes">Has Cost Center Rule</option>
+        <option value="no">No Cost Center (Balance Sheet)</option>
+      </select>
+      <span class="text-muted small ms-2">{{ accounts|length }} accounts total</span>
+    </div>
+
+    {% comment %}Group accounts by class{% endcomment %}
+    {% regroup accounts by account_class as class_groups %}
+
+    {% for cg in class_groups %}
+    {% with cls=cg.grouper %}
+    <div class="card border-0 shadow-sm mb-3 coa-class-card" data-class="{{ cls }}">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center
+        {% if cls == '6' or cls == '7' %}bg-success bg-opacity-10 border-success{% elif cls == '3' or cls == '4' or cls == '5' %}bg-secondary bg-opacity-10{% else %}bg-white{% endif %}">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge fs-6
+            {% if cls == '6' or cls == '7' %}bg-success
+            {% elif cls == '3' %}bg-warning text-dark
+            {% elif cls == '4' %}bg-info text-dark
+            {% elif cls == '5' %}bg-primary
+            {% elif cls == '1' %}bg-dark
+            {% elif cls == '2' %}bg-secondary
+            {% else %}bg-light text-dark border{% endif %}">
+            Class {{ cls }}
+          </span>
+          <span class="fw-semibold small">
+            {% if cls == '1' %}Capital &amp; Long-term Liabilities
+            {% elif cls == '2' %}Fixed Assets — Immobilisations
+            {% elif cls == '3' %}Stocks &amp; Work in Progress
+            {% elif cls == '4' %}Tiers — AR / AP / Suppliers / Clients
+            {% elif cls == '5' %}Treasury — Cash, Bank, Mobile Money
+            {% elif cls == '6' %}Charges — Expenses &amp; COGS
+            {% elif cls == '7' %}Produits — Revenue &amp; Income
+            {% elif cls == '8' %}Other Charges &amp; Products
+            {% elif cls == '9' %}Management Accounts
+            {% else %}Class {{ cls }}{% endif %}
+          </span>
+          <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ cg.list|length }} accounts</span>
+        </div>
+        <div>
+          {% if cls == '6' or cls == '7' %}
+          <span class="badge bg-success"><i class="bi bi-building me-1"></i>COST CENTER REQUIRED — P&amp;L accounts</span>
+          {% else %}
+          <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>NO COST CENTER — Balance Sheet</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 coa-table" style="font-size:.8rem;">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3" style="width:100px;">Code</th>
+              <th style="min-width:250px;">Account Name</th>
+              <th style="width:120px;">Type</th>
+              <th style="width:160px;">Cost Center Rule</th>
+              <th style="width:200px;">Used In Operations</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in cg.list %}
+            <tr class="coa-row" data-class="{{ cls }}" data-cc="{% if cls == '6' or cls == '7' %}yes{% else %}no{% endif %}">
+              <td class="ps-3 font-monospace fw-semibold
+                {% if cls == '6' %}text-danger{% elif cls == '7' %}text-success{% elif cls == '5' %}text-primary{% elif cls == '4' %}text-info{% elif cls == '3' %}text-warning{% else %}text-muted{% endif %}">
+                {{ a.code }}
+              </td>
+              <td>
+                {{ a.name }}
+                {% if not a.is_active %}<span class="badge bg-secondary ms-1" style="font-size:.65rem;">Inactive</span>{% endif %}
+              </td>
+              <td><span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ a.get_account_type_display }}</span></td>
+              <td>
+                {% if cls == '6' or cls == '7' %}
+                  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Gets CC on every posting</span>
+                {% else %}
+                  <span class="text-muted small"><i class="bi bi-dash-circle me-1"></i>Never assigned CC</span>
+                {% endif %}
+              </td>
+              <td class="text-muted" style="font-size:.72rem;">
+                {% for row in chain_rows %}
+                  {% if row.op.default_debit_account_id == a.pk or row.op.default_credit_account_id == a.pk %}
+                    <span class="badge bg-primary bg-opacity-75 me-1" style="font-size:.6rem;">{{ row.op.operation_code }}</span>
+                  {% endif %}
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endwith %}
+    {% endfor %}
+
+  </div>
+  {% endif %}
+
   </div>
 </div>
 
@@ -969,6 +1097,22 @@ function expandAll(open) {
   document.querySelectorAll('.collapse').forEach(el => {
     if (open) { el.classList.add('show'); }
     else { el.classList.remove('show'); }
+  });
+}
+
+function filterCoa() {
+  const q   = (document.getElementById('coaSearch').value || '').toLowerCase();
+  const cls = document.getElementById('coaClassFilter').value;
+  const cc  = document.getElementById('coaCcFilter').value;
+  document.querySelectorAll('.coa-row').forEach(tr => {
+    const matchQ   = !q   || tr.textContent.toLowerCase().includes(q);
+    const matchCls = !cls || tr.dataset.class === cls;
+    const matchCc  = !cc  || tr.dataset.cc === cc;
+    tr.style.display = (matchQ && matchCls && matchCc) ? '' : 'none';
+  });
+  document.querySelectorAll('.coa-class-card').forEach(card => {
+    const visible = card.querySelectorAll('.coa-row:not([style*="none"])').length;
+    card.style.display = (!cls || card.dataset.class === cls) && visible > 0 ? '' : 'none';
   });
 }
 
