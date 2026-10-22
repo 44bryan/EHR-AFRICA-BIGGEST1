@@ -946,9 +946,101 @@
       Classes 3, 4, 5 are balance sheet accounts — they never have a cost center.
     </div>
 
-    {# ── OPERATIONS WIRE — visual + editable ────────────────────────────── #}
-    {% if can_edit %}
+    {# ── OPERATIONS WIRE — visual overview + optional edit ──────────────── #}
     <script>
+      {# ── CHAIN_DATA: full operation detail for the View modal ── #}
+      const CHAIN_DATA = [
+        {% for row in chain_rows %}{% with op=row.op %}{
+          pk:"{{ op.pk }}",
+          code:"{{ op.operation_code|escapejs }}",
+          name:"{{ op.operation_name|escapejs }}",
+          group:"{{ op.group }}",
+          cc_req:{% if op.group == 'REVENUE' or op.group == 'EXPENSE' or op.group == 'STOCK' or op.group == 'INVENTORY' %}true{% else %}false{% endif %},
+          cc:{% if op.cost_center %}{"code":"{{ op.cost_center.code|escapejs }}","name":"{{ op.cost_center.name|escapejs }}"}{% else %}null{% endif %},
+          dr:{% if op.default_debit_account %}{"code":"{{ op.default_debit_account.code|escapejs }}","name":"{{ op.default_debit_account.name|escapejs }}","cls":"{{ op.default_debit_account.code|slice:':1' }}"}{% else %}null{% endif %},
+          cr:{% if op.default_credit_account %}{"code":"{{ op.default_credit_account.code|escapejs }}","name":"{{ op.default_credit_account.name|escapejs }}","cls":"{{ op.default_credit_account.code|slice:':1' }}"}{% else %}null{% endif %},
+          types:[{% for t in row.linked_types %}{
+            code:"{{ t.type.code|escapejs }}",name:"{{ t.type.name|escapejs }}",cat:"{{ t.type.category }}",
+            dr:{% if t.type.debit_account %}{"code":"{{ t.type.debit_account.code|escapejs }}","name":"{{ t.type.debit_account.name|escapejs }}","cls":"{{ t.type.debit_account.code|slice:':1' }}"}{% else %}null{% endif %},
+            cr:{% if t.type.credit_account %}{"code":"{{ t.type.credit_account.code|escapejs }}","name":"{{ t.type.credit_account.name|escapejs }}","cls":"{{ t.type.credit_account.code|slice:':1' }}"}{% else %}null{% endif %}
+          }{% if not forloop.last %},{% endif %}{% endfor %}]
+        }{% if not forloop.last %},{% endif %}{% endwith %}{% endfor %}
+      ];
+
+      function _clsLabel(cls) {
+        var map = {'1':'Class 1 — Capital','2':'Class 2 — Fixed Assets','3':'Class 3 — Stock',
+                   '4':'Class 4 — AR/AP/Clients','5':'Class 5 — Treasury/Cash',
+                   '6':'Class 6 — Charges/Expenses','7':'Class 7 — Revenue/Produits'};
+        return map[cls] || ('Class ' + cls);
+      }
+      function _clsCC(cls) {
+        return (cls === '6' || cls === '7');
+      }
+      function _acctHtml(a, ccObj) {
+        if (!a) return '<span class="badge bg-warning text-dark" style="font-size:.75rem;"><i class="bi bi-exclamation-triangle me-1"></i>Not configured</span>';
+        var needsCC = _clsCC(a.cls);
+        var ccHtml = needsCC
+          ? (ccObj ? '<span class="badge bg-success ms-1" style="font-size:.7rem;"><i class="bi bi-building me-1"></i>' + ccObj.code + ' \u2014 ' + ccObj.name + '</span>'
+                   : '<span class="badge bg-danger ms-1" style="font-size:.7rem;"><i class="bi bi-exclamation-circle me-1"></i>CC Required \u2014 Unassigned</span>')
+          : '<span class="badge bg-secondary ms-1" style="font-size:.7rem;">No CC (Balance Sheet)</span>';
+        return '<span class="badge bg-light text-dark border font-monospace me-1" style="font-size:.78rem;">' + a.code + '</span>'
+             + '<strong>' + a.name + '</strong>'
+             + '<br><small class="text-muted">' + _clsLabel(a.cls) + '</small>'
+             + ccHtml;
+      }
+
+      function openOpDetail(pk) {
+        var op = CHAIN_DATA.find(function(d){ return d.pk === pk; });
+        if (!op) return;
+        var grpColors = {REVENUE:'success',EXPENSE:'danger',STOCK:'warning',INVENTORY:'warning',CASH:'info',BANK:'primary',ASSET:'dark'};
+        var grpColor = grpColors[op.group] || 'secondary';
+        var grpText  = (op.group === 'STOCK' || op.group === 'INVENTORY') ? 'text-dark' : (op.group === 'CASH' ? 'text-dark' : '');
+        var ccReqBadge = op.cc_req
+          ? '<span class="badge bg-success ms-2" style="font-size:.72rem;"><i class="bi bi-building me-1"></i>Cost Center Required</span>'
+          : '<span class="badge bg-secondary ms-2" style="font-size:.72rem;">No Cost Center Needed</span>';
+
+        var html = '<div class="mb-3 pb-3 border-bottom">'
+          + '<span class="badge bg-' + grpColor + ' ' + grpText + ' me-2">' + op.group + '</span>'
+          + '<strong>' + op.code + '</strong> \u2014 ' + op.name + ccReqBadge + '</div>';
+
+        html += '<h6 class="fw-semibold small text-muted mb-2"><i class="bi bi-arrow-left-right me-1"></i>OPERATION DEFAULT ACCOUNTS</h6>';
+        html += '<div class="row g-2 mb-3">'
+          + '<div class="col-6"><div class="card border-primary border-opacity-50 h-100">'
+          + '<div class="card-header bg-primary bg-opacity-10 py-1 small fw-semibold text-primary"><i class="bi bi-arrow-right-circle me-1"></i>Debit (Dr)</div>'
+          + '<div class="card-body py-2 small">' + _acctHtml(op.dr, op.cc) + '</div></div></div>'
+          + '<div class="col-6"><div class="card border-info border-opacity-50 h-100">'
+          + '<div class="card-header bg-info bg-opacity-10 py-1 small fw-semibold text-info-emphasis"><i class="bi bi-arrow-left-circle me-1"></i>Credit (Cr)</div>'
+          + '<div class="card-body py-2 small">' + _acctHtml(op.cr, op.cc) + '</div></div></div>'
+          + '</div>';
+
+        if (op.types.length > 0) {
+          html += '<h6 class="fw-semibold small text-muted mb-2"><i class="bi bi-arrow-left-right me-1"></i>ENTRY / EXIT TYPES (' + op.types.length + ')</h6>';
+          op.types.forEach(function(t) {
+            var isIn = (t.cat === 'ENTRY');
+            var color = isIn ? 'success' : 'danger';
+            var icon  = isIn ? '\u2193 IN' : '\u2191 OUT';
+            html += '<div class="card border-' + color + ' border-opacity-25 mb-2">'
+              + '<div class="card-header bg-' + color + ' bg-opacity-10 py-1 d-flex align-items-center gap-2">'
+              + '<span class="badge bg-' + color + '" style="font-size:.7rem;">' + icon + '</span>'
+              + '<span class="fw-semibold font-monospace small">' + t.code + '</span>'
+              + '<span class="text-muted small">' + t.name + '</span>'
+              + '<span class="badge bg-secondary ms-auto" style="font-size:.65rem;">Inherits operation CC</span>'
+              + '</div>'
+              + '<div class="card-body py-2"><div class="row g-2">'
+              + '<div class="col-6"><div class="small fw-semibold text-primary mb-1"><i class="bi bi-arrow-right-circle me-1"></i>Debit (Dr)</div><div class="small">' + _acctHtml(t.dr, op.cc) + '</div></div>'
+              + '<div class="col-6"><div class="small fw-semibold text-info-emphasis mb-1"><i class="bi bi-arrow-left-circle me-1"></i>Credit (Cr)</div><div class="small">' + _acctHtml(t.cr, op.cc) + '</div></div>'
+              + '</div></div></div>';
+          });
+        } else {
+          html += '<div class="text-muted small"><i class="bi bi-info-circle me-1"></i>No entry/exit types linked to this operation.</div>';
+        }
+
+        document.getElementById('opDetailTitle').textContent = op.code + ' \u2014 ' + op.name;
+        document.getElementById('opDetailBody').innerHTML = html;
+        new bootstrap.Modal(document.getElementById('opDetailModal')).show();
+      }
+
+      {# ── Edit modal helpers (Finance Director only) ── #}
       const COA_ACCTS = {{ accounts_json|safe }};
       const COA_CCS   = {{ cc_json|safe }};
       function _coaFill(sel, items, blank) {
@@ -980,13 +1072,15 @@
       }
     </script>
 
-    {# Shared edit form (posted outside the modal) #}
+    {# Edit form — outside modal so it can submit #}
+    {% if can_edit %}
     <form id="opWireForm" method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="edit_operation">
       <input type="hidden" name="tab_back" value="coa">
       <input type="hidden" name="op_id" id="opwire-pk">
     </form>
+    {% endif %}
 
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
@@ -1008,7 +1102,7 @@
                 <th style="width:200px;">Debit Account <span class="text-muted fw-normal" style="font-size:.65rem;">(Dr)</span></th>
                 <th style="width:200px;">Credit Account <span class="text-muted fw-normal" style="font-size:.65rem;">(Cr)</span></th>
                 <th style="width:150px;">Entry/Exit Types</th>
-                <th style="width:50px;"></th>
+                <th style="width:75px;"></th>
               </tr>
             </thead>
             <tbody>
@@ -1065,16 +1159,26 @@
                   {% empty %}<span class="text-muted small">—</span>{% endfor %}
                 </td>
                 <td>
-                  <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2"
-                    onclick="openOpWireEdit(
-                      '{{ op.pk }}',
-                      '{{ op.operation_name|escapejs }}',
-                      '{{ op.cost_center_id|default:'' }}',
-                      '{{ op.default_debit_account_id|default:'' }}',
-                      '{{ op.default_credit_account_id|default:'' }}'
-                    )">
-                    <i class="bi bi-pencil"></i>
-                  </button>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                      onclick="openOpDetail('{{ op.pk }}')"
+                      title="View full GL detail for this operation">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                    {% if can_edit %}
+                    <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2"
+                      onclick="openOpWireEdit(
+                        '{{ op.pk }}',
+                        '{{ op.operation_name|escapejs }}',
+                        '{{ op.cost_center_id|default:'' }}',
+                        '{{ op.default_debit_account_id|default:'' }}',
+                        '{{ op.default_credit_account_id|default:'' }}'
+                      )"
+                      title="Edit this operation">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    {% endif %}
+                  </div>
                 </td>
               </tr>
               {% endwith %}
@@ -1118,6 +1222,25 @@
       </div>
     </div>
     {% endif %}
+
+    {# ── OPERATION DETAIL MODAL — View all GL accounts for one operation ── #}
+    <div class="modal fade" id="opDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header py-2 bg-light">
+            <div>
+              <h6 class="modal-title fw-bold mb-0" id="opDetailTitle"></h6>
+              <small class="text-muted">All GL accounts, cost centers and entry/exit types for this operation</small>
+            </div>
+            <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="opDetailBody" style="font-size:.85rem;"></div>
+          <div class="modal-footer py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
       <input type="text" id="coaSearch" class="form-control form-control-sm" style="max-width:260px;"
