@@ -152,11 +152,12 @@
           <thead class="table-light">
             <tr>
               <th style="width:3%">#</th>
-              <th style="width:12%">Account Code</th>
+              <th style="width:10%">Account</th>
               <th>Account Name</th>
               <th>Description</th>
-              <th style="width:14%" class="text-end">Debit (XAF)</th>
-              <th style="width:14%" class="text-end">Credit (XAF)</th>
+              <th style="width:120px">Cost Center</th>
+              <th style="width:13%" class="text-end">Debit (XAF)</th>
+              <th style="width:13%" class="text-end">Credit (XAF)</th>
             </tr>
           </thead>
           <tbody>
@@ -166,6 +167,20 @@
               <td class="font-monospace fw-semibold">{{ line.account.code }}</td>
               <td>{{ line.account.name }}</td>
               <td class="text-muted small">{{ line.description|default:"—" }}</td>
+              <td class="small">
+                {% if line.cost_center %}
+                  <span class="badge bg-primary bg-opacity-75">{{ line.cost_center.code }}</span>
+                  <span class="text-muted ms-1" style="font-size:.68rem;">{{ line.cost_center.name|truncatewords:3 }}</span>
+                {% else %}
+                  <span class="text-muted fst-italic" style="font-size:.72rem;">
+                    {% with cls=line.account.code|slice:":1" %}
+                      {% if cls == "4" or cls == "5" %}No CC (Class {{ cls }})
+                      {% elif cls == "3" %}No CC (Stock)
+                      {% else %}Unassigned{% endif %}
+                    {% endwith %}
+                  </span>
+                {% endif %}
+              </td>
               <td class="text-end fw-semibold font-monospace {% if line.debit_amount %}text-success{% endif %}">{% if line.debit_amount %}{{ line.debit_amount|floatformat:0|intcomma }}{% endif %}</td>
               <td class="text-end fw-semibold font-monospace {% if line.credit_amount %}text-danger{% endif %}">{% if line.credit_amount %}{{ line.credit_amount|floatformat:0|intcomma }}{% endif %}</td>
             </tr>
@@ -173,7 +188,7 @@
           </tbody>
           <tfoot class="table-light fw-bold">
             <tr>
-              <td colspan="4" class="text-end">Totals (XAF)</td>
+              <td colspan="5" class="text-end">Totals (XAF)</td>
               <td class="text-end text-success font-monospace">{{ entry.total_debits|floatformat:0|intcomma }}</td>
               <td class="text-end text-danger font-monospace">{{ entry.total_credits|floatformat:0|intcomma }}</td>
             </tr>

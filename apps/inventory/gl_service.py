@@ -101,8 +101,10 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
         )
         return None
 
-    # OHADA rule: cost center only applies when the entry has Class 6 or 7 lines.
-    # Pure treasury entries (Dr 411 / Cr 571, Dr 401 / Cr 521) get no cost center.
+    # OHADA analytical rule: cost center applies ONLY to Class 6 (Charges) and
+    # Class 7 (Produits) lines. Class 3 (Stock), 4 (Créances/Dettes), 5 (Trésorerie)
+    # must be left unassigned per SYSCOHADA.
+    # The entry header also gets the cost center if any analytical line exists.
     has_analytical_line = any(str(acct.code)[:1] in ('6', '7') for acct, _, _, _ in resolved)
     entry_cc = cost_center if has_analytical_line else None
 
@@ -118,6 +120,8 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
         operation=operation,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
+        # Per-line cost center: only Class 6 and 7 accounts get the cost center tag
+        line_cc = cost_center if (cost_center and str(acct.code)[:1] in ('6', '7')) else None
         JournalLine.objects.create(
             entry=entry,
             account=acct,
@@ -125,6 +129,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
             credit_amount=credit,
             description=desc,
             sequence=seq,
+            cost_center=line_cc,
         )
     return entry
 
