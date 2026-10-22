@@ -12180,8 +12180,8 @@ def senior_accountant_dashboard(request):
 @login_required
 def gl_mapping_list(request):
     """GL Mapping settings page — view and edit all transaction-to-GL-account mappings."""
-    if not request.user.is_super_admin:
-        return HttpResponseForbidden('Super Admin access required.')
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden('Finance Director or higher access required.')
 
     from .models import GLMapping, GLMappingCategory, GLAccount
 
@@ -12243,7 +12243,7 @@ def gl_mapping_list(request):
 @require_POST
 def gl_mapping_seed(request):
     """Seed/reset GL mappings from hardcoded defaults in gl_service.py."""
-    if not request.user.is_super_admin:
+    if not _can_access_gl(request.user):
         return HttpResponseForbidden('Super Admin access required.')
 
     from .models import GLMapping, GLMappingCategory, GLAccount
