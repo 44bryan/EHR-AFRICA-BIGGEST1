@@ -23,7 +23,7 @@
 <form method="post">
   {% csrf_token %}
 
-  {# ── Row 1: Store (FIRST), Operation Type, Source, Supplier ── #}
+  {# ── Row 1: Store (FIRST), Entry Type, Supplier ── #}
   <div class="row g-2 mb-3">
     <div class="col-md-3">
       <label class="form-label small fw-semibold">Destination Store <span class="text-danger">*</span></label>
@@ -35,23 +35,14 @@
       </select>
       <div style="font-size:.7rem;" id="storeGlHint" class="text-muted">Store GL account displayed after selection</div>
     </div>
-    <div class="col-md-3">
-      <label class="form-label small fw-semibold">Operation Type <span class="text-danger">*</span></label>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Entry Type <span class="text-danger">*</span></label>
       <select name="operation_type" class="form-select form-select-sm" required id="opTypeSelect" disabled>
         <option value="">-- Select Store first --</option>
       </select>
-      <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL Dr/Cr auto-populated on selection</div>
+      <div style="font-size:.7rem;" id="opGlHint" class="text-muted">GL Dr/Cr and cost center auto-populated on selection</div>
     </div>
-    <div class="col-md-3">
-      <label class="form-label small fw-semibold">Source / Entry Type <span class="text-danger">*</span></label>
-      <select name="source" class="form-select form-select-sm" required>
-        <option value="">-- Select Source --</option>
-        {% for val, label in sources %}
-        <option value="{{ val }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-3">
+    <div class="col-md-5">
       <label class="form-label small fw-semibold">Vendor / Supplier</label>
       <input type="text" name="vendor_name" class="form-control form-control-sm" list="vendorList" placeholder="Type vendor name...">
       <datalist id="vendorList">
@@ -169,6 +160,8 @@ const ALL_OP_TYPES = [
   {id:"{{ op.id }}", code:"{{ op.code }}", name:"{{ op.name }}",
    loc:"{{ op.location_types }}", dr:"{% if op.debit_account %}{{ op.debit_account.code }}{% endif %}",
    cr:"{% if op.credit_account %}{{ op.credit_account.code }}{% endif %}",
+   cc:"{% if op.billing_operation and op.billing_operation.cost_center %}{{ op.billing_operation.cost_center.code }}{% endif %}",
+   opcode:"{% if op.billing_operation %}{{ op.billing_operation.operation_code }}{% endif %}",
    label:"{{ op.code }} — {{ op.name }}"},
   {% endfor %}
 ];
@@ -214,10 +207,11 @@ document.getElementById('storeSelect').addEventListener('change', function() {
     const o = document.createElement('option');
     o.value = op.id; o.textContent = op.label;
     o.setAttribute('data-dr', op.dr); o.setAttribute('data-cr', op.cr);
+    o.setAttribute('data-cc', op.cc || ''); o.setAttribute('data-opcode', op.opcode || '');
     sel.appendChild(o);
   });
   sel.disabled = (ops.length === 0);
-  if (ops.length === 0) sel.innerHTML = '<option value="">— No operation types for this store —</option>';
+  if (ops.length === 0) sel.innerHTML = '<option value="">— No entry types for this store —</option>';
   resetOpGlHint();
 
   // 2. Load items for this store via AJAX
@@ -232,7 +226,12 @@ document.getElementById('opTypeSelect').addEventListener('change', function() {
   const opt  = this.options[this.selectedIndex];
   const hint = document.getElementById('opGlHint');
   if (opt.value) {
-    hint.innerHTML = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.getAttribute('data-dr') + '</strong> / Cr <strong>' + opt.getAttribute('data-cr') + '</strong>';
+    let txt = '<i class="bi bi-journal-check me-1"></i>Dr <strong>' + opt.getAttribute('data-dr') + '</strong> / Cr <strong>' + opt.getAttribute('data-cr') + '</strong>';
+    const cc = opt.getAttribute('data-cc');
+    const opcode = opt.getAttribute('data-opcode');
+    if (opcode) txt += ' &nbsp;|&nbsp; Op: <strong>' + opcode + '</strong>';
+    if (cc) txt += ' &nbsp;|&nbsp; CC: <strong>' + cc + '</strong>';
+    hint.innerHTML = txt;
     hint.className = 'text-success small fw-semibold';
     delete hint.style.fontSize;
   } else {

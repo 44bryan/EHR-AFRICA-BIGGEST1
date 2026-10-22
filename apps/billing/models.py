@@ -1406,6 +1406,13 @@ class StockOperationType(AuditModel):
             'e.g. "GENERAL,PHARMACY" or "PHARMACY" or "OPTICAL,SHOWROOM"'
         ),
     )
+    billing_operation = models.ForeignKey(
+        'BillingOperationCC',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='stock_operation_types',
+        help_text='Links this entry/exit type to an operation code + cost center for GL tagging',
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:

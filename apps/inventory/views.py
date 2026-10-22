@@ -3144,7 +3144,8 @@ def stock_exit_create(request):
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
     exit_op_types = StockOperationType.objects.filter(
         category='EXIT', is_active=True, is_deleted=False
-    ).select_related('debit_account', 'credit_account').order_by('code')
+    ).select_related('debit_account', 'credit_account',
+                     'billing_operation', 'billing_operation__cost_center').order_by('code')
 
     if request.method == 'POST':
         department = request.POST.get('department', '').strip()
@@ -3314,7 +3315,8 @@ def stock_entry_create(request):
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
     entry_op_types = StockOperationType.objects.filter(
         category='ENTRY', is_active=True, is_deleted=False
-    ).select_related('debit_account', 'credit_account').order_by('code')
+    ).select_related('debit_account', 'credit_account',
+                     'billing_operation', 'billing_operation__cost_center').order_by('code')
 
     if request.method == 'POST':
         source = request.POST.get('source', 'PURCHASE')
@@ -3657,7 +3659,7 @@ def stock_validation_approve(request, validation_id):
 
             if op_type and op_type.debit_account and op_type.credit_account and live_total > 0:
                 # Fast path: operation type has explicit GL accounts + computed total.
-                from apps.inventory.gl_service import _create_entry, _op_for_code
+                from apps.inventory.gl_service import _create_entry
                 from decimal import Decimal as _D
                 amt = _D(str(live_total))
                 lines_direct = [
@@ -3666,14 +3668,15 @@ def stock_validation_approve(request, validation_id):
                     (op_type.credit_account.code, 0, amt,
                      f"{sv.get_validation_type_display()} - {sv.reference}"),
                 ]
-                # Auto-tag cost center from the item's store location
-                _store_cc = None
-                if m_ref and m_ref.item and m_ref.item.store_location_id:
+                # Cost center: prefer billing_operation CC, fallback to store location CC
+                _billing_op = op_type.billing_operation if op_type.billing_operation_id else None
+                _cost_center = _billing_op.cost_center if (_billing_op and _billing_op.cost_center_id) else None
+                if not _cost_center and m_ref and m_ref.item and m_ref.item.store_location_id:
                     try:
                         _sl = StoreLocation.objects.select_related('cost_center').get(
                             pk=m_ref.item.store_location_id
                         )
-                        _store_cc = _sl.cost_center if _sl.cost_center_id else None
+                        _cost_center = _sl.cost_center if _sl.cost_center_id else None
                     except Exception:
                         pass
                 journal_entry = _create_entry(
@@ -3684,8 +3687,8 @@ def stock_validation_approve(request, validation_id):
                     source_id=sv.pk,
                     lines=lines_direct,
                     user=request.user,
-                    operation=_op_for_code(op_type.code),
-                    cost_center=_store_cc,
+                    operation=_billing_op,  # direct FK, no string lookup
+                    cost_center=_cost_center,
                 )
             elif m_ref and live_total > 0:
                 # Fallback: no operation type — use item-level GL mapping

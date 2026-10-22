@@ -7175,7 +7175,7 @@ def stock_operation_type_list(request):
         return HttpResponseForbidden()
     from .models import StockOperationType
     types = StockOperationType.objects.filter(is_deleted=False).select_related(
-        'debit_account', 'credit_account'
+        'debit_account', 'credit_account', 'billing_operation', 'billing_operation__cost_center'
     ).order_by('category', 'code')
     return render(request, 'billing/stock_operation_type_list.html', {'types': types})
 
@@ -7196,19 +7196,24 @@ def stock_operation_type_create(request):
         elif StockOperationType.objects.filter(code=code).exists():
             messages.error(request, f'Operation type {code} already exists.')
         else:
+            billing_op_id = request.POST.get('billing_operation') or None
             StockOperationType.objects.create(
                 code=code, name=name, category=category,
                 debit_account_id=debit_id, credit_account_id=credit_id,
                 description=request.POST.get('description', '').strip(),
+                location_types=request.POST.get('location_types', '').strip(),
+                billing_operation_id=billing_op_id,
                 created_by=request.user,
             )
             messages.success(request, f'Stock operation type {code} — {name} created.')
             return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'action': 'Create Stock Operation Type',
         'categories': StockOperationCategory.choices,
         'accounts': accounts,
+        'billing_operations': billing_operations,
     })
 
 
@@ -7224,16 +7229,22 @@ def stock_operation_type_edit(request, sot_id):
         sot.debit_account_id = request.POST.get('debit_account', sot.debit_account_id)
         sot.credit_account_id = request.POST.get('credit_account', sot.credit_account_id)
         sot.description = request.POST.get('description', '').strip()
+        sot.location_types = request.POST.get('location_types', '').strip()
+        billing_op_id = request.POST.get('billing_operation') or None
+        sot.billing_operation_id = billing_op_id
         sot.is_active = request.POST.get('is_active') == 'on'
         sot.save(update_fields=['name', 'category', 'debit_account', 'credit_account',
-                                'description', 'is_active', 'updated_at'])
+                                'description', 'location_types', 'billing_operation',
+                                'is_active', 'updated_at'])
         messages.success(request, f'Operation type {sot.code} updated.')
         return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'sot': sot, 'action': 'Edit Stock Operation Type',
         'categories': StockOperationCategory.choices,
         'accounts': accounts,
+        'billing_operations': billing_operations,
     })
 
 
