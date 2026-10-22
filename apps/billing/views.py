@@ -7107,34 +7107,41 @@ def item_category_gl_edit(request, category):
 
 @login_required
 def gl_setup_overview(request):
-    """Single-page overview of the entire GL configuration chain for Finance Director."""
+    """GL Configuration dashboard for Finance Director."""
     from .models import BillingOperationCC, StockOperationType
     from apps.inventory.models import ItemCategoryGL
+    from django.db.models import Q as _Q
     if not _can_access_gl(request.user):
         return HttpResponseForbidden()
-    operations = BillingOperationCC.objects.filter(is_deleted=False).select_related(
-        'cost_center', 'default_debit_account', 'default_credit_account'
-    ).order_by('group', 'sort_order', 'operation_code')
-    entry_types = StockOperationType.objects.filter(
-        category='ENTRY', is_deleted=False
-    ).select_related(
+    op_total      = BillingOperationCC.objects.filter(is_deleted=False).count()
+    entry_total   = StockOperationType.objects.filter(category='ENTRY', is_deleted=False).count()
+    exit_total    = StockOperationType.objects.filter(category='EXIT',  is_deleted=False).count()
+    cc_total      = CostCenter.objects.filter(is_active=True, is_deleted=False).count()
+    item_gl_total = ItemCategoryGL.objects.count()
+    ops_no_cc = BillingOperationCC.objects.filter(
+        is_deleted=False, cost_center__isnull=True
+    ).exclude(group__in=['BANK', 'CASH', 'YEAR_END']).count()
+    types_unlinked = StockOperationType.objects.filter(
+        is_deleted=False, is_active=True, billing_operation__isnull=True).count()
+    types_missing_accounts = StockOperationType.objects.filter(
+        is_deleted=False, is_active=True
+    ).filter(_Q(debit_account__isnull=True) | _Q(credit_account__isnull=True)).count()
+    entry_types = StockOperationType.objects.filter(category='ENTRY', is_deleted=False).select_related(
         'debit_account', 'credit_account', 'billing_operation', 'billing_operation__cost_center'
     ).order_by('code')
-    exit_types = StockOperationType.objects.filter(
-        category='EXIT', is_deleted=False
-    ).select_related(
+    exit_types = StockOperationType.objects.filter(category='EXIT', is_deleted=False).select_related(
         'debit_account', 'credit_account', 'billing_operation', 'billing_operation__cost_center'
     ).order_by('code')
-    gl_routing = ItemCategoryGL.objects.select_related(
-        'inventory_account', 'cogs_account', 'loss_account'
-    ).order_by('category')
     cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    gl_routing = ItemCategoryGL.objects.select_related(
+        'inventory_account', 'cogs_account', 'loss_account').order_by('category')
     return render(request, 'billing/gl_setup_overview.html', {
-        'operations': operations,
-        'entry_types': entry_types,
-        'exit_types': exit_types,
-        'gl_routing': gl_routing,
-        'cost_centers': cost_centers,
+        'op_total': op_total, 'entry_total': entry_total, 'exit_total': exit_total,
+        'cc_total': cc_total, 'item_gl_total': item_gl_total,
+        'ops_no_cc': ops_no_cc, 'types_unlinked': types_unlinked,
+        'types_missing_accounts': types_missing_accounts,
+        'entry_types': entry_types, 'exit_types': exit_types,
+        'cost_centers': cost_centers, 'gl_routing': gl_routing,
     })
 
 
@@ -7263,6 +7270,17 @@ def billing_operation_detail(request, op_id):
             'cr': analyze(t.credit_account),
         })
 
+    # ItemCategoryGL match for revenue operations — same key as category_key
+    from apps.inventory.models import ItemCategoryGL
+    item_gl = None
+    if op.category_key:
+        item_gl = ItemCategoryGL.objects.filter(category=op.category_key).select_related(
+            'inventory_account', 'cogs_account', 'loss_account'
+        ).first()
+    all_item_gl = ItemCategoryGL.objects.select_related(
+        'inventory_account', 'cogs_account', 'loss_account'
+    ).order_by('category')
+
     cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
     accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
     return render(request, 'billing/billing_operation_detail.html', {
@@ -7271,6 +7289,8 @@ def billing_operation_detail(request, op_id):
         'cr': analyze(op.default_credit_account),
         'linked_types': linked_types,
         'type_analyses': type_analyses,
+        'item_gl': item_gl,
+        'all_item_gl': all_item_gl,
         'cost_centers': cost_centers,
         'accounts': accounts,
         'groups': BillingOperationCC.Group.choices,

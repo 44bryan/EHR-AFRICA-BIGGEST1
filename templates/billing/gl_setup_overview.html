@@ -1,0 +1,350 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}GL Configuration{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h5 class="mb-0 fw-bold"><i class="bi bi-gear-wide-connected me-2 text-primary"></i>GL Configuration</h5>
+      <p class="text-muted small mb-0">Accounting Operations — Cost Centers — Entry/Exit Types — Item Routing</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'billing:billing_operation_create' %}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>New Operation
+      </a>
+      <a href="{% url 'billing:stock_operation_type_create' %}" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-plus-lg me-1"></i>New Entry/Exit Type
+      </a>
+    </div>
+  </div>
+
+  {# ── Health Alerts ── #}
+  {% if ops_no_cc or types_unlinked or types_missing_accounts %}
+  <div class="alert alert-warning border-0 py-2 mb-3 small">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Configuration issues found:</strong>
+    {% if ops_no_cc %}<span class="ms-2">{{ ops_no_cc }} operation(s) missing cost center</span>{% endif %}
+    {% if types_unlinked %}<span class="ms-2">· {{ types_unlinked }} active entry/exit type(s) not linked to any operation</span>{% endif %}
+    {% if types_missing_accounts %}<span class="ms-2">· {{ types_missing_accounts }} type(s) missing Dr or Cr account</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Stat Cards ── #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{% url 'billing:billing_operation_list' %}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 text-center py-3 hover-lift">
+          <div class="fs-2 fw-bold text-primary">{{ op_total }}</div>
+          <div class="small text-muted">Operations</div>
+          <div class="mt-1"><span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:.7rem;">Manage</span></div>
+        </div>
+      </a>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{% url 'billing:stock_operation_type_list' %}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 text-center py-3 hover-lift">
+          <div class="fs-2 fw-bold text-success">{{ entry_total }}</div>
+          <div class="small text-muted">Entry Types</div>
+          <div class="mt-1"><span class="badge bg-success bg-opacity-10 text-success" style="font-size:.7rem;">Manage</span></div>
+        </div>
+      </a>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{% url 'billing:stock_operation_type_list' %}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 text-center py-3 hover-lift">
+          <div class="fs-2 fw-bold text-danger">{{ exit_total }}</div>
+          <div class="small text-muted">Exit Types</div>
+          <div class="mt-1"><span class="badge bg-danger bg-opacity-10 text-danger" style="font-size:.7rem;">Manage</span></div>
+        </div>
+      </a>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{% url 'billing:cost_center_list' %}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 text-center py-3 hover-lift">
+          <div class="fs-2 fw-bold text-warning">{{ cc_total }}</div>
+          <div class="small text-muted">Cost Centers</div>
+          <div class="mt-1"><span class="badge bg-warning bg-opacity-10 text-warning" style="font-size:.7rem;">Manage</span></div>
+        </div>
+      </a>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{% url 'billing:item_category_gl_list' %}" class="text-decoration-none">
+        <div class="card border-0 shadow-sm h-100 text-center py-3 hover-lift">
+          <div class="fs-2 fw-bold text-info">{{ item_gl_total }}</div>
+          <div class="small text-muted">Item GL Routes</div>
+          <div class="mt-1"><span class="badge bg-info bg-opacity-10 text-info" style="font-size:.7rem;">Manage</span></div>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  {# ── Navigation Cards ── #}
+  <div class="row g-3 mb-4">
+
+    <div class="col-md-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <span class="rounded-circle bg-primary bg-opacity-10 p-2 me-2"><i class="bi bi-diagram-3 text-primary fs-5"></i></span>
+            <strong>Operations</strong>
+          </div>
+          <p class="small text-muted mb-3">
+            Each operation defines an accounting event (e.g. "Ventes Optique", "Stock Entry Pharmacie").
+            It holds the default Dr/Cr accounts and which cost center to assign on Class 6 &amp; 7 lines.
+          </p>
+          <div class="d-flex gap-2">
+            <a href="{% url 'billing:billing_operation_list' %}" class="btn btn-sm btn-primary">View All</a>
+            <a href="{% url 'billing:billing_operation_create' %}" class="btn btn-sm btn-outline-primary">+ New</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <span class="rounded-circle bg-success bg-opacity-10 p-2 me-2"><i class="bi bi-arrow-left-right text-success fs-5"></i></span>
+            <strong>Entry / Exit Types</strong>
+          </div>
+          <p class="small text-muted mb-3">
+            Each store movement (stock in / stock out) has a type that sets the Dr/Cr accounts
+            and links to an operation for cost center tagging. Filtered per store type.
+          </p>
+          <div class="d-flex gap-2">
+            <a href="{% url 'billing:stock_operation_type_list' %}" class="btn btn-sm btn-success">View All</a>
+            <a href="{% url 'billing:stock_operation_type_create' %}" class="btn btn-sm btn-outline-success">+ New</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <span class="rounded-circle bg-info bg-opacity-10 p-2 me-2"><i class="bi bi-tags text-info fs-5"></i></span>
+            <strong>Item GL Routing</strong>
+          </div>
+          <p class="small text-muted mb-3">
+            When the cashier invoices a product/service, the system uses the item's category
+            to automatically pick the right Revenue (7xx), COGS (6xx) and Stock (3xx) accounts.
+          </p>
+          <div class="d-flex gap-2">
+            <a href="{% url 'billing:item_category_gl_list' %}" class="btn btn-sm btn-info text-white">Configure</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <span class="rounded-circle bg-warning bg-opacity-10 p-2 me-2"><i class="bi bi-building text-warning fs-5"></i></span>
+            <strong>Cost Centers</strong>
+          </div>
+          <p class="small text-muted mb-3">
+            Analytical accounting departments (e.g. CC:009 Optical, CC:008 Pharmacy).
+            Assigned automatically on Class 6 &amp; 7 journal lines only — never on Class 3/4/5.
+          </p>
+          <div class="d-flex gap-2">
+            <a href="{% url 'billing:cost_center_list' %}" class="btn btn-sm btn-warning text-dark">View All</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Entry / Exit Types Summary ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-box-arrow-in-down text-success me-1"></i>Entry Types</span>
+          <a href="{% url 'billing:stock_operation_type_list' %}" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.75rem;">Manage All</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.78rem;">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Code</th><th>Name</th><th>Stores</th><th>Operation</th><th>CC</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in entry_types %}
+              <tr {% if not t.is_active %}class="text-muted"{% endif %}>
+                <td class="ps-3 fw-semibold font-monospace">{{ t.code }}</td>
+                <td>{{ t.name|truncatechars:28 }}</td>
+                <td class="text-muted" style="font-size:.7rem;">{{ t.location_types|default:"ALL" }}</td>
+                <td>
+                  {% if t.billing_operation %}
+                    <span class="badge bg-primary bg-opacity-75" style="font-size:.68rem;">{{ t.billing_operation.operation_code }}</span>
+                  {% else %}
+                    <span class="text-warning" style="font-size:.7rem;">— none —</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if t.billing_operation and t.billing_operation.cost_center %}
+                    <span class="badge bg-success bg-opacity-75" style="font-size:.68rem;">{{ t.billing_operation.cost_center.code }}</span>
+                  {% else %}
+                    <span class="text-muted" style="font-size:.7rem;">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.pk %}" class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.7rem;"><i class="bi bi-pencil"></i></a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-muted small p-3">No entry types yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-box-arrow-right text-danger me-1"></i>Exit Types</span>
+          <a href="{% url 'billing:stock_operation_type_list' %}" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.75rem;">Manage All</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.78rem;">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Code</th><th>Name</th><th>Stores</th><th>Operation</th><th>CC</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in exit_types %}
+              <tr {% if not t.is_active %}class="text-muted"{% endif %}>
+                <td class="ps-3 fw-semibold font-monospace">{{ t.code }}</td>
+                <td>{{ t.name|truncatechars:28 }}</td>
+                <td class="text-muted" style="font-size:.7rem;">{{ t.location_types|default:"ALL" }}</td>
+                <td>
+                  {% if t.billing_operation %}
+                    <span class="badge bg-primary bg-opacity-75" style="font-size:.68rem;">{{ t.billing_operation.operation_code }}</span>
+                  {% else %}
+                    <span class="text-warning" style="font-size:.7rem;">— none —</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if t.billing_operation and t.billing_operation.cost_center %}
+                    <span class="badge bg-success bg-opacity-75" style="font-size:.68rem;">{{ t.billing_operation.cost_center.code }}</span>
+                  {% else %}
+                    <span class="text-muted" style="font-size:.7rem;">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.pk %}" class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.7rem;"><i class="bi bi-pencil"></i></a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-muted small p-3">No exit types yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Cost Centers + Item GL Routing ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-building text-warning me-1"></i>Cost Centers</span>
+          <a href="{% url 'billing:cost_center_list' %}" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.75rem;">Manage</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.78rem;">
+            <thead class="table-light"><tr><th class="ps-3">Code</th><th>Name</th></tr></thead>
+            <tbody>
+              {% for cc in cost_centers %}
+              <tr>
+                <td class="ps-3"><span class="badge bg-warning text-dark" style="font-size:.68rem;">{{ cc.code }}</span></td>
+                <td>{{ cc.name|truncatechars:30 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="2" class="text-muted small p-3">No cost centers.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-tags text-info me-1"></i>Item Category GL Routing</span>
+          <a href="{% url 'billing:item_category_gl_list' %}" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.75rem;">Configure</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.78rem;">
+            <thead class="table-light">
+              <tr><th class="ps-3">Category</th><th>COGS Account (6xx)</th><th>Inventory Account (3xx)</th><th>Loss Account</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for r in gl_routing %}
+              <tr>
+                <td class="ps-3 fw-semibold">{{ r.category }}</td>
+                <td>{% if r.cogs_account %}<span class="badge bg-danger bg-opacity-75 font-monospace" style="font-size:.68rem;">{{ r.cogs_account.code }}</span> <span class="text-muted">{{ r.cogs_account.name|truncatechars:18 }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>{% if r.inventory_account %}<span class="badge bg-warning text-dark font-monospace" style="font-size:.68rem;">{{ r.inventory_account.code }}</span> <span class="text-muted">{{ r.inventory_account.name|truncatechars:18 }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>{% if r.loss_account %}<span class="badge bg-secondary font-monospace" style="font-size:.68rem;">{{ r.loss_account.code }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td><a href="{% url 'billing:item_category_gl_edit' category=r.category %}" class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.7rem;"><i class="bi bi-pencil"></i></a></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-muted small p-3">No item GL routing configured.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── OHADA Reference (collapsed) ── #}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#ohadaRef">
+      <span class="fw-semibold small"><i class="bi bi-book me-1"></i>OHADA / SYSCOHADA Quick Reference</span>
+      <i class="bi bi-chevron-down ms-2 small text-muted"></i>
+    </div>
+    <div id="ohadaRef" class="collapse">
+      <div class="card-body small">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <table class="table table-sm table-borderless mb-0" style="font-size:.8rem;">
+              <thead class="table-light"><tr><th>Class</th><th>Type</th><th>Cost Center?</th></tr></thead>
+              <tbody>
+                <tr><td><code>3xx</code></td><td>Stocks</td><td class="text-muted fw-bold">NO</td></tr>
+                <tr><td><code>4xx</code></td><td>Créances / Dettes</td><td class="text-danger fw-bold">NO</td></tr>
+                <tr><td><code>5xx</code></td><td>Trésorerie</td><td class="text-danger fw-bold">NO</td></tr>
+                <tr class="table-success"><td><code>6xx</code></td><td>Charges (Expenses)</td><td class="text-success fw-bold">YES ✓</td></tr>
+                <tr class="table-success"><td><code>7xx</code></td><td>Produits (Revenue)</td><td class="text-success fw-bold">YES ✓</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-7">
+            <strong>Example — Sale of Lenses (Ventes Lentilles):</strong>
+            <table class="table table-sm table-borderless mt-2" style="font-size:.8rem;">
+              <tbody>
+                <tr><td>Dr <code>411x</code> Client</td><td><span class="badge bg-secondary">Class 4</span></td><td class="text-muted fst-italic">No cost center</td></tr>
+                <tr><td>Cr <code>701x</code> Revenue</td><td><span class="badge bg-success">Class 7</span></td><td class="text-success fw-semibold">CC-009 Optical ✓</td></tr>
+                <tr><td>Dr <code>603x</code> COGS</td><td><span class="badge bg-success">Class 6</span></td><td class="text-success fw-semibold">CC-009 Optical ✓</td></tr>
+                <tr><td>Cr <code>311x</code> Stock</td><td><span class="badge bg-warning text-dark">Class 3</span></td><td class="text-muted fst-italic">No cost center</td></tr>
+              </tbody>
+            </table>
+            <div class="text-muted">The system assigns cost centers per line automatically — no manual selection needed.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
