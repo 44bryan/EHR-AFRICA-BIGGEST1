@@ -3140,10 +3140,16 @@ def stock_exit_create(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
     from apps.billing.models import StockOperationType
+    from django.db.models import Q as _Q
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    # Only show issue/consumption exit types — exclude transfers (op:156) and inventory adjustments (group=INVENTORY)
     exit_op_types = StockOperationType.objects.filter(
         category='EXIT', is_active=True, is_deleted=False
+    ).filter(
+        _Q(billing_operation__group='STOCK') | _Q(billing_operation__isnull=True)
+    ).exclude(
+        billing_operation__operation_code='156'  # inter-store transfers have their own form
     ).select_related('debit_account', 'credit_account',
                      'billing_operation', 'billing_operation__cost_center').order_by('code')
 
@@ -3310,11 +3316,17 @@ def stock_entry_create(request):
     if not _can_manage_store(request.user):
         return HttpResponseForbidden('Access denied.')
     from apps.billing.models import StockOperationType
+    from django.db.models import Q as _Q
     items = InventoryItem.objects.filter(is_active=True, is_deleted=False).order_by('name')
     vendors = Vendor.objects.filter(is_active=True, is_deleted=False).order_by('name')
     store_locations = StoreLocation.objects.filter(is_active=True, is_deleted=False).order_by('name')
+    # Only show PURCHASE/RECEIPT entry types — exclude transfers (op:156) and inventory counts (group=INVENTORY)
     entry_op_types = StockOperationType.objects.filter(
         category='ENTRY', is_active=True, is_deleted=False
+    ).filter(
+        _Q(billing_operation__group='STOCK') | _Q(billing_operation__isnull=True)
+    ).exclude(
+        billing_operation__operation_code='156'  # inter-store transfers have their own form
     ).select_related('debit_account', 'credit_account',
                      'billing_operation', 'billing_operation__cost_center').order_by('code')
 

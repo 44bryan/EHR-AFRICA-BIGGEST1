@@ -7103,11 +7103,47 @@ def item_category_gl_edit(request, category):
     })
 
 
+# ── GL Setup Overview — full configuration chain in one page ─────────────────
+
+@login_required
+def gl_setup_overview(request):
+    """Single-page overview of the entire GL configuration chain for Finance Director."""
+    from .models import BillingOperationCC, StockOperationType
+    from apps.inventory.models import ItemCategoryGL
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    operations = BillingOperationCC.objects.filter(is_deleted=False).select_related(
+        'cost_center', 'default_debit_account', 'default_credit_account'
+    ).order_by('group', 'sort_order', 'operation_code')
+    entry_types = StockOperationType.objects.filter(
+        category='ENTRY', is_deleted=False
+    ).select_related(
+        'debit_account', 'credit_account', 'billing_operation', 'billing_operation__cost_center'
+    ).order_by('code')
+    exit_types = StockOperationType.objects.filter(
+        category='EXIT', is_deleted=False
+    ).select_related(
+        'debit_account', 'credit_account', 'billing_operation', 'billing_operation__cost_center'
+    ).order_by('code')
+    gl_routing = ItemCategoryGL.objects.select_related(
+        'inventory_account', 'cogs_account', 'loss_account'
+    ).order_by('category')
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    return render(request, 'billing/gl_setup_overview.html', {
+        'operations': operations,
+        'entry_types': entry_types,
+        'exit_types': exit_types,
+        'gl_routing': gl_routing,
+        'cost_centers': cost_centers,
+    })
+
+
 # ── Operation → Cost Center Mapping (Configurable) ───────────────────────────
 
 @login_required
 def billing_operation_list(request):
     """Full CRUD list for BillingOperationCC — Finance Director manages all operations."""
+    from .models import BillingOperationCC
     if not _can_access_gl(request.user):
         return HttpResponseForbidden()
     ops = BillingOperationCC.objects.filter(is_deleted=False).select_related(
@@ -7133,6 +7169,7 @@ def billing_operation_list(request):
 
 @login_required
 def billing_operation_create(request):
+    from .models import BillingOperationCC
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
     if request.method == 'POST':
@@ -7168,6 +7205,7 @@ def billing_operation_create(request):
 
 @login_required
 def billing_operation_edit(request, op_id):
+    from .models import BillingOperationCC
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
     op = get_object_or_404(BillingOperationCC, pk=op_id, is_deleted=False)
@@ -7272,7 +7310,7 @@ def stock_operation_type_list(request):
 def stock_operation_type_create(request):
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
-    from .models import StockOperationType, StockOperationCategory
+    from .models import StockOperationType, StockOperationCategory, BillingOperationCC
     if request.method == 'POST':
         code = request.POST.get('code', '').strip().upper()
         name = request.POST.get('name', '').strip()
@@ -7296,7 +7334,7 @@ def stock_operation_type_create(request):
             messages.success(request, f'Stock operation type {code} — {name} created.')
             return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    billing_operations = BillingOperationCC.objects.filter(is_deleted=False, group__in=['STOCK', 'INVENTORY']).select_related('cost_center').order_by('operation_code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'action': 'Create Stock Operation Type',
         'categories': StockOperationCategory.choices,
@@ -7309,7 +7347,7 @@ def stock_operation_type_create(request):
 def stock_operation_type_edit(request, sot_id):
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN):
         return HttpResponseForbidden()
-    from .models import StockOperationType, StockOperationCategory
+    from .models import StockOperationType, StockOperationCategory, BillingOperationCC
     sot = get_object_or_404(StockOperationType, pk=sot_id, is_deleted=False)
     if request.method == 'POST':
         sot.name = request.POST.get('name', sot.name).strip()
@@ -7327,7 +7365,7 @@ def stock_operation_type_edit(request, sot_id):
         messages.success(request, f'Operation type {sot.code} updated.')
         return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    billing_operations = BillingOperationCC.objects.filter(is_deleted=False, group__in=['STOCK', 'INVENTORY']).select_related('cost_center').order_by('operation_code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'sot': sot, 'action': 'Edit Stock Operation Type',
         'categories': StockOperationCategory.choices,
