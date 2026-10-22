@@ -7145,6 +7145,206 @@ def gl_setup_overview(request):
     })
 
 
+# ── GL Configuration Hub — consolidated single page ──────────────────────────
+
+@login_required
+def gl_config_hub(request):
+    """
+    Single consolidated GL Configuration Hub.
+    Tab map:    Full operation → CC → entry/exit types chain.
+    Tab health: OHADA violations and missing configuration.
+    Tab edit:   Inline quick-edit (Finance Director only).
+    Tab system: GLMapping system accounts.
+    """
+    from .models import BillingOperationCC, StockOperationType, GLMapping
+    from apps.inventory.models import ItemCategoryGL, ItemCategory
+    from django.db.models import Q as _Q
+
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+
+    can_edit = request.user.role in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN)
+
+    # ── POST: Quick Edit actions ──────────────────────────────────────────────
+    if request.method == 'POST':
+        if not can_edit:
+            messages.error(request, 'Finance Director access required to edit GL configuration.')
+            return redirect(request.path)
+
+        action   = request.POST.get('action', '')
+        tab_back = request.POST.get('tab_back', 'edit')
+
+        if action == 'edit_operation':
+            op = get_object_or_404(BillingOperationCC, pk=request.POST.get('op_id'), is_deleted=False)
+            op.cost_center_id           = request.POST.get('cost_center')           or None
+            op.default_debit_account_id = request.POST.get('default_debit_account') or None
+            op.default_credit_account_id = request.POST.get('default_credit_account') or None
+            op.save()
+            messages.success(request, f'Operation {op.operation_code} — {op.operation_name} updated.')
+
+        elif action == 'edit_entry_exit':
+            sot = get_object_or_404(StockOperationType, pk=request.POST.get('sot_id'), is_deleted=False)
+            sot.billing_operation_id = request.POST.get('billing_operation') or None
+            sot.debit_account_id     = request.POST.get('debit_account')     or None
+            sot.credit_account_id    = request.POST.get('credit_account')    or None
+            sot.save()
+            messages.success(request, f'Entry/Exit type {sot.code} updated.')
+
+        elif action == 'edit_item_gl':
+            category = request.POST.get('category', '')
+            if category:
+                ig, _ = ItemCategoryGL.objects.get_or_create(category=category)
+                ig.inventory_account_id = request.POST.get('inventory_account') or None
+                ig.cogs_account_id      = request.POST.get('cogs_account')      or None
+                ig.loss_account_id      = request.POST.get('loss_account')      or None
+                ig.save()
+                messages.success(request, f'Item GL routing for {category} updated.')
+
+        elif action == 'edit_gl_mapping':
+            mapping = get_object_or_404(GLMapping, pk=request.POST.get('mapping_id'))
+            mapping.gl_account_id = request.POST.get('gl_account') or None
+            mapping.save()
+            from apps.billing.gl_service import invalidate_gl_cache
+            invalidate_gl_cache()
+            messages.success(request, f'System account {mapping.source_key} updated.')
+            tab_back = 'system'
+
+        return redirect(f'{request.path}?tab={tab_back}')
+
+    # ── Load all data ─────────────────────────────────────────────────────────
+    operations = list(
+        BillingOperationCC.objects.filter(is_deleted=False)
+        .select_related('cost_center', 'default_debit_account', 'default_credit_account')
+        .prefetch_related('stock_operation_types__debit_account',
+                          'stock_operation_types__credit_account')
+        .order_by('group', 'sort_order', 'operation_code')
+    )
+    all_sot = list(
+        StockOperationType.objects.filter(is_deleted=False)
+        .select_related('debit_account', 'credit_account',
+                        'billing_operation', 'billing_operation__cost_center')
+        .order_by('category', 'code')
+    )
+    item_gl_qs = list(
+        ItemCategoryGL.objects.select_related('inventory_account', 'cogs_account', 'loss_account')
+        .order_by('category')
+    )
+    gl_mappings = list(
+        GLMapping.objects.filter(is_active=True)
+        .select_related('gl_account')
+        .order_by('category', 'source_key')
+    )
+    cost_centers = list(CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code'))
+    accounts     = list(GLAccount.objects.filter(is_active=True, is_deleted=False,
+                                                  is_summary=False).order_by('code'))
+
+    # ── OHADA per-account analysis helper ─────────────────────────────────────
+    def _analyse(acct, cc):
+        if not acct:
+            return None
+        cls = str(acct.code)[:1]
+        gets_cc = cls in ('6', '7')
+        return {
+            'account': acct,
+            'cls': cls,
+            'gets_cc': gets_cc,
+            'label': {'3': 'Stock', '4': 'Tiers', '5': 'Treasury'}.get(cls, f'Class {cls}'),
+            'assigned_cc': cc if gets_cc else None,
+        }
+
+    # ── Build chain rows + health check simultaneously ────────────────────────
+    health = {
+        'ops_no_cc':       [],
+        'ops_no_dr':       [],
+        'ops_no_cr':       [],
+        'types_unlinked':  [],
+        'types_no_dr':     [],
+        'types_no_cr':     [],
+        'item_no_cogs':    [],
+        'item_no_inv':     [],
+    }
+    chain_rows = []
+    for op in operations:
+        linked = [t for t in op.stock_operation_types.all()
+                  if not getattr(t, 'is_deleted', False)]
+        dr = _analyse(op.default_debit_account, op.cost_center)
+        cr = _analyse(op.default_credit_account, op.cost_center)
+
+        op_issues = []
+        needs_cc = op.group in ('REVENUE', 'EXPENSE', 'STOCK')
+        if not op.cost_center and needs_cc:
+            op_issues.append('no_cc')
+            health['ops_no_cc'].append(op)
+        if not op.default_debit_account and needs_cc:
+            op_issues.append('no_dr')
+            health['ops_no_dr'].append(op)
+        if not op.default_credit_account and needs_cc:
+            op_issues.append('no_cr')
+            health['ops_no_cr'].append(op)
+
+        type_rows = []
+        for t in linked:
+            t_dr = _analyse(t.debit_account, op.cost_center)
+            t_cr = _analyse(t.credit_account, op.cost_center)
+            t_issues = []
+            if not t.debit_account:  t_issues.append('no_dr')
+            if not t.credit_account: t_issues.append('no_cr')
+            type_rows.append({'type': t, 'dr': t_dr, 'cr': t_cr, 'issues': t_issues})
+
+        chain_rows.append({
+            'op':           op,
+            'dr':           dr,
+            'cr':           cr,
+            'linked_types': type_rows,
+            'issues':       op_issues,
+        })
+
+    # Health: SOTs that have no operation link or missing accounts
+    for t in all_sot:
+        if not t.billing_operation:
+            health['types_unlinked'].append(t)
+        if not t.debit_account:
+            health['types_no_dr'].append(t)
+        if not t.credit_account:
+            health['types_no_cr'].append(t)
+
+    # Health: item GL routing gaps
+    for ig in item_gl_qs:
+        if not ig.cogs_account:      health['item_no_cogs'].append(ig)
+        if not ig.inventory_account: health['item_no_inv'].append(ig)
+
+    total_issues  = sum(len(v) for v in health.values())
+    total_checks  = len(operations) * 3 + len(all_sot) * 3 + len(item_gl_qs) * 2
+    health_score  = max(0, round((1 - total_issues / max(total_checks, 1)) * 100))
+
+    # ── Item categories for Quick Edit ────────────────────────────────────────
+    all_item_cats = ItemCategory.choices
+    item_gl_map   = {ig.category: ig for ig in item_gl_qs}
+
+    return render(request, 'billing/gl_config_hub.html', {
+        'chain_rows':    chain_rows,
+        'health':        health,
+        'total_issues':  total_issues,
+        'health_score':  health_score,
+        'gl_mappings':   gl_mappings,
+        'gl_routing':    item_gl_qs,
+        'accounts':      accounts,
+        'cost_centers':  cost_centers,
+        'groups':        BillingOperationCC.Group.choices,
+        'all_sot':       all_sot,
+        'all_item_cats': all_item_cats,
+        'item_gl_map':   item_gl_map,
+        'operations':    operations,
+        'can_edit':      can_edit,
+        'active_tab':    request.GET.get('tab', 'map'),
+        'op_total':      len(operations),
+        'entry_total':   sum(1 for t in all_sot if t.category == 'ENTRY'),
+        'exit_total':    sum(1 for t in all_sot if t.category == 'EXIT'),
+        'cc_total':      len(cost_centers),
+        'item_gl_total': len(item_gl_qs),
+    })
+
+
 # ── Operation → Cost Center Mapping (Configurable) ───────────────────────────
 
 @login_required

@@ -165,6 +165,8 @@ urlpatterns = [
     path('gl/journal-types/', views.journal_type_list, name='journal_type_list'),
     path('gl/journal-types/create/', views.journal_type_create, name='journal_type_create'),
     path('gl/journal-types/<uuid:jt_id>/edit/', views.journal_type_edit, name='journal_type_edit'),
+    # GL Configuration Hub — consolidated single page (replaces 6 separate pages)
+    path('gl/hub/', views.gl_config_hub, name='gl_config_hub'),
     # GL Setup Overview — single page showing full configuration chain
     path('gl/setup-overview/', views.gl_setup_overview, name='gl_setup_overview'),
     # Item Category GL Routing (automatic account resolution — Finance Director sets once)

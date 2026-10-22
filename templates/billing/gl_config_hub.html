@@ -1,0 +1,1120 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}GL Configuration Hub{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     PAGE HEADER
+  ══════════════════════════════════════════════════════════════════════════ #}
+  <div class="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h5 class="mb-0 fw-bold">
+        <i class="bi bi-gear-wide-connected me-2 text-primary"></i>GL Configuration Hub
+      </h5>
+      <p class="text-muted small mb-0 mt-1">
+        <span class="me-3"><i class="bi bi-diagram-3 me-1"></i>{{ op_total }} Operations</span>
+        <span class="me-3"><i class="bi bi-box-arrow-in-down me-1"></i>{{ entry_total }} Entry Types</span>
+        <span class="me-3"><i class="bi bi-box-arrow-right me-1"></i>{{ exit_total }} Exit Types</span>
+        <span class="me-3"><i class="bi bi-building me-1"></i>{{ cc_total }} Cost Centers</span>
+        <span><i class="bi bi-tags me-1"></i>{{ item_gl_total }} Item Categories</span>
+      </p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <span class="badge fs-6 px-3 py-2
+        {% if health_score >= 90 %}bg-success{% elif health_score >= 70 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+        <i class="bi bi-heart-pulse me-1"></i>{{ health_score }}% Healthy
+        {% if total_issues > 0 %}&nbsp;&middot;&nbsp;{{ total_issues }} issue{{ total_issues|pluralize }}{% endif %}
+      </span>
+      {% if can_edit %}
+      <a href="{% url 'billing:billing_operation_create' %}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>New Operation
+      </a>
+      <a href="{% url 'billing:stock_operation_type_create' %}" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-plus-lg me-1"></i>New Entry/Exit Type
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Flash messages #}
+  {% if messages %}
+  {% for msg in messages %}
+  <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible py-2 mb-3">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     TAB NAVIGATION
+  ══════════════════════════════════════════════════════════════════════════ #}
+  <ul class="nav nav-tabs border-bottom mb-0" id="glHubTabs">
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'map' %}active fw-semibold{% endif %}"
+         href="?tab=map">
+        <i class="bi bi-diagram-3 me-1"></i>GL Chain Map
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'health' %}active fw-semibold{% endif %}
+         {% if total_issues > 0 and active_tab != 'health' %}text-danger{% endif %}"
+         href="?tab=health">
+        <i class="bi bi-exclamation-triangle me-1"></i>Health Check
+        {% if total_issues > 0 %}
+        <span class="badge {% if health_score >= 90 %}bg-success{% elif health_score >= 70 %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-1" style="font-size:.65rem;">{{ total_issues }}</span>
+        {% endif %}
+      </a>
+    </li>
+    {% if can_edit %}
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'edit' %}active fw-semibold{% endif %}"
+         href="?tab=edit">
+        <i class="bi bi-pencil-square me-1"></i>Quick Edit
+      </a>
+    </li>
+    {% endif %}
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'system' %}active fw-semibold{% endif %}"
+         href="?tab=system">
+        <i class="bi bi-sliders me-1"></i>System GL Accounts
+      </a>
+    </li>
+  </ul>
+
+  <div class="tab-content pt-3">
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     TAB 1 — GL CHAIN MAP
+  ══════════════════════════════════════════════════════════════════════════ #}
+  {% if active_tab == 'map' %}
+  <div class="tab-pane show active">
+
+    {# Filter bar #}
+    <div class="d-flex gap-2 flex-wrap align-items-center mb-3">
+      <input type="text" id="chainSearch" class="form-control form-control-sm"
+             placeholder="Search operation name or code…" style="max-width:240px;"
+             oninput="filterChain()">
+      <select id="groupFilter" class="form-select form-select-sm" style="max-width:200px;" onchange="filterChain()">
+        <option value="">All Groups</option>
+        {% for val, label in groups %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select id="statusFilter" class="form-select form-select-sm" style="max-width:160px;" onchange="filterChain()">
+        <option value="">All Status</option>
+        <option value="ok">No Issues</option>
+        <option value="issues">Has Issues</option>
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" onclick="expandAll(true)">
+        <i class="bi bi-arrows-expand me-1"></i>Expand All
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="expandAll(false)">
+        <i class="bi bi-arrows-collapse me-1"></i>Collapse All
+      </button>
+    </div>
+
+    {# Chain groups — one accordion card per BillingOperationCC group #}
+    {% regroup chain_rows by op.group as grouped_ops %}
+    {% for grp in grouped_ops %}
+
+    {% with g=grp.grouper %}
+    <div class="card border-0 shadow-sm mb-3 chain-group-card" data-group="{{ g }}">
+      <div class="card-header py-2 d-flex align-items-center justify-content-between bg-white border-bottom"
+           style="cursor:pointer;"
+           data-bs-toggle="collapse"
+           data-bs-target="#grpBody-{{ g }}">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge
+            {% if g == 'CASH' %}bg-info text-dark
+            {% elif g == 'REVENUE' %}bg-success
+            {% elif g == 'EXPENSE' %}bg-danger
+            {% elif g == 'STOCK' %}bg-warning text-dark
+            {% elif g == 'INVENTORY' %}bg-secondary
+            {% elif g == 'BANK' %}bg-primary
+            {% elif g == 'ASSET' %}bg-dark
+            {% else %}bg-secondary{% endif %}"
+            style="font-size:.75rem; min-width:80px; text-align:center;">
+            {{ g }}
+          </span>
+          <span class="fw-semibold small">
+            {% if g == 'CASH' %}Cash Desk Operations
+            {% elif g == 'REVENUE' %}Revenue &amp; Sales
+            {% elif g == 'EXPENSE' %}Expense &amp; Purchases
+            {% elif g == 'STOCK' %}Stock Movements
+            {% elif g == 'INVENTORY' %}Inventory Count
+            {% elif g == 'BANK' %}Bank Operations
+            {% elif g == 'ASSET' %}Asset Operations
+            {% else %}Year-End &amp; Special
+            {% endif %}
+          </span>
+          <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ grp.list|length }} ops</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          {% for row in grp.list %}{% if row.issues %}<span class="badge bg-danger" style="font-size:.65rem;">Issues</span>{% if forloop.first %}{% endif %}{% endif %}{% endfor %}
+          <i class="bi bi-chevron-down small text-muted"></i>
+        </div>
+      </div>
+
+      <div id="grpBody-{{ g }}" class="collapse show">
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem;">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3" style="width:55px;">Code</th>
+                <th>Operation Name</th>
+                <th style="width:150px;">Cost Center</th>
+                <th style="width:175px;">Default Dr</th>
+                <th style="width:175px;">Default Cr</th>
+                <th style="width:80px;" class="text-center">Types</th>
+                <th style="width:65px;" class="text-center">Status</th>
+                <th style="width:55px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in grp.list %}
+              <tr class="chain-row {% if row.issues %}table-warning{% endif %}"
+                  data-group="{{ g }}"
+                  data-name="{{ row.op.operation_name|lower }} {{ row.op.operation_code|lower }}"
+                  data-status="{% if row.issues %}issues{% else %}ok{% endif %}">
+                <td class="ps-3 fw-bold font-monospace text-primary">{{ row.op.operation_code }}</td>
+                <td class="fw-semibold">{{ row.op.operation_name }}</td>
+                <td>
+                  {% if row.op.cost_center %}
+                    <span class="badge bg-success" style="font-size:.7rem;">
+                      <i class="bi bi-building me-1"></i>{{ row.op.cost_center.code }} — {{ row.op.cost_center.name|truncatechars:14 }}
+                    </span>
+                  {% elif row.op.group == 'CASH' or row.op.group == 'BANK' or row.op.group == 'YEAR_END' %}
+                    <span class="text-muted fst-italic small">N/A</span>
+                  {% else %}
+                    <span class="badge bg-danger" style="font-size:.7rem;">
+                      <i class="bi bi-exclamation-triangle me-1"></i>Missing
+                    </span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.dr %}
+                    <code class="small text-dark">{{ row.dr.account.code }}</code>
+                    <span class="text-muted small ms-1" style="font-size:.72rem;">{{ row.dr.account.name|truncatechars:12 }}</span>
+                    <span class="badge {% if row.dr.gets_cc %}bg-success{% else %}bg-secondary{% endif %} ms-1"
+                          style="font-size:.62rem;" title="Account class — Class 6/7 receive cost center">
+                      {{ row.dr.cls }}{% if row.dr.gets_cc %} ✓{% endif %}
+                    </span>
+                  {% else %}
+                    <span class="text-muted small fst-italic">— none —</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.cr %}
+                    <code class="small text-dark">{{ row.cr.account.code }}</code>
+                    <span class="text-muted small ms-1" style="font-size:.72rem;">{{ row.cr.account.name|truncatechars:12 }}</span>
+                    <span class="badge {% if row.cr.gets_cc %}bg-success{% else %}bg-secondary{% endif %} ms-1"
+                          style="font-size:.62rem;">
+                      {{ row.cr.cls }}{% if row.cr.gets_cc %} ✓{% endif %}
+                    </span>
+                  {% else %}
+                    <span class="text-muted small fst-italic">— none —</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  {% if row.linked_types %}
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                            style="font-size:.7rem;"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#types-{{ forloop.parentloop.counter }}-{{ forloop.counter }}">
+                      {{ row.linked_types|length }} <i class="bi bi-chevron-down" style="font-size:.65rem;"></i>
+                    </button>
+                  {% else %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  {% if not row.issues %}
+                    <i class="bi bi-check-circle-fill text-success" title="OK — no issues"></i>
+                  {% else %}
+                    <span class="badge bg-danger" style="font-size:.65rem;"
+                          title="{% for i in row.issues %}{{ i }} {% endfor %}">
+                      {{ row.issues|length }}
+                    </span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'billing:billing_operation_detail' op_id=row.op.pk %}"
+                     class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:.7rem;"
+                     title="View / Edit full detail">
+                    <i class="bi bi-eye"></i>
+                  </a>
+                </td>
+              </tr>
+
+              {# Expandable: linked entry/exit types #}
+              {% if row.linked_types %}
+              <tr class="chain-expand p-0">
+                <td colspan="8" class="p-0 border-0">
+                  <div id="types-{{ forloop.parentloop.counter }}-{{ forloop.counter }}" class="collapse">
+                    <div class="bg-light" style="border-left:4px solid #0d6efd;">
+                      <table class="table table-sm mb-0" style="font-size:.76rem;">
+                        <thead>
+                          <tr class="text-muted" style="background:rgba(13,110,253,.05);">
+                            <th class="ps-4" style="width:100px;">Type Code</th>
+                            <th>Name</th>
+                            <th style="width:50px;">Dir</th>
+                            <th style="width:80px;">Stores</th>
+                            <th style="width:180px;">Debit Account → Class</th>
+                            <th style="width:180px;">Credit Account → Class</th>
+                            <th style="width:110px;">CC Assignment</th>
+                            <th style="width:50px;"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for t in row.linked_types %}
+                          <tr {% if t.issues %}style="background:rgba(255,193,7,.15);"{% endif %}>
+                            <td class="ps-4 fw-semibold font-monospace text-primary">{{ t.type.code }}</td>
+                            <td>{{ t.type.name|truncatechars:32 }}</td>
+                            <td>
+                              {% if t.type.category == 'ENTRY' %}
+                                <span class="badge bg-success" style="font-size:.65rem;">IN</span>
+                              {% else %}
+                                <span class="badge bg-danger" style="font-size:.65rem;">OUT</span>
+                              {% endif %}
+                            </td>
+                            <td class="text-muted">{{ t.type.location_types|default:"ALL"|truncatechars:10 }}</td>
+                            <td>
+                              {% if t.dr %}
+                                <code>{{ t.dr.account.code }}</code>
+                                <span class="text-muted" style="font-size:.7rem;"> {{ t.dr.account.name|truncatechars:10 }}</span>
+                                <span class="badge {% if t.dr.gets_cc %}bg-success{% else %}bg-secondary{% endif %} ms-1" style="font-size:.6rem;">{{ t.dr.cls }}{% if t.dr.gets_cc %} ✓{% endif %}</span>
+                              {% else %}
+                                <span class="badge bg-danger" style="font-size:.65rem;"><i class="bi bi-exclamation-triangle"></i> Missing</span>
+                              {% endif %}
+                            </td>
+                            <td>
+                              {% if t.cr %}
+                                <code>{{ t.cr.account.code }}</code>
+                                <span class="text-muted" style="font-size:.7rem;"> {{ t.cr.account.name|truncatechars:10 }}</span>
+                                <span class="badge {% if t.cr.gets_cc %}bg-success{% else %}bg-secondary{% endif %} ms-1" style="font-size:.6rem;">{{ t.cr.cls }}{% if t.cr.gets_cc %} ✓{% endif %}</span>
+                              {% else %}
+                                <span class="badge bg-danger" style="font-size:.65rem;"><i class="bi bi-exclamation-triangle"></i> Missing</span>
+                              {% endif %}
+                            </td>
+                            <td>
+                              {% if t.dr and t.dr.gets_cc or t.cr and t.cr.gets_cc %}
+                                {% if row.op.cost_center %}
+                                  <span class="badge bg-success" style="font-size:.65rem;">
+                                    <i class="bi bi-building me-1"></i>{{ row.op.cost_center.code }}
+                                  </span>
+                                {% else %}
+                                  <span class="badge bg-warning text-dark" style="font-size:.65rem;">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>No CC set!
+                                  </span>
+                                {% endif %}
+                              {% else %}
+                                <span class="text-muted fst-italic" style="font-size:.7rem;">Unassigned (Class 3/4/5)</span>
+                              {% endif %}
+                            </td>
+                            <td>
+                              <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.type.pk %}"
+                                 class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:.65rem;"
+                                 title="Edit this entry/exit type">
+                                <i class="bi bi-pencil"></i>
+                              </a>
+                            </td>
+                          </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+    {% endfor %}
+
+    {# OHADA quick reference — collapsed by default #}
+    <div class="card border-0 shadow-sm mt-2">
+      <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between"
+           style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#ohadaRef">
+        <span class="fw-semibold small text-muted">
+          <i class="bi bi-book me-1"></i>OHADA Cost Center Assignment Rule
+        </span>
+        <i class="bi bi-chevron-down small text-muted"></i>
+      </div>
+      <div id="ohadaRef" class="collapse">
+        <div class="card-body py-2">
+          <div class="row g-3 small">
+            <div class="col-md-4">
+              <table class="table table-sm table-borderless mb-0" style="font-size:.82rem;">
+                <thead class="table-light"><tr><th>Account Class</th><th>Type</th><th>Gets CC?</th></tr></thead>
+                <tbody>
+                  <tr><td><code>1xx, 2xx</code></td><td>Capital / Assets</td><td class="text-muted">No</td></tr>
+                  <tr><td><code>3xx</code></td><td>Stocks</td><td class="text-muted">No</td></tr>
+                  <tr><td><code>4xx</code></td><td>Créances / Dettes</td><td class="text-muted">No</td></tr>
+                  <tr><td><code>5xx</code></td><td>Trésorerie (Cash)</td><td class="text-muted">No</td></tr>
+                  <tr class="table-success"><td><code>6xx</code></td><td>Charges (Expenses)</td><td class="fw-bold text-success">YES ✓</td></tr>
+                  <tr class="table-success"><td><code>7xx</code></td><td>Produits (Revenue)</td><td class="fw-bold text-success">YES ✓</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="col-md-8">
+              <strong>Example — Optical Sale (Ventes Lentilles, Op 122):</strong>
+              <table class="table table-sm table-borderless mt-2" style="font-size:.8rem;">
+                <tbody>
+                  <tr><td>Dr <code>412xxx</code> AR Patient</td><td><span class="badge bg-secondary">Class 4</span></td><td class="text-muted fst-italic">No cost center — balance sheet</td></tr>
+                  <tr class="table-success"><td>Cr <code>705xxx</code> Optical Revenue</td><td><span class="badge bg-success">Class 7</span></td><td class="text-success fw-semibold">CC-009 Optical Shop ✓</td></tr>
+                  <tr><td>Dr <code>572xxx</code> Cash / MoMo</td><td><span class="badge bg-secondary">Class 5</span></td><td class="text-muted fst-italic">No cost center — treasury</td></tr>
+                  <tr><td>Cr <code>412xxx</code> AR settled</td><td><span class="badge bg-secondary">Class 4</span></td><td class="text-muted fst-italic">No cost center</td></tr>
+                  <tr class="table-success"><td>Dr <code>605xxx</code> COGS</td><td><span class="badge bg-success">Class 6</span></td><td class="text-success fw-semibold">CC-009 Optical Shop ✓</td></tr>
+                  <tr><td>Cr <code>31xxxx</code> Stock</td><td><span class="badge bg-secondary">Class 3</span></td><td class="text-muted fst-italic">No cost center — stock balance sheet</td></tr>
+                </tbody>
+              </table>
+              <div class="text-muted">Cost centers are assigned per-line automatically at posting — no manual entry required.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>{# end tab-pane map #}
+  {% endif %}
+
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     TAB 2 — HEALTH CHECK
+  ══════════════════════════════════════════════════════════════════════════ #}
+  {% if active_tab == 'health' %}
+  <div class="tab-pane show active">
+
+    {# Score banner #}
+    <div class="card border-0 shadow-sm mb-4"
+         style="background: linear-gradient(135deg,
+           {% if health_score >= 90 %}#198754,#20c997
+           {% elif health_score >= 70 %}#fd7e14,#ffc107
+           {% else %}#dc3545,#e74c3c{% endif %}); color:#fff;">
+      <div class="card-body py-3 d-flex align-items-center justify-content-between">
+        <div>
+          <div class="fs-1 fw-bold mb-0">{{ health_score }}<span class="fs-4">/100</span></div>
+          <div class="fw-semibold">
+            {% if health_score >= 90 %}GL Configuration is Healthy
+            {% elif health_score >= 70 %}GL Configuration Needs Attention
+            {% else %}GL Configuration Has Critical Gaps
+            {% endif %}
+          </div>
+          <div class="small opacity-75">
+            {{ total_issues }} issue{{ total_issues|pluralize }} across {{ op_total }} operations and {{ entry_total|add:exit_total }} entry/exit types
+          </div>
+        </div>
+        <i class="bi bi-{% if health_score >= 90 %}check-circle{% elif health_score >= 70 %}exclamation-circle{% else %}x-circle{% endif %}"
+           style="font-size:3.5rem; opacity:.6;"></i>
+      </div>
+    </div>
+
+    {% if total_issues == 0 %}
+    <div class="text-center py-5 text-success">
+      <i class="bi bi-check-circle-fill" style="font-size:3rem;"></i>
+      <div class="fw-semibold mt-2">All GL configuration is correct.</div>
+      <div class="text-muted small">No OHADA violations found. Every operation has accounts and cost centers.</div>
+    </div>
+    {% else %}
+
+    <div class="row g-3">
+
+      {# Operations missing cost center #}
+      {% if health.ops_no_cc %}
+      <div class="col-12">
+        <div class="card border-danger border-opacity-50 shadow-sm">
+          <div class="card-header bg-danger bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+            <span class="fw-semibold text-danger small">
+              <i class="bi bi-exclamation-octagon-fill me-2"></i>
+              Revenue/Expense Operations Missing Cost Center
+              <span class="badge bg-danger ms-1">{{ health.ops_no_cc|length }}</span>
+            </span>
+            <span class="text-muted small">OHADA requires Class 6/7 lines to have a cost center</span>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <thead class="table-light">
+                <tr><th class="ps-3">Code</th><th>Name</th><th>Group</th><th>Fix</th></tr>
+              </thead>
+              <tbody>
+                {% for op in health.ops_no_cc %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace text-danger">{{ op.operation_code }}</td>
+                  <td>{{ op.operation_name }}</td>
+                  <td><span class="badge bg-secondary" style="font-size:.7rem;">{{ op.group }}</span></td>
+                  <td>
+                    <a href="{% url 'billing:billing_operation_detail' op_id=op.pk %}"
+                       class="btn btn-danger btn-sm py-0 px-2" style="font-size:.75rem;">
+                      <i class="bi bi-pencil me-1"></i>Fix Now
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Operations missing default Dr or Cr #}
+      {% if health.ops_no_dr or health.ops_no_cr %}
+      <div class="col-md-6">
+        <div class="card border-warning border-opacity-75 shadow-sm h-100">
+          <div class="card-header bg-warning bg-opacity-10 py-2">
+            <span class="fw-semibold small text-warning-emphasis">
+              <i class="bi bi-dash-circle me-1"></i>Operations Missing Default Debit Account
+              <span class="badge bg-warning text-dark ms-1">{{ health.ops_no_dr|length }}</span>
+            </span>
+          </div>
+          <div class="card-body p-0">
+            {% if health.ops_no_dr %}
+            <table class="table table-sm mb-0" style="font-size:.8rem;">
+              <tbody>
+                {% for op in health.ops_no_dr %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace">{{ op.operation_code }}</td>
+                  <td>{{ op.operation_name|truncatechars:30 }}</td>
+                  <td>
+                    <a href="{% url 'billing:billing_operation_detail' op_id=op.pk %}"
+                       class="btn btn-warning btn-sm py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="text-success small p-3"><i class="bi bi-check-circle me-1"></i>All OK</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-warning border-opacity-75 shadow-sm h-100">
+          <div class="card-header bg-warning bg-opacity-10 py-2">
+            <span class="fw-semibold small text-warning-emphasis">
+              <i class="bi bi-dash-circle me-1"></i>Operations Missing Default Credit Account
+              <span class="badge bg-warning text-dark ms-1">{{ health.ops_no_cr|length }}</span>
+            </span>
+          </div>
+          <div class="card-body p-0">
+            {% if health.ops_no_cr %}
+            <table class="table table-sm mb-0" style="font-size:.8rem;">
+              <tbody>
+                {% for op in health.ops_no_cr %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace">{{ op.operation_code }}</td>
+                  <td>{{ op.operation_name|truncatechars:30 }}</td>
+                  <td>
+                    <a href="{% url 'billing:billing_operation_detail' op_id=op.pk %}"
+                       class="btn btn-warning btn-sm py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="text-success small p-3"><i class="bi bi-check-circle me-1"></i>All OK</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Entry/Exit type issues #}
+      {% if health.types_unlinked or health.types_no_dr or health.types_no_cr %}
+      <div class="col-12">
+        <div class="card border-info border-opacity-50 shadow-sm">
+          <div class="card-header bg-info bg-opacity-10 py-2">
+            <span class="fw-semibold small text-info-emphasis">
+              <i class="bi bi-arrow-left-right me-1"></i>Entry / Exit Type Issues
+            </span>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" style="font-size:.8rem;">
+              <thead class="table-light">
+                <tr>
+                  <th class="ps-3">Code</th><th>Name</th><th>Dir</th>
+                  <th>Issue</th><th>Fix</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for t in health.types_unlinked %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace">{{ t.code }}</td>
+                  <td>{{ t.name|truncatechars:30 }}</td>
+                  <td>
+                    {% if t.category == 'ENTRY' %}<span class="badge bg-success" style="font-size:.65rem;">IN</span>
+                    {% else %}<span class="badge bg-danger" style="font-size:.65rem;">OUT</span>{% endif %}
+                  </td>
+                  <td><span class="badge bg-info text-dark" style="font-size:.7rem;">Not linked to any Operation</span></td>
+                  <td>
+                    <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.pk %}"
+                       class="btn btn-info btn-sm py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% for t in health.types_no_dr %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace">{{ t.code }}</td>
+                  <td>{{ t.name|truncatechars:30 }}</td>
+                  <td>
+                    {% if t.category == 'ENTRY' %}<span class="badge bg-success" style="font-size:.65rem;">IN</span>
+                    {% else %}<span class="badge bg-danger" style="font-size:.65rem;">OUT</span>{% endif %}
+                  </td>
+                  <td><span class="badge bg-warning text-dark" style="font-size:.7rem;">Missing Debit Account</span></td>
+                  <td>
+                    <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.pk %}"
+                       class="btn btn-warning btn-sm py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% for t in health.types_no_cr %}
+                <tr>
+                  <td class="ps-3 fw-bold font-monospace">{{ t.code }}</td>
+                  <td>{{ t.name|truncatechars:30 }}</td>
+                  <td>
+                    {% if t.category == 'ENTRY' %}<span class="badge bg-success" style="font-size:.65rem;">IN</span>
+                    {% else %}<span class="badge bg-danger" style="font-size:.65rem;">OUT</span>{% endif %}
+                  </td>
+                  <td><span class="badge bg-warning text-dark" style="font-size:.7rem;">Missing Credit Account</span></td>
+                  <td>
+                    <a href="{% url 'billing:stock_operation_type_edit' sot_id=t.pk %}"
+                       class="btn btn-warning btn-sm py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not health.types_unlinked and not health.types_no_dr and not health.types_no_cr %}
+                <tr><td colspan="5" class="text-success small p-3"><i class="bi bi-check-circle me-1"></i>All entry/exit types are properly configured.</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Item GL routing gaps #}
+      {% if health.item_no_cogs or health.item_no_inv %}
+      <div class="col-12">
+        <div class="card border-secondary border-opacity-50 shadow-sm">
+          <div class="card-header bg-secondary bg-opacity-10 py-2">
+            <span class="fw-semibold small">
+              <i class="bi bi-tags me-1"></i>Item Category GL Routing Gaps
+              <span class="badge bg-secondary ms-1">{{ health.item_no_cogs|length }}</span>
+            </span>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" style="font-size:.8rem;">
+              <thead class="table-light">
+                <tr><th class="ps-3">Category</th><th>Issue</th><th>Fix</th></tr>
+              </thead>
+              <tbody>
+                {% for ig in health.item_no_cogs %}
+                <tr>
+                  <td class="ps-3 fw-semibold">{{ ig.get_category_display }}</td>
+                  <td><span class="badge bg-warning text-dark" style="font-size:.7rem;">Missing COGS Account (6xx)</span></td>
+                  <td>
+                    <a href="{% url 'billing:item_category_gl_edit' category=ig.category %}"
+                       class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% for ig in health.item_no_inv %}
+                <tr>
+                  <td class="ps-3 fw-semibold">{{ ig.get_category_display }}</td>
+                  <td><span class="badge bg-warning text-dark" style="font-size:.7rem;">Missing Inventory Account (3xx)</span></td>
+                  <td>
+                    <a href="{% url 'billing:item_category_gl_edit' category=ig.category %}"
+                       class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.72rem;">Fix</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>{# /row #}
+    {% endif %}
+
+  </div>{# end tab-pane health #}
+  {% endif %}
+
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     TAB 3 — QUICK EDIT (Finance Director only)
+  ══════════════════════════════════════════════════════════════════════════ #}
+  {% if active_tab == 'edit' %}
+  {% if can_edit %}
+  <div class="tab-pane show active">
+
+    <div class="alert alert-info border-0 py-2 mb-3 small">
+      <i class="bi bi-info-circle me-1"></i>
+      Changes take effect immediately on the next GL posting. Use the Chain Map tab to verify after saving.
+    </div>
+
+    {# ── Section A: Operations ── #}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-diagram-3 text-primary me-1"></i>Operations — Cost Center &amp; Default Accounts</span>
+        <div class="d-flex gap-2">
+          <select id="editGroupFilter" class="form-select form-select-sm" style="max-width:180px;" onchange="filterEditOps()">
+            <option value="">All Groups</option>
+            {% for val, label in groups %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0" style="font-size:.8rem;" id="editOpsTable">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3" style="width:60px;">Code</th>
+                <th style="min-width:160px;">Name</th>
+                <th style="width:80px;">Group</th>
+                <th style="min-width:180px;">Cost Center</th>
+                <th style="min-width:190px;">Default Dr (Debit)</th>
+                <th style="min-width:190px;">Default Cr (Credit)</th>
+                <th style="width:70px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for op in operations %}
+              <tr class="edit-op-row" data-group="{{ op.group }}">
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="edit_operation">
+                  <input type="hidden" name="op_id" value="{{ op.pk }}">
+                  <input type="hidden" name="tab_back" value="edit">
+                  <td class="ps-3 fw-bold font-monospace text-primary">{{ op.operation_code }}</td>
+                  <td class="fw-semibold">{{ op.operation_name }}</td>
+                  <td>
+                    <span class="badge
+                      {% if op.group == 'CASH' %}bg-info text-dark
+                      {% elif op.group == 'REVENUE' %}bg-success
+                      {% elif op.group == 'EXPENSE' %}bg-danger
+                      {% elif op.group == 'STOCK' %}bg-warning text-dark
+                      {% elif op.group == 'BANK' %}bg-primary
+                      {% else %}bg-secondary{% endif %}"
+                      style="font-size:.65rem;">{{ op.group }}</span>
+                  </td>
+                  <td>
+                    <select name="cost_center" class="form-select form-select-sm">
+                      <option value="">— Unassigned —</option>
+                      {% for cc in cost_centers %}
+                      <option value="{{ cc.pk }}" {% if op.cost_center_id == cc.pk %}selected{% endif %}>
+                        {{ cc.code }} — {{ cc.name }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="default_debit_account" class="form-select form-select-sm">
+                      <option value="">— None —</option>
+                      {% for a in accounts %}
+                      <option value="{{ a.pk }}" {% if op.default_debit_account_id == a.pk %}selected{% endif %}>
+                        {{ a.code }} — {{ a.name|truncatechars:25 }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="default_credit_account" class="form-select form-select-sm">
+                      <option value="">— None —</option>
+                      {% for a in accounts %}
+                      <option value="{{ a.pk }}" {% if op.default_credit_account_id == a.pk %}selected{% endif %}>
+                        {{ a.code }} — {{ a.name|truncatechars:25 }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <button type="submit" class="btn btn-primary btn-sm py-0 px-2" style="font-size:.75rem;">
+                      <i class="bi bi-check-lg"></i> Save
+                    </button>
+                  </td>
+                </form>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ── Section B: Entry / Exit Types ── #}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-arrow-left-right text-success me-1"></i>Entry / Exit Types — Operation Link &amp; Accounts</span>
+        <div class="d-flex gap-2">
+          <select id="editSotFilter" class="form-select form-select-sm" style="max-width:160px;" onchange="filterEditSot()">
+            <option value="">ENTRY + EXIT</option>
+            <option value="ENTRY">Entry only</option>
+            <option value="EXIT">Exit only</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0" style="font-size:.8rem;" id="editSotTable">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3" style="width:80px;">Code</th>
+                <th style="min-width:150px;">Name</th>
+                <th style="width:55px;">Dir</th>
+                <th style="min-width:190px;">Linked Operation</th>
+                <th style="min-width:190px;">Debit Account (Dr)</th>
+                <th style="min-width:190px;">Credit Account (Cr)</th>
+                <th style="width:70px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sot in all_sot %}
+              <tr class="edit-sot-row" data-cat="{{ sot.category }}">
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="edit_entry_exit">
+                  <input type="hidden" name="sot_id" value="{{ sot.pk }}">
+                  <input type="hidden" name="tab_back" value="edit">
+                  <td class="ps-3 fw-bold font-monospace text-success">{{ sot.code }}</td>
+                  <td>{{ sot.name|truncatechars:28 }}</td>
+                  <td>
+                    {% if sot.category == 'ENTRY' %}
+                      <span class="badge bg-success" style="font-size:.65rem;">IN</span>
+                    {% else %}
+                      <span class="badge bg-danger" style="font-size:.65rem;">OUT</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <select name="billing_operation" class="form-select form-select-sm">
+                      <option value="">— Unlinked —</option>
+                      {% for op in operations %}
+                      <option value="{{ op.pk }}" {% if sot.billing_operation_id == op.pk %}selected{% endif %}>
+                        {{ op.operation_code }} — {{ op.operation_name|truncatechars:28 }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="debit_account" class="form-select form-select-sm">
+                      <option value="">— None —</option>
+                      {% for a in accounts %}
+                      <option value="{{ a.pk }}" {% if sot.debit_account_id == a.pk %}selected{% endif %}>
+                        {{ a.code }} — {{ a.name|truncatechars:25 }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="credit_account" class="form-select form-select-sm">
+                      <option value="">— None —</option>
+                      {% for a in accounts %}
+                      <option value="{{ a.pk }}" {% if sot.credit_account_id == a.pk %}selected{% endif %}>
+                        {{ a.code }} — {{ a.name|truncatechars:25 }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <button type="submit" class="btn btn-success btn-sm py-0 px-2" style="font-size:.75rem;">
+                      <i class="bi bi-check-lg"></i> Save
+                    </button>
+                  </td>
+                </form>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ── Section C: Item Category GL Routing ── #}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-tags text-info me-1"></i>Item Category GL Routing — Inventory, COGS &amp; Loss Accounts</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0" style="font-size:.8rem;">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3" style="min-width:130px;">Category</th>
+                <th style="min-width:200px;">Inventory Account (3xx — Stock)</th>
+                <th style="min-width:200px;">COGS Account (6xx — Charges)</th>
+                <th style="min-width:200px;">Loss Account (6xx — Disposal)</th>
+                <th style="width:70px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cat_val, cat_label in all_item_cats %}
+              <tr>
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="edit_item_gl">
+                  <input type="hidden" name="category" value="{{ cat_val }}">
+                  <input type="hidden" name="tab_back" value="edit">
+                  <td class="ps-3 fw-semibold">{{ cat_label }}</td>
+                  <td>
+                    <select name="inventory_account" class="form-select form-select-sm">
+                      <option value="">— None (3xx) —</option>
+                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "3" %}
+                      <option value="{{ a.pk }}"
+                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.inventory_account_id == a.pk %}selected{% endif %}{% endfor %}>
+                        {{ a.code }} — {{ a.name|truncatechars:28 }}
+                      </option>
+                      {% endif %}{% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="cogs_account" class="form-select form-select-sm">
+                      <option value="">— None (6xx) —</option>
+                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "6" %}
+                      <option value="{{ a.pk }}"
+                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.cogs_account_id == a.pk %}selected{% endif %}{% endfor %}>
+                        {{ a.code }} — {{ a.name|truncatechars:28 }}
+                      </option>
+                      {% endif %}{% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <select name="loss_account" class="form-select form-select-sm">
+                      <option value="">— None (6xx) —</option>
+                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "6" %}
+                      <option value="{{ a.pk }}"
+                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.loss_account_id == a.pk %}selected{% endif %}{% endfor %}>
+                        {{ a.code }} — {{ a.name|truncatechars:28 }}
+                      </option>
+                      {% endif %}{% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    <button type="submit" class="btn btn-info btn-sm py-0 px-2" style="font-size:.75rem;">
+                      <i class="bi bi-check-lg"></i> Save
+                    </button>
+                  </td>
+                </form>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /tab-pane edit #}
+  {% else %}
+  <div class="alert alert-warning mt-3">
+    <i class="bi bi-lock me-1"></i>Finance Director access required to edit GL configuration.
+  </div>
+  {% endif %}
+  {% endif %}
+
+
+  {# ═══════════════════════════════════════════════════════════════════════
+     TAB 4 — SYSTEM GL ACCOUNTS (GLMapping)
+  ══════════════════════════════════════════════════════════════════════════ #}
+  {% if active_tab == 'system' %}
+  <div class="tab-pane show active">
+
+    <div class="row g-3">
+
+      {# Grouped by category #}
+      {% regroup gl_mappings by category as mapping_groups %}
+      {% for mgrp in mapping_groups %}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+            <span class="fw-semibold small">
+              <i class="bi bi-sliders me-1 text-primary"></i>
+              {{ mgrp.grouper }} Accounts
+              <span class="badge bg-light text-dark border ms-1" style="font-size:.7rem;">{{ mgrp.list|length }}</span>
+            </span>
+            {% if can_edit %}
+            <span class="text-muted small">Edit below to override defaults</span>
+            {% endif %}
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <thead class="table-light">
+                <tr>
+                  <th class="ps-3" style="width:120px;">Key</th>
+                  <th style="min-width:200px;">Description</th>
+                  <th style="min-width:200px;">GL Account</th>
+                  {% if can_edit %}<th style="width:70px;"></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for m in mgrp.list %}
+                <tr>
+                  {% if can_edit %}
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="edit_gl_mapping">
+                    <input type="hidden" name="mapping_id" value="{{ m.pk }}">
+                    <input type="hidden" name="tab_back" value="system">
+                    <td class="ps-3 font-monospace fw-semibold text-primary" style="font-size:.78rem;">{{ m.source_key }}</td>
+                    <td class="text-muted">{{ m.description|default:m.source_key }}</td>
+                    <td>
+                      <select name="gl_account" class="form-select form-select-sm">
+                        <option value="">— None (use hardcoded default) —</option>
+                        {% for a in accounts %}
+                        <option value="{{ a.pk }}" {% if m.gl_account_id == a.pk %}selected{% endif %}>
+                          {{ a.code }} — {{ a.name|truncatechars:30 }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td>
+                      <button type="submit" class="btn btn-primary btn-sm py-0 px-2" style="font-size:.75rem;">
+                        <i class="bi bi-check-lg"></i>
+                      </button>
+                    </td>
+                  </form>
+                  {% else %}
+                  <td class="ps-3 font-monospace fw-semibold text-primary" style="font-size:.78rem;">{{ m.source_key }}</td>
+                  <td class="text-muted">{{ m.description|default:m.source_key }}</td>
+                  <td>
+                    {% if m.gl_account %}
+                      <code>{{ m.gl_account.code }}</code>
+                      <span class="text-muted ms-1">{{ m.gl_account.name }}</span>
+                    {% else %}
+                      <span class="text-muted fst-italic small">Using hardcoded default</span>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% empty %}
+      <div class="col-12">
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          No system GL accounts seeded yet.
+          {% if can_edit %}
+          <a href="{% url 'billing:gl_mapping_seed' %}" class="btn btn-warning btn-sm ms-2"
+             onclick="return confirm('Seed all default OHADA GL mappings?')">
+            <i class="bi bi-database me-1"></i>Seed Defaults Now
+          </a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {# Cost Centers reference #}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+            <span class="fw-semibold small">
+              <i class="bi bi-building text-warning me-1"></i>Active Cost Centers
+              <span class="badge bg-light text-dark border ms-1" style="font-size:.7rem;">{{ cc_total }}</span>
+            </span>
+            <a href="{% url 'billing:cost_center_list' %}" class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;">
+              Manage All
+            </a>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <thead class="table-light">
+                <tr><th class="ps-3">Code</th><th>Name</th><th>Manager</th><th>Used in</th></tr>
+              </thead>
+              <tbody>
+                {% for cc in cost_centers %}
+                <tr>
+                  <td class="ps-3"><span class="badge bg-warning text-dark" style="font-size:.7rem;">{{ cc.code }}</span></td>
+                  <td class="fw-semibold">{{ cc.name }}</td>
+                  <td class="text-muted small">{{ cc.manager.get_full_name|default:"—" }}</td>
+                  <td class="text-muted small">
+                    {% for row in chain_rows %}{% if row.op.cost_center_id == cc.pk %}<span class="badge bg-primary bg-opacity-75 me-1" style="font-size:.62rem;">{{ row.op.operation_code }}</span>{% endif %}{% endfor %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-muted small p-3">No active cost centers.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /row system #}
+
+  </div>{# /tab-pane system #}
+  {% endif %}
+
+  </div>{# /tab-content #}
+
+</div>{# /container-fluid #}
+
+{# ═══════════════════════════════════════════════════════════════════════
+   JAVASCRIPT — client-side filter for Chain Map + Quick Edit
+══════════════════════════════════════════════════════════════════════════ #}
+<script>
+function filterChain() {
+  const q      = (document.getElementById('chainSearch').value || '').toLowerCase();
+  const grpVal = document.getElementById('groupFilter').value;
+  const stVal  = document.getElementById('statusFilter').value;
+
+  // rows
+  document.querySelectorAll('.chain-row').forEach(tr => {
+    const name   = (tr.dataset.name  || '').toLowerCase();
+    const group  = (tr.dataset.group || '');
+    const status = (tr.dataset.status || '');
+    const matchQ   = !q      || name.includes(q);
+    const matchG   = !grpVal || group === grpVal;
+    const matchSt  = !stVal  || status === stVal;
+    tr.style.display = (matchQ && matchG && matchSt) ? '' : 'none';
+    // hide expand row too
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('chain-expand')) {
+      next.style.display = (matchQ && matchG && matchSt) ? '' : 'none';
+    }
+  });
+
+  // hide entire group card if no visible rows
+  document.querySelectorAll('.chain-group-card').forEach(card => {
+    const grpCard = card.dataset.group;
+    const matchG  = !grpVal || grpCard === grpVal;
+    const hasVisible = card.querySelectorAll('.chain-row:not([style*="display: none"])').length > 0;
+    card.style.display = (matchG && (hasVisible || !q && !stVal)) ? '' : 'none';
+  });
+}
+
+function expandAll(open) {
+  document.querySelectorAll('.collapse').forEach(el => {
+    if (open) { el.classList.add('show'); }
+    else { el.classList.remove('show'); }
+  });
+}
+
+function filterEditOps() {
+  const val = document.getElementById('editGroupFilter').value;
+  document.querySelectorAll('.edit-op-row').forEach(tr => {
+    tr.style.display = (!val || tr.dataset.group === val) ? '' : 'none';
+  });
+}
+
+function filterEditSot() {
+  const val = document.getElementById('editSotFilter').value;
+  document.querySelectorAll('.edit-sot-row').forEach(tr => {
+    tr.style.display = (!val || tr.dataset.cat === val) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}
