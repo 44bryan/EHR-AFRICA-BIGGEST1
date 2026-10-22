@@ -1269,11 +1269,16 @@
 
     {% for cg in class_groups %}
     {% with cls=cg.grouper %}
-    <div class="card border-0 shadow-sm mb-3 coa-class-card" data-class="{{ cls }}">
+    <div class="card border-0 shadow-sm mb-2 coa-class-card" data-class="{{ cls }}">
       <div class="card-header py-2 d-flex justify-content-between align-items-center
-        {% if cls == '6' or cls == '7' %}bg-success bg-opacity-10 border-success{% elif cls == '3' or cls == '4' or cls == '5' %}bg-secondary bg-opacity-10{% else %}bg-white{% endif %}">
+        {% if cls == '6' or cls == '7' %}bg-success bg-opacity-10 border-success{% elif cls == '3' or cls == '4' or cls == '5' %}bg-secondary bg-opacity-10{% else %}bg-white{% endif %}"
+        style="cursor:pointer;"
+        data-bs-toggle="collapse"
+        data-bs-target="#coaBody{{ cls }}"
+        aria-expanded="{% if cls == '6' or cls == '7' %}true{% else %}false{% endif %}">
         <div class="d-flex align-items-center gap-2">
-          <span class="badge fs-6
+          <i class="bi bi-chevron-right text-muted" style="font-size:.7rem; transition:.2s;" id="coaChevron{{ cls }}"></i>
+          <span class="badge
             {% if cls == '6' or cls == '7' %}bg-success
             {% elif cls == '3' %}bg-warning text-dark
             {% elif cls == '4' %}bg-info text-dark
@@ -1297,59 +1302,70 @@
           </span>
           <span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ cg.list|length }} accounts</span>
         </div>
-        <div>
+        <div class="d-flex align-items-center gap-2">
           {% if cls == '6' or cls == '7' %}
-          <span class="badge bg-success"><i class="bi bi-building me-1"></i>COST CENTER REQUIRED — P&amp;L accounts</span>
+          <span class="badge bg-success" style="font-size:.7rem;"><i class="bi bi-building me-1"></i>CC Required — P&amp;L</span>
           {% else %}
-          <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>NO COST CENTER — Balance Sheet</span>
+          <span class="badge bg-secondary" style="font-size:.7rem;"><i class="bi bi-dash-circle me-1"></i>No CC — Balance Sheet</span>
           {% endif %}
+          <span class="text-muted" style="font-size:.7rem;">Click to expand</span>
         </div>
       </div>
-      <div class="card-body p-0">
-        <table class="table table-sm mb-0 coa-table" style="font-size:.8rem;">
-          <thead class="table-light">
-            <tr>
-              <th class="ps-3" style="width:100px;">Code</th>
-              <th style="min-width:250px;">Account Name</th>
-              <th style="width:120px;">Type</th>
-              <th style="width:160px;">Cost Center Rule</th>
-              <th style="width:200px;">Used In Operations</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for a in cg.list %}
-            <tr class="coa-row" data-class="{{ cls }}" data-cc="{% if cls == '6' or cls == '7' %}yes{% else %}no{% endif %}">
-              <td class="ps-3 font-monospace fw-semibold
-                {% if cls == '6' %}text-danger{% elif cls == '7' %}text-success{% elif cls == '5' %}text-primary{% elif cls == '4' %}text-info{% elif cls == '3' %}text-warning{% else %}text-muted{% endif %}">
-                {{ a.code }}
-              </td>
-              <td>
-                {{ a.name }}
-                {% if not a.is_active %}<span class="badge bg-secondary ms-1" style="font-size:.65rem;">Inactive</span>{% endif %}
-              </td>
-              <td><span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ a.get_account_type_display }}</span></td>
-              <td>
-                {% if cls == '6' or cls == '7' %}
-                  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Gets CC on every posting</span>
-                {% else %}
-                  <span class="text-muted small"><i class="bi bi-dash-circle me-1"></i>Never assigned CC</span>
-                {% endif %}
-              </td>
-              <td class="text-muted" style="font-size:.72rem;">
-                {% for row in chain_rows %}
-                  {% if row.op.default_debit_account_id == a.pk or row.op.default_credit_account_id == a.pk %}
-                    <span class="badge bg-primary bg-opacity-75 me-1" style="font-size:.6rem;">{{ row.op.operation_code }}</span>
+      <div class="collapse {% if cls == '6' or cls == '7' %}show{% endif %}" id="coaBody{{ cls }}">
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0 coa-table" style="font-size:.8rem;">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3" style="width:120px;">Code</th>
+                <th style="min-width:260px;">Account Name</th>
+                <th style="width:130px;">Type</th>
+                <th style="width:220px;">Cost Center Rule</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in cg.list %}
+              <tr class="coa-row" data-class="{{ cls }}" data-cc="{% if cls == '6' or cls == '7' %}yes{% else %}no{% endif %}">
+                <td class="ps-3 font-monospace fw-semibold
+                  {% if cls == '6' %}text-danger{% elif cls == '7' %}text-success{% elif cls == '5' %}text-primary{% elif cls == '4' %}text-info{% elif cls == '3' %}text-warning{% else %}text-muted{% endif %}">
+                  {{ a.code }}
+                </td>
+                <td>
+                  {{ a.name }}
+                  {% if not a.is_active %}<span class="badge bg-secondary ms-1" style="font-size:.65rem;">Inactive</span>{% endif %}
+                </td>
+                <td><span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ a.get_account_type_display }}</span></td>
+                <td>
+                  {% if cls == '6' or cls == '7' %}
+                    <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Gets CC on every posting</span>
+                  {% else %}
+                    <span class="text-muted small"><i class="bi bi-dash-circle me-1"></i>Never assigned CC</span>
                   {% endif %}
-                {% endfor %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
     {% endwith %}
     {% endfor %}
+
+    <script>
+      document.querySelectorAll('[data-bs-target^="#coaBody"]').forEach(function(hdr) {
+        hdr.addEventListener('shown.bs.collapse', function() {
+          hdr.querySelector('[id^="coaChevron"]').style.transform = 'rotate(90deg)';
+        });
+        hdr.addEventListener('hidden.bs.collapse', function() {
+          hdr.querySelector('[id^="coaChevron"]').style.transform = '';
+        });
+        // Set initial chevron state
+        var target = document.querySelector(hdr.getAttribute('data-bs-target'));
+        if (target && target.classList.contains('show')) {
+          hdr.querySelector('[id^="coaChevron"]').style.transform = 'rotate(90deg)';
+        }
+      });
+    </script>
 
   </div>
   {% endif %}
