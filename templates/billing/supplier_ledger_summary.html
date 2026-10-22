@@ -1,0 +1,108 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Supplier Ledger Summary{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+.rpt-empty { text-align:center; padding:3rem 1rem; color:#adb5bd; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 portrait; margin: 10mm 8mm 18mm 8mm; }
+  body { font-size:8pt !important; }
+  .print-footer { display:block !important; }
+}
+.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
+  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:report_ap_aging' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Supplier Ledger Summary</span>
+    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+  </div>
+  {% include 'components/finance_export.html' with pdf_url="javascript:window.print()" %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">From</label>
+    <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-3">
+    <label class="form-label small fw-semibold mb-1">To</label>
+    <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+  </div>
+</form>
+
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
+          <th>Supplier</th>
+          <th>Code</th>
+          <th class="text-end">Opening Balance (XAF)</th>
+          <th class="text-end">Total Debits (XAF)</th>
+          <th class="text-end">Total Credits (XAF)</th>
+          <th class="text-end">Closing Balance (XAF)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="fw-semibold">{{ row.vendor }}</td>
+          <td class="text-muted font-monospace small">{{ row.vendor_code }}</td>
+          <td class="text-end font-monospace">{{ row.opening|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-danger">{{ row.debits|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-success">{{ row.credits|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold {% if row.closing > 0 %}text-danger{% else %}text-success{% endif %}">
+            {{ row.closing|floatformat:0|intcomma }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6">
+            <div class="rpt-empty"><i class="bi bi-truck d-block mb-2" style="font-size:2rem;"></i>No supplier ledger data for the selected period.</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+        <tr class="fw-bold">
+          <td colspan="2" class="text-end text-muted small text-uppercase pe-3">TOTAL ({{ rows|length }} suppliers)</td>
+          <td></td>
+          <td class="text-end font-monospace text-danger">{{ grand_debits|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-success">{{ grand_credits|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace {% if grand_closing > 0 %}text-danger{% else %}text-success{% endif %}">{{ grand_closing|floatformat:0|intcomma }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<div class="print-footer">
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Supplier Ledger Summary &nbsp;&bull;&nbsp; {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }} &nbsp;&bull;&nbsp;
+  Printed: <span id="slsPrintDate"></span>
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  var el=document.getElementById('slsPrintDate'); if(el)el.textContent=s;})();
+</script>
+{% endblock %}

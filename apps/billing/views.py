@@ -13343,6 +13343,263 @@ def cash_desk_supply_create(request):
 
 
 @login_required
+def gross_profit_report(request):
+    """Monthly Gross Profit: REVENUE vs COGS (Supplies + Drugs)."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    import calendar
+    from .models import Expense, ExpenseCategory
+    today = _date.today()
+    year = int(request.GET.get('year', today.year))
+
+    min_year = Invoice.objects.filter(is_deleted=False).order_by('issue_date').values_list('issue_date__year', flat=True).first() or today.year
+    year_range = list(range(min_year, today.year + 2))
+
+    months = []
+    for m in range(1, 13):
+        revenue = Invoice.objects.filter(
+            is_deleted=False, issue_date__year=year, issue_date__month=m
+        ).exclude(status='VOID').aggregate(t=Sum('total'))['t'] or Decimal('0')
+        cogs = Expense.objects.filter(
+            is_deleted=False, date__year=year, date__month=m,
+            category__in=[ExpenseCategory.SUPPLIES, ExpenseCategory.DRUGS]
+        ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        gross   = revenue - cogs
+        gp_pct  = round(float(gross) / float(revenue) * 100, 1) if revenue > 0 else 0
+        months.append({'month': calendar.month_abbr[m], 'revenue': revenue, 'cogs': cogs, 'gross_profit': gross, 'gp_pct': gp_pct})
+
+    total_revenue = sum(r['revenue'] for r in months)
+    total_cogs    = sum(r['cogs']    for r in months)
+    total_gross   = total_revenue - total_cogs
+    total_gp_pct  = round(float(total_gross) / float(total_revenue) * 100, 1) if total_revenue > 0 else 0
+
+    return render(request, 'billing/reports/gross_profit.html', {
+        'months': months, 'year': year, 'year_range': year_range,
+        'total_revenue': total_revenue, 'total_cogs': total_cogs,
+        'total_gross': total_gross, 'total_gp_pct': total_gp_pct,
+    })
+
+
+@login_required
+def gross_net_profit_report(request):
+    """Monthly Gross & Net Profit: REVENUE, COGS, GP, GP%, all EXPENSES, NP, NP%."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    import calendar
+    from .models import Expense, ExpenseCategory
+    today = _date.today()
+    year = int(request.GET.get('year', today.year))
+
+    min_year = Invoice.objects.filter(is_deleted=False).order_by('issue_date').values_list('issue_date__year', flat=True).first() or today.year
+    year_range = list(range(min_year, today.year + 2))
+
+    months = []
+    for m in range(1, 13):
+        revenue = Invoice.objects.filter(
+            is_deleted=False, issue_date__year=year, issue_date__month=m
+        ).exclude(status='VOID').aggregate(t=Sum('total'))['t'] or Decimal('0')
+        cogs = Expense.objects.filter(
+            is_deleted=False, date__year=year, date__month=m,
+            category__in=[ExpenseCategory.SUPPLIES, ExpenseCategory.DRUGS]
+        ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        total_exp = Expense.objects.filter(
+            is_deleted=False, date__year=year, date__month=m
+        ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        gross   = revenue - cogs
+        net     = revenue - total_exp
+        gp_pct  = round(float(gross) / float(revenue) * 100, 1) if revenue > 0 else 0
+        np_pct  = round(float(net)   / float(revenue) * 100, 1) if revenue > 0 else 0
+        months.append({
+            'month': calendar.month_abbr[m],
+            'revenue': revenue, 'cogs': cogs, 'gross_profit': gross, 'gp_pct': gp_pct,
+            'expenses': total_exp, 'net_profit': net, 'np_pct': np_pct,
+        })
+
+    total_revenue = sum(r['revenue']  for r in months)
+    total_cogs    = sum(r['cogs']     for r in months)
+    total_gross   = total_revenue - total_cogs
+    total_exp     = sum(r['expenses'] for r in months)
+    total_net     = total_revenue - total_exp
+    total_gp_pct  = round(float(total_gross) / float(total_revenue) * 100, 1) if total_revenue > 0 else 0
+    total_np_pct  = round(float(total_net)   / float(total_revenue) * 100, 1) if total_revenue > 0 else 0
+
+    return render(request, 'billing/reports/gross_net_profit.html', {
+        'months': months, 'year': year, 'year_range': year_range,
+        'total_revenue': total_revenue, 'total_cogs': total_cogs,
+        'total_gross': total_gross, 'total_gp_pct': total_gp_pct,
+        'total_exp': total_exp, 'total_net': total_net, 'total_np_pct': total_np_pct,
+    })
+
+
+@login_required
+def profitability_analysis(request):
+    """Per-customer profitability: CUSTOMER, SUBTOTAL, DISCOUNT, REVENUE, % OF TOTAL."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    today = _date.today()
+    date_from_str = request.GET.get('date_from', today.replace(day=1).isoformat())
+    date_to_str   = request.GET.get('date_to',   today.isoformat())
+    try:
+        df = _date.fromisoformat(date_from_str)
+        dt = _date.fromisoformat(date_to_str)
+    except ValueError:
+        df = today.replace(day=1); dt = today
+
+    qs = Invoice.objects.filter(
+        is_deleted=False, issue_date__range=[df, dt]
+    ).exclude(status__in=['VOID', 'DRAFT']).select_related('patient')
+
+    patient_map = {}
+    for inv in qs:
+        pid = inv.patient_id
+        if pid not in patient_map:
+            patient_map[pid] = {
+                'name': inv.patient.full_name,
+                'patient_id': inv.patient.patient_id,
+                'subtotal': Decimal('0'),
+                'discount': Decimal('0'),
+                'revenue': Decimal('0'),
+            }
+        patient_map[pid]['subtotal']  += inv.total or Decimal('0')
+        patient_map[pid]['discount']  += inv.discount_amount or Decimal('0')
+        patient_map[pid]['revenue']   += inv.amount_paid or Decimal('0')
+
+    rows = sorted(patient_map.values(), key=lambda x: x['revenue'], reverse=True)
+    grand_revenue = sum(r['revenue'] for r in rows)
+    for r in rows:
+        r['pct'] = round(float(r['revenue']) / float(grand_revenue) * 100, 1) if grand_revenue > 0 else 0
+
+    fmt = request.GET.get('format', '')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'Profitability Analysis — {date_from_str} to {date_to_str}')
+        data_rows = [['Customer', 'Patient ID', 'Subtotal (XAF)', 'Discount (XAF)', 'Revenue (XAF)', '% of Total']]
+        for r in rows:
+            data_rows.append([r['name'], r['patient_id'], float(r['subtotal']), float(r['discount']), float(r['revenue']), r['pct']])
+        if fmt == 'csv':
+            return _csv_response(f'profitability_{date_from_str}_{date_to_str}.csv', hdr, data_rows)
+        return _excel_response(f'profitability_{date_from_str}_{date_to_str}.xlsx', hdr, data_rows, sheet_name='Profitability')
+
+    return render(request, 'billing/reports/profitability_analysis.html', {
+        'rows': rows, 'grand_revenue': grand_revenue,
+        'date_from': df, 'date_to': dt,
+        'date_from_str': date_from_str, 'date_to_str': date_to_str,
+    })
+
+
+@login_required
+def ar_summary_report(request):
+    """AR Summary per customer: CUSTOMER, OUTSTANDING, CURRENT, 1-30, 31-60, 61-90, 91+."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    today = _date.today()
+
+    unpaid = Invoice.objects.filter(
+        is_deleted=False, status__in=['UNPAID', 'PARTIAL']
+    ).select_related('patient')
+
+    patient_map = {}
+    for inv in unpaid:
+        balance = (inv.total or Decimal('0')) - (inv.amount_paid or Decimal('0'))
+        if balance <= 0:
+            continue
+        pid = inv.patient_id
+        if pid not in patient_map:
+            patient_map[pid] = {
+                'name': inv.patient.full_name,
+                'patient_id': inv.patient.patient_id,
+                'outstanding': Decimal('0'),
+                'current': Decimal('0'),
+                'd30': Decimal('0'),
+                'd60': Decimal('0'),
+                'd90': Decimal('0'),
+                'd91': Decimal('0'),
+            }
+        patient_map[pid]['outstanding'] += balance
+        age = (today - inv.issue_date).days
+        if   age <= 30:  patient_map[pid]['current'] += balance
+        elif age <= 60:  patient_map[pid]['d30']     += balance
+        elif age <= 90:  patient_map[pid]['d60']     += balance
+        elif age <= 120: patient_map[pid]['d90']     += balance
+        else:            patient_map[pid]['d91']     += balance
+
+    rows = sorted(patient_map.values(), key=lambda x: x['outstanding'], reverse=True)
+    grand = {k: sum(r[k] for r in rows) for k in ('outstanding', 'current', 'd30', 'd60', 'd90', 'd91')}
+
+    fmt = request.GET.get('format', '')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'AR Summary — As of {today}')
+        data_rows = [['Customer', 'Patient ID', 'Outstanding (XAF)', 'Current (0-30)', '31-60', '61-90', '91-120', '121+']]
+        for r in rows:
+            data_rows.append([r['name'], r['patient_id'], float(r['outstanding']), float(r['current']), float(r['d30']), float(r['d60']), float(r['d90']), float(r['d91'])])
+        if fmt == 'csv':
+            return _csv_response(f'ar_summary_{today}.csv', hdr, data_rows)
+        return _excel_response(f'ar_summary_{today}.xlsx', hdr, data_rows, sheet_name='AR Summary')
+
+    return render(request, 'billing/ar_summary.html', {
+        'rows': rows, 'grand': grand, 'today': today,
+    })
+
+
+@login_required
+def supplier_ledger_summary(request):
+    """Supplier Ledger Summary: SUPPLIER, OPENING BALANCE, TOTAL DEBITS, TOTAL CREDITS, CLOSING BALANCE."""
+    if not _can_view_financial_reports(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:dashboard')
+    from datetime import date as _date
+    from .models import APVendor, APPayment
+    today = _date.today()
+    date_from_str = request.GET.get('date_from', today.replace(day=1).isoformat())
+    date_to_str   = request.GET.get('date_to',   today.isoformat())
+    try:
+        df = _date.fromisoformat(date_from_str)
+        dt = _date.fromisoformat(date_to_str)
+    except ValueError:
+        df = today.replace(day=1); dt = today
+
+    vendors = APVendor.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    rows = []
+    grand_debits = grand_credits = grand_closing = Decimal('0')
+
+    for v in vendors:
+        bills_before = v.bills.filter(is_deleted=False, bill_date__lt=df).aggregate(t=Sum('amount_due'))['t'] or Decimal('0')
+        paid_before  = APPayment.objects.filter(bill__vendor=v, is_deleted=False, payment_date__lt=df).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        opening  = max(bills_before - paid_before, Decimal('0'))
+        debits   = v.bills.filter(is_deleted=False, bill_date__range=[df, dt]).aggregate(t=Sum('amount_due'))['t'] or Decimal('0')
+        credits  = APPayment.objects.filter(bill__vendor=v, is_deleted=False, payment_date__range=[df, dt]).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        closing  = opening + debits - credits
+        if opening == 0 and debits == 0 and credits == 0:
+            continue
+        rows.append({'vendor': v.name, 'vendor_code': v.vendor_code, 'opening': opening, 'debits': debits, 'credits': credits, 'closing': closing})
+        grand_debits  += debits
+        grand_credits += credits
+        grand_closing += closing
+
+    fmt = request.GET.get('format', '')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'Supplier Ledger Summary — {date_from_str} to {date_to_str}')
+        data_rows = [['Supplier', 'Code', 'Opening Balance (XAF)', 'Total Debits (XAF)', 'Total Credits (XAF)', 'Closing Balance (XAF)']]
+        for r in rows:
+            data_rows.append([r['vendor'], r['vendor_code'], float(r['opening']), float(r['debits']), float(r['credits']), float(r['closing'])])
+        if fmt == 'csv':
+            return _csv_response(f'supplier_ledger_{date_from_str}_{date_to_str}.csv', hdr, data_rows)
+        return _excel_response(f'supplier_ledger_{date_from_str}_{date_to_str}.xlsx', hdr, data_rows, sheet_name='Supplier Ledger')
+
+    return render(request, 'billing/supplier_ledger_summary.html', {
+        'rows': rows, 'grand_debits': grand_debits, 'grand_credits': grand_credits, 'grand_closing': grand_closing,
+        'date_from': df, 'date_to': dt, 'date_from_str': date_from_str, 'date_to_str': date_to_str,
+    })
+
+
+@login_required
 def cash_desk_balance_ajax(request):
     """AJAX: return current session cash balance for a desk."""
     desk_id = request.GET.get('desk_id')

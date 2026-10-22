@@ -186,6 +186,11 @@ urlpatterns = [
     path('gl/voucher-balance/', views.voucher_wise_balance, name='voucher_wise_balance'),
     path('reports/ap-aging/', views.ap_aging_report, name='ap_aging'),
     path('reports/customer-ledger/', views.customer_ledger_summary, name='customer_ledger_summary'),
+    path('reports/gross-profit/', views.gross_profit_report, name='gross_profit'),
+    path('reports/gross-net-profit/', views.gross_net_profit_report, name='gross_net_profit'),
+    path('reports/profitability/', views.profitability_analysis, name='profitability_analysis'),
+    path('reports/ar-summary/', views.ar_summary_report, name='ar_summary'),
+    path('reports/supplier-ledger/', views.supplier_ledger_summary, name='supplier_ledger_summary'),
 
     # Accounts Payable
     path('ap/vendors/', views.ap_vendor_list, name='ap_vendor_list'),

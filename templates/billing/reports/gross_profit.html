@@ -1,0 +1,115 @@
+{% extends "layouts/base_authenticated.html" %}
+{% load humanize %}
+{% block title %}Gross Profit Report{% endblock %}
+
+{% block extra_css %}
+<style>
+.rpt-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; font-weight:600; }
+.rpt-table td { font-size:.83rem; vertical-align:middle; }
+@media print {
+  .no-print { display:none !important; }
+  @page { size: A4 portrait; margin: 10mm 8mm 18mm 8mm; }
+  body { font-size:8pt !important; }
+  .print-footer { display:block !important; }
+}
+.print-footer { display:none; position:fixed; bottom:0; left:0; right:0; padding:2mm 10mm;
+  font-size:7.5pt; color:#666; border-top:1px solid #ccc; background:#fff; text-align:center; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{% url 'billing:reports_index' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <span class="fw-bold fs-6">Gross Profit</span>
+    <span class="text-muted small ms-2">Monthly Revenue vs Cost of Goods Sold — {{ year }}</span>
+  </div>
+  {% include 'components/finance_export.html' with pdf_url="javascript:window.print()" %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'components/letterhead.html' %}
+
+<form method="get" class="row g-2 mb-4 align-items-end no-print">
+  <div class="col-auto">
+    <label class="form-label small fw-semibold mb-1">Year</label>
+    <select name="year" class="form-select form-select-sm" onchange="this.form.submit()">
+      {% for y in year_range %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+  </div>
+</form>
+
+<!-- KPI Summary -->
+<div class="row g-2 mb-4 no-print">
+  <div class="col-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted">Total Revenue</div>
+      <div class="fw-bold fs-5 text-primary font-monospace">{{ total_revenue|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">XAF</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted">Total COGS</div>
+      <div class="fw-bold fs-5 text-danger font-monospace">{{ total_cogs|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">XAF</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card border-0 shadow-sm text-center p-3">
+      <div class="small text-muted">Gross Profit</div>
+      <div class="fw-bold fs-5 {% if total_gross >= 0 %}text-success{% else %}text-danger{% endif %} font-monospace">{{ total_gross|floatformat:0|intcomma }}</div>
+      <div class="small text-muted">GP {{ total_gp_pct }}%</div>
+    </div>
+  </div>
+</div>
+
+<div style="border:1px solid #e9ecef; border-radius:8px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 rpt-table">
+      <thead>
+        <tr style="border-bottom:2px solid #e9ecef;">
+          <th>Month</th>
+          <th class="text-end">Revenue (XAF)</th>
+          <th class="text-end">COGS (XAF)</th>
+          <th class="text-end">Gross Profit (XAF)</th>
+          <th class="text-end">GP %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in months %}
+        <tr>
+          <td class="fw-semibold">{{ row.month }} {{ year }}</td>
+          <td class="text-end font-monospace">{{ row.revenue|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-danger">{{ row.cogs|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace fw-bold {% if row.gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">{{ row.gross_profit|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace {% if row.gp_pct >= 0 %}text-success{% else %}text-danger{% endif %}">{{ row.gp_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot style="background:#f8f9fa; border-top:2px solid #e9ecef;">
+        <tr class="fw-bold">
+          <td class="text-uppercase text-muted small">Annual Total</td>
+          <td class="text-end font-monospace text-primary">{{ total_revenue|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace text-danger">{{ total_cogs|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace {% if total_gross >= 0 %}text-success{% else %}text-danger{% endif %}">{{ total_gross|floatformat:0|intcomma }}</td>
+          <td class="text-end font-monospace {% if total_gp_pct >= 0 %}text-success{% else %}text-danger{% endif %}">{{ total_gp_pct }}%</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="print-footer">
+  {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
+  Gross Profit Report &nbsp;&bull;&nbsp; {{ year }} &nbsp;&bull;&nbsp;
+  Printed: <span id="gpPrintDate"></span>
+</div>
+<script>
+  (function(){var d=new Date(),s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+  var el=document.getElementById('gpPrintDate'); if(el)el.textContent=s;})();
+</script>
+{% endblock %}
