@@ -13,6 +13,16 @@
   .ai-result-card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; }
   .tab-nav .nav-link { font-size: .85rem; font-weight: 600; color: #64748b; }
   .tab-nav .nav-link.active { color: #0891b2; border-bottom: 2px solid #0891b2; }
+  /* Account autocomplete */
+  .acct-dropdown { border:1px solid #dee2e6; border-radius:6px; background:#fff; font-size:.8rem; }
+  .acct-dropdown .list-group-item { border-left:none; border-right:none; border-radius:0; padding:.35rem .6rem; }
+  .acct-dropdown .list-group-item:first-child { border-top:none; border-radius:6px 6px 0 0; }
+  .acct-dropdown .list-group-item:last-child { border-bottom:none; border-radius:0 0 6px 6px; }
+  .acct-dropdown .list-group-item.kbd-active { background:#e0f2fe; }
+  .acct-search-input.has-value { background-color:#f0fdf4; border-color:#86efac; }
+  .acct-search-input.no-value { border-color:#fca5a5; background-color:#fff1f2; }
+  /* Operation filter badge */
+  #opFilterBadge { display:none; font-size:.65rem; }
 </style>
 {% endblock %}
 {% block page_header %}
@@ -115,19 +125,22 @@
     </div>
     <div class="col-md-2">
       <label class="form-label fw-semibold">Journal Type</label>
-      <select name="journal_type" id="journalTypeSelect" class="form-select">
+      <select name="journal_type" id="journalTypeSelect" class="form-select" onchange="onJournalTypeChange(this)">
         <option value="">— Select —</option>
         {% for jt in journal_types %}
-        <option value="{{ jt.pk }}">{{ jt.code }} — {{ jt.name }}</option>
+        <option value="{{ jt.pk }}" data-code="{{ jt.code }}">{{ jt.code }} — {{ jt.name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-2">
-      <label class="form-label fw-semibold">Operation</label>
+      <label class="form-label fw-semibold d-flex align-items-center gap-1">
+        Operation
+        <span id="opFilterBadge" class="badge bg-info text-white">filtered</span>
+      </label>
       <select id="operationSelect" name="operation" class="form-select" onchange="onOperationChange(this)">
         <option value="">— Select —</option>
         {% for op in operations %}
-        <option value="{{ op.operation_code }}" data-cc="{{ op.cost_center_id|default:'' }}">
+        <option value="{{ op.operation_code }}" data-cc="{{ op.cost_center_id|default:'' }}" data-group="{{ op.group }}">
           {{ op.operation_code }}: {{ op.operation_name }}
         </option>
         {% endfor %}
@@ -154,11 +167,46 @@
 
   <script>
   var OP_CC_MAP = {{ op_cc_map_json|safe }};
-  var JOURNAL_TYPES = [
-    {% for jt in journal_types %}
-    {pk: '{{ jt.pk }}', code: '{{ jt.code|escapejs }}', name: '{{ jt.name|escapejs }}'},
-    {% endfor %}
-  ];
+
+  // ── Journal Type → Operation Group filtering ──────────────────────────────
+  // Maps standard OHADA journal type codes to the BillingOperationCC groups they allow.
+  // null = show all operations (general-purpose journal types).
+  const JT_GROUP_MAP = {
+    'CA': ['CASH'],
+    'BQ': ['BANK'],
+    'VE': ['REVENUE'],
+    'AC': ['EXPENSE'],
+    'ST': ['STOCK', 'INVENTORY'],
+    'SA': ['EXPENSE'],
+    'OD': null,
+    'AN': null,
+  };
+
+  function onJournalTypeChange(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const code = opt ? (opt.getAttribute('data-code') || '') : '';
+    filterOperationsByJT(code);
+  }
+
+  function filterOperationsByJT(jtCode) {
+    const allowed = JT_GROUP_MAP.hasOwnProperty(jtCode) ? JT_GROUP_MAP[jtCode] : null;
+    const opSel = document.getElementById('operationSelect');
+    const badge = document.getElementById('opFilterBadge');
+    let visibleCount = 0;
+    // Reset selection when journal type changes
+    opSel.value = '';
+    for (let i = 1; i < opSel.options.length; i++) {
+      const opt = opSel.options[i];
+      const grp = opt.getAttribute('data-group') || '';
+      const show = !jtCode || allowed === null || (allowed && allowed.includes(grp));
+      opt.hidden = !show;
+      opt.disabled = !show;
+      if (show) visibleCount++;
+    }
+    badge.style.display = (jtCode && allowed !== null) ? 'inline' : 'none';
+    badge.textContent = `${visibleCount} ops`;
+  }
+
   function onOperationChange(sel) {
     var opCode = sel.value;
     if (!opCode) return;
@@ -241,24 +289,81 @@ function switchTab(tab) {
   document.getElementById('tab-ai-btn').classList.toggle('active', tab === 'ai');
 }
 
-// ── Manual form helpers ─────────────────────────────────────
-function buildSelect(name, selectedId) {
-  let html = `<select name="${name}" class="form-select form-select-sm" onchange="recalc()" required>
-    <option value="">— Account —</option>`;
-  accounts.forEach(a => {
-    html += `<option value="${a.id}" ${a.id === selectedId ? 'selected' : ''}>${a.code} — ${a.name}</option>`;
-  });
-  html += '</select>';
-  return html;
+// ── Account autocomplete ────────────────────────────────────
+function buildAccountInput(selectedId) {
+  const a = accounts.find(x => x.id === String(selectedId)) || null;
+  const displayVal = a ? `${a.code} — ${a.name}` : '';
+  return `<div class="acct-search-wrap position-relative">
+    <input type="text" class="form-control form-control-sm acct-search-input${a ? ' has-value' : ''}"
+           value="${displayVal.replace(/"/g,'&quot;')}" placeholder="Type code or name…" autocomplete="off"
+           oninput="acctInput(this)" onfocus="acctFocus(this)" onblur="acctBlur(this)"
+           onkeydown="acctKeydown(event, this)">
+    <input type="hidden" name="account_id[]" class="acct-id" value="${selectedId||''}">
+    <div class="acct-dropdown list-group shadow position-absolute w-100" style="display:none;z-index:9999;max-height:230px;overflow-y:auto;top:100%;left:0;"></div>
+  </div>`;
 }
 
+function acctInput(inp) {
+  const q = inp.value.trim().toLowerCase();
+  const wrap = inp.closest('.acct-search-wrap');
+  wrap.querySelector('.acct-id').value = '';
+  inp.classList.remove('has-value'); inp.classList.add('no-value');
+  const dd = wrap.querySelector('.acct-dropdown');
+  if (q.length < 1) { dd.style.display = 'none'; return; }
+  const hits = accounts.filter(a => a.code.toLowerCase().startsWith(q) || a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)).slice(0, 12);
+  if (!hits.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = hits.map((a,i) =>
+    `<button type="button" class="list-group-item list-group-item-action py-1 px-2${i===0?' kbd-active':''}"
+      onmousedown="acctSelect(this,'${a.id}','${a.code}','${a.name.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+      <span class="badge bg-secondary me-1" style="font-size:.62rem;">${a.code}</span>${a.name}
+    </button>`).join('');
+  dd.style.display = 'block';
+}
+
+function acctFocus(inp) {
+  if (inp.value.trim().length >= 1) acctInput(inp);
+}
+
+function acctBlur(inp) {
+  setTimeout(() => {
+    const wrap = inp.closest('.acct-search-wrap');
+    if (wrap) wrap.querySelector('.acct-dropdown').style.display = 'none';
+    // If input is non-empty but no hidden id, mark invalid
+    const id = wrap ? wrap.querySelector('.acct-id').value : '';
+    if (inp.value.trim() && !id) { inp.classList.add('no-value'); inp.classList.remove('has-value'); }
+  }, 200);
+}
+
+function acctKeydown(e, inp) {
+  const dd = inp.closest('.acct-search-wrap').querySelector('.acct-dropdown');
+  if (dd.style.display === 'none') return;
+  const items = [...dd.querySelectorAll('.list-group-item')];
+  const active = dd.querySelector('.kbd-active');
+  const idx = items.indexOf(active);
+  if (e.key === 'ArrowDown') { e.preventDefault(); const n=items[(idx+1)%items.length]; items.forEach(x=>x.classList.remove('kbd-active')); n.classList.add('kbd-active'); n.scrollIntoView({block:'nearest'}); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); const n=items[(idx-1+items.length)%items.length]; items.forEach(x=>x.classList.remove('kbd-active')); n.classList.add('kbd-active'); n.scrollIntoView({block:'nearest'}); }
+  else if (e.key === 'Enter' && active) { e.preventDefault(); active.dispatchEvent(new MouseEvent('mousedown')); }
+  else if (e.key === 'Escape') { dd.style.display='none'; }
+}
+
+function acctSelect(btn, id, code, name) {
+  const wrap = btn.closest('.acct-search-wrap');
+  wrap.querySelector('.acct-search-input').value = `${code} — ${name}`;
+  wrap.querySelector('.acct-search-input').classList.remove('no-value');
+  wrap.querySelector('.acct-search-input').classList.add('has-value');
+  wrap.querySelector('.acct-id').value = id;
+  wrap.querySelector('.acct-dropdown').style.display = 'none';
+  recalc();
+}
+
+// ── Manual form helpers ─────────────────────────────────────
 function addLine(acctId, dr, cr, desc) {
   const body = document.getElementById('linesBody');
   const row = document.createElement('tr');
   row.className = 'line-row';
   row.innerHTML = `
-    <td>${buildSelect('account_id[]', acctId||'')}</td>
-    <td><input type="text" name="line_desc[]" class="form-control form-control-sm" value="${desc||''}" placeholder="Description"></td>
+    <td>${buildAccountInput(acctId||'')}</td>
+    <td><input type="text" name="line_desc[]" class="form-control form-control-sm" value="${(desc||'').replace(/"/g,'&quot;')}" placeholder="Description"></td>
     <td><input type="number" name="debit[]" class="form-control form-control-sm amount-input" value="${dr||''}" min="0" step="1" placeholder="0" oninput="recalc()"></td>
     <td><input type="number" name="credit[]" class="form-control form-control-sm amount-input" value="${cr||''}" min="0" step="1" placeholder="0" oninput="recalc()"></td>
     <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); recalc()"><i class="bi bi-trash"></i></button></td>`;
