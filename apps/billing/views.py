@@ -7204,6 +7204,80 @@ def billing_operation_create(request):
 
 
 @login_required
+def billing_operation_detail(request, op_id):
+    """Full detail page: edit operation + GL account analysis + linked entry/exit types."""
+    from .models import BillingOperationCC, StockOperationType
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    op = get_object_or_404(BillingOperationCC, pk=op_id, is_deleted=False)
+
+    if request.method == 'POST':
+        op.operation_name = request.POST.get('operation_name', op.operation_name).strip()
+        op.group = request.POST.get('group', op.group)
+        op.category_key = request.POST.get('category_key', op.category_key or '').strip()
+        op.cost_center_id = request.POST.get('cost_center') or None
+        op.default_debit_account_id = request.POST.get('default_debit_account') or None
+        op.default_credit_account_id = request.POST.get('default_credit_account') or None
+        op.sort_order = int(request.POST.get('sort_order', op.sort_order) or 0)
+        op.save(update_fields=['operation_name', 'group', 'category_key', 'cost_center',
+                               'default_debit_account', 'default_credit_account',
+                               'sort_order', 'updated_at'])
+        messages.success(request, f'Operation {op.operation_code} updated.')
+        return redirect('billing:billing_operation_detail', op_id=op.pk)
+
+    # Linked entry/exit types
+    linked_types = StockOperationType.objects.filter(
+        billing_operation=op, is_deleted=False
+    ).select_related('debit_account', 'credit_account').order_by('category', 'code')
+
+    # GL account analysis helper
+    CLASS_LABELS = {
+        '1': 'Class 1 — Capital (no CC)',
+        '2': 'Class 2 — Fixed Assets (no CC)',
+        '3': 'Class 3 — Stock (no CC)',
+        '4': 'Class 4 — Tiers / Payable (no CC)',
+        '5': 'Class 5 — Treasury (no CC)',
+        '6': 'Class 6 — Charges → CC assigned',
+        '7': 'Class 7 — Revenue → CC assigned',
+    }
+
+    def analyze(acct):
+        if not acct:
+            return None
+        cls = str(acct.code)[:1]
+        gets_cc = cls in ('6', '7')
+        return {
+            'account': acct,
+            'cls': cls,
+            'gets_cc': gets_cc,
+            'label': CLASS_LABELS.get(cls, f'Class {cls}'),
+            'assigned_cc': op.cost_center if gets_cc else None,
+        }
+
+    # Build analysis for each unique account pair across linked types
+    type_analyses = []
+    for t in linked_types:
+        type_analyses.append({
+            'type': t,
+            'dr': analyze(t.debit_account),
+            'cr': analyze(t.credit_account),
+        })
+
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    return render(request, 'billing/billing_operation_detail.html', {
+        'op': op,
+        'dr': analyze(op.default_debit_account),
+        'cr': analyze(op.default_credit_account),
+        'linked_types': linked_types,
+        'type_analyses': type_analyses,
+        'cost_centers': cost_centers,
+        'accounts': accounts,
+        'groups': BillingOperationCC.Group.choices,
+    })
+
+
+@login_required
 def billing_operation_edit(request, op_id):
     from .models import BillingOperationCC
     if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):

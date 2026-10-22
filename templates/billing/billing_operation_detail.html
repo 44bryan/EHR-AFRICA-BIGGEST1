@@ -1,0 +1,286 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}Operation {{ op.operation_code }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0 fw-bold">
+      <i class="bi bi-diagram-3 me-2"></i>
+      Operation {{ op.operation_code }} — {{ op.operation_name }}
+    </h5>
+    <div class="d-flex gap-2">
+      <a href="{% url 'billing:billing_operation_list' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>All Operations
+      </a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible py-2 mb-3">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="row g-3">
+
+    {# ── LEFT: Edit Form ── #}
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom py-2">
+          <span class="fw-semibold small"><i class="bi bi-pencil-square me-1"></i>Edit Operation</span>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Operation Code</label>
+              <input type="text" class="form-control form-control-sm bg-light" value="{{ op.operation_code }}" readonly>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Name <span class="text-danger">*</span></label>
+              <input type="text" name="operation_name" class="form-control form-control-sm"
+                     value="{{ op.operation_name }}" required>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-7">
+                <label class="form-label small fw-semibold">Group <span class="text-danger">*</span></label>
+                <select name="group" class="form-select form-select-sm">
+                  {% for val, label in groups %}
+                    <option value="{{ val }}" {% if op.group == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold">Sort Order</label>
+                <input type="number" name="sort_order" class="form-control form-control-sm"
+                       value="{{ op.sort_order }}" min="0">
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">
+                Cost Center
+                <span class="badge bg-warning text-dark ms-1">Class 6 &amp; 7 lines only</span>
+              </label>
+              <select name="cost_center" class="form-select form-select-sm">
+                <option value="">— Unassigned —</option>
+                {% for cc in cost_centers %}
+                  <option value="{{ cc.pk }}" {% if op.cost_center_id == cc.pk %}selected{% endif %}>
+                    {{ cc.code }} — {{ cc.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Only expense (Class 6) and revenue (Class 7) lines get this CC. Stock/cash lines are always Unassigned.</div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-12">
+                <label class="form-label small fw-semibold">Default Debit Account (Dr)</label>
+                <select name="default_debit_account" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for a in accounts %}
+                    <option value="{{ a.pk }}" {% if op.default_debit_account_id == a.pk %}selected{% endif %}>
+                      {{ a.code }} — {{ a.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-semibold">Default Credit Account (Cr)</label>
+                <select name="default_credit_account" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for a in accounts %}
+                    <option value="{{ a.pk }}" {% if op.default_credit_account_id == a.pk %}selected{% endif %}>
+                      {{ a.code }} — {{ a.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Category Key</label>
+              <input type="text" name="category_key" class="form-control form-control-sm"
+                     value="{{ op.category_key|default:'' }}" placeholder="e.g. OPTICAL_SALE">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-check-lg me-1"></i>Save Changes
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {# ── RIGHT: GL Analysis ── #}
+    <div class="col-lg-7">
+
+      {# Default account analysis #}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom py-2">
+          <span class="fw-semibold small"><i class="bi bi-diagram-2 me-1"></i>GL Journal Line Analysis — Default Accounts</span>
+        </div>
+        <div class="card-body p-0">
+          {% if dr or cr %}
+          <table class="table table-sm mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>Side</th>
+                <th>Account</th>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Cost Center</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if dr %}
+              <tr>
+                <td><span class="badge bg-danger">DR</span></td>
+                <td class="fw-semibold">{{ dr.account.code }}</td>
+                <td>{{ dr.account.name }}</td>
+                <td>
+                  <span class="badge {% if dr.gets_cc %}bg-success{% else %}bg-secondary{% endif %}">
+                    Class {{ dr.cls }}
+                  </span>
+                </td>
+                <td>
+                  {% if dr.gets_cc %}
+                    {% if dr.assigned_cc %}
+                      <span class="badge bg-success">{{ dr.assigned_cc.code }} — {{ dr.assigned_cc.name }}</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">Class 6/7 but no CC set!</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-muted fst-italic">Unassigned ({{ dr.label }})</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endif %}
+              {% if cr %}
+              <tr>
+                <td><span class="badge bg-success">CR</span></td>
+                <td class="fw-semibold">{{ cr.account.code }}</td>
+                <td>{{ cr.account.name }}</td>
+                <td>
+                  <span class="badge {% if cr.gets_cc %}bg-success{% else %}bg-secondary{% endif %}">
+                    Class {{ cr.cls }}
+                  </span>
+                </td>
+                <td>
+                  {% if cr.gets_cc %}
+                    {% if cr.assigned_cc %}
+                      <span class="badge bg-success">{{ cr.assigned_cc.code }} — {{ cr.assigned_cc.name }}</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">Class 6/7 but no CC set!</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-muted fst-italic">Unassigned ({{ cr.label }})</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="text-muted small p-3">No default accounts set for this operation.</div>
+          {% endif %}
+        </div>
+        <div class="card-footer bg-light py-1 small text-muted">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>OHADA rule:</strong> Class 3 (Stock), 4 (Tiers), 5 (Treasury) → always <strong>Unassigned</strong>.
+          Class 6 (Charges) and 7 (Revenue) → get the cost center above.
+        </div>
+      </div>
+
+      {# Linked entry/exit types #}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-arrow-left-right me-1"></i>Linked Entry / Exit Types ({{ linked_types|length }})</span>
+          <a href="{% url 'billing:stock_operation_type_create' %}" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size:.75rem;">
+            <i class="bi bi-plus me-1"></i>New Type
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if type_analyses %}
+          <table class="table table-sm mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Cat</th>
+                <th>Stores</th>
+                <th>Dr Account → CC</th>
+                <th>Cr Account → CC</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in type_analyses %}
+              <tr>
+                <td class="fw-semibold">{{ row.type.code }}</td>
+                <td>{{ row.type.name|truncatechars:30 }}</td>
+                <td>
+                  {% if row.type.category == 'ENTRY' %}
+                    <span class="badge bg-success">IN</span>
+                  {% else %}
+                    <span class="badge bg-danger">OUT</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted" style="font-size:.7rem;">{{ row.type.location_types|default:"ALL" }}</td>
+                <td style="font-size:.72rem;">
+                  {% if row.dr %}
+                    <strong>{{ row.dr.account.code }}</strong>
+                    {% if row.dr.gets_cc %}
+                      <span class="text-success">→ CC:{% if row.dr.assigned_cc %}{{ row.dr.assigned_cc.code }}{% else %}?{% endif %}</span>
+                    {% else %}
+                      <span class="text-muted">→ Unassigned</span>
+                    {% endif %}
+                  {% else %}<span class="text-danger">Missing</span>{% endif %}
+                </td>
+                <td style="font-size:.72rem;">
+                  {% if row.cr %}
+                    <strong>{{ row.cr.account.code }}</strong>
+                    {% if row.cr.gets_cc %}
+                      <span class="text-success">→ CC:{% if row.cr.assigned_cc %}{{ row.cr.assigned_cc.code }}{% else %}?{% endif %}</span>
+                    {% else %}
+                      <span class="text-muted">→ Unassigned</span>
+                    {% endif %}
+                  {% else %}<span class="text-danger">Missing</span>{% endif %}
+                </td>
+                <td>
+                  <a href="{% url 'billing:stock_operation_type_edit' row.type.pk %}"
+                     class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:.72rem;">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="text-muted small p-3">
+            No entry/exit types are linked to this operation yet.
+            <a href="{% url 'billing:stock_operation_type_create' %}">Create one</a>.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>{# end right col #}
+  </div>{# end row #}
+
+  {# OHADA Reference #}
+  <div class="card border-0 shadow-sm mt-3">
+    <div class="card-body small text-muted py-2">
+      <strong>OHADA Analytical Accounting Rule:</strong>
+      When a journal entry is posted for this operation, each line's cost center is assigned based on the account class — NOT the operation directly.
+      Only <strong>Class 6 (Charges)</strong> and <strong>Class 7 (Produits)</strong> lines receive the cost center.
+      Class 3 (Stock), Class 4 (Tiers), Class 5 (Trésorerie) lines are always posted as <em>Unassigned</em>.
+      This is correct SYSCOHADA behaviour — analytical accounts only track income/expense, not balance sheet movements.
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -165,6 +165,8 @@ urlpatterns = [
     path('gl/journal-types/', views.journal_type_list, name='journal_type_list'),
     path('gl/journal-types/create/', views.journal_type_create, name='journal_type_create'),
     path('gl/journal-types/<uuid:jt_id>/edit/', views.journal_type_edit, name='journal_type_edit'),
+    # GL Setup Overview — single page showing full configuration chain
+    path('gl/setup-overview/', views.gl_setup_overview, name='gl_setup_overview'),
     # Item Category GL Routing (automatic account resolution — Finance Director sets once)
     path('gl/item-category-gl/', views.item_category_gl_list, name='item_category_gl_list'),
     path('gl/item-category-gl/<str:category>/edit/', views.item_category_gl_edit, name='item_category_gl_edit'),
@@ -172,6 +174,7 @@ urlpatterns = [
     # BillingOperationCC full CRUD
     path('gl/operations/', views.billing_operation_list, name='billing_operation_list'),
     path('gl/operations/create/', views.billing_operation_create, name='billing_operation_create'),
+    path('gl/operations/<uuid:op_id>/', views.billing_operation_detail, name='billing_operation_detail'),
     path('gl/operations/<uuid:op_id>/edit/', views.billing_operation_edit, name='billing_operation_edit'),
     # Stock Operation Types (exception/special operations only)
     path('gl/stock-operation-types/', views.stock_operation_type_list, name='stock_operation_type_list'),
