@@ -7367,6 +7367,21 @@ def cost_center_pl_report(request):
         grand_revenue += total_rev
         grand_expense += total_exp
 
+    fmt = request.GET.get('format', '')
+    if fmt in ('csv', 'excel'):
+        hdr = _hospital_header(f'P&L by Cost Center — {date_from} to {date_to}')
+        data_rows = [['Cost Center', 'Code', 'Revenue (XAF)', 'Expenses (XAF)', 'Net Result (XAF)', 'Margin %']]
+        for sec in cc_sections:
+            data_rows.append([sec['cc'].name, sec['cc'].code,
+                              float(sec['total_rev']), float(sec['total_exp']),
+                              float(sec['net_result']),
+                              round(float(sec['margin_pct']), 2)])
+        data_rows.append(['GRAND TOTAL', '', float(grand_revenue), float(grand_expense),
+                          float(grand_revenue - grand_expense),
+                          round(float((grand_revenue - grand_expense) / grand_revenue * 100) if grand_revenue else 0, 2)])
+        if fmt == 'csv':
+            return _csv_response(f'cost_center_pl_{date_from}_{date_to}.csv', hdr, data_rows)
+        return _excel_response(f'cost_center_pl_{date_from}_{date_to}.xlsx', hdr, data_rows, sheet_name='P&L by Cost Center')
     return render(request, 'billing/cost_center_pl_report.html', {
         'cc_sections':    cc_sections,
         'date_from':      date_from,
@@ -8387,11 +8402,11 @@ def auxiliary_balance(request):
         },
     ]
 
-    if request.GET.get('export') == 'csv':
+    if request.GET.get('export') == 'csv' or request.GET.get('format') == 'csv':
         import csv
         from django.http import HttpResponse
         resp = HttpResponse(content_type='text/csv; charset=utf-8-sig')
-        resp['Content-Disposition'] = f'attachment; filename="balance_auxiliaire_{as_of}.csv"'
+        resp['Content-Disposition'] = f'attachment; filename="auxiliary_balance_{as_of}.csv"'
         w = csv.writer(resp)
         for sec in sections:
             w.writerow([])
@@ -8403,6 +8418,15 @@ def auxiliary_balance(request):
             w.writerow(['', f'GL Balance ({sec["code"]}xxx)', '', '', sec['gl_bal']])
             w.writerow(['', 'Difference', '', '', sec['diff']])
         return resp
+    if request.GET.get('format') == 'excel':
+        hdr = _hospital_header(f'Auxiliary Balance — as of {as_of}')
+        data_rows = [['Section', 'Code', 'Ref/Code', 'Name', 'Billed/Col A', 'Paid/Col B', 'Balance']]
+        for sec in sections:
+            for row in sec['rows']:
+                data_rows.append([sec['name'], sec['code'], row['ref'], row['name'],
+                                  float(row['billed'] or 0), float(row['paid'] or 0), float(row['balance'] or 0)])
+            data_rows.append([f'SUBTOTAL — {sec["name"]}', '', '', '', '', '', float(sec['subtotal'] or 0)])
+        return _excel_response(f'auxiliary_balance_{as_of}.xlsx', hdr, data_rows, sheet_name='Auxiliary Balance')
 
     from apps.accounts.models import HospitalConfig
     return render(request, 'billing/auxiliary_balance.html', {
@@ -8450,11 +8474,11 @@ def voucher_wise_balance(request):
         grand_dr += dr
         grand_cr += cr
 
-    if request.GET.get('export') == 'csv':
+    if request.GET.get('export') == 'csv' or request.GET.get('format') == 'csv':
         import csv
         from django.http import HttpResponse as _HR
         resp = _HR(content_type='text/csv')
-        resp['Content-Disposition'] = 'attachment; filename="voucher_balance.csv"'
+        resp['Content-Disposition'] = f'attachment; filename="voucher_balance_{date_from_str}_{date_to_str}.csv"'
         w = csv.writer(resp)
         w.writerow(['Date', 'Voucher #', 'Type', 'Description', 'Total Debits', 'Total Credits', 'Balanced'])
         for r in rows:
@@ -8462,6 +8486,16 @@ def voucher_wise_balance(request):
                         r['entry'].journal_type.code if r['entry'].journal_type else '',
                         r['entry'].description, r['total_dr'], r['total_cr'], r['balanced']])
         return resp
+    if request.GET.get('format') == 'excel':
+        hdr = _hospital_header(f'Voucher-Wise Balance — {date_from_str} to {date_to_str}')
+        data_rows = [['Date', 'Voucher #', 'Type', 'Description', 'Total Debits (XAF)', 'Total Credits (XAF)', 'Balanced']]
+        for r in rows:
+            data_rows.append([str(r['entry'].entry_date), r['entry'].entry_number,
+                              r['entry'].journal_type.code if r['entry'].journal_type else '',
+                              r['entry'].description, float(r['total_dr']), float(r['total_cr']),
+                              'Yes' if r['balanced'] else 'No'])
+        data_rows.append(['GRAND TOTAL', '', '', '', float(grand_dr), float(grand_cr), ''])
+        return _excel_response(f'voucher_balance_{date_from_str}_{date_to_str}.xlsx', hdr, data_rows, sheet_name='Voucher Balance')
 
     return render(request, 'billing/voucher_wise_balance.html', {
         'rows': rows, 'grand_dr': grand_dr, 'grand_cr': grand_cr,

@@ -1,6 +1,6 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Balance par Pièce Comptable — Voucher-Wise Balance{% endblock %}
+{% block title %}Voucher-Wise Balance{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -25,10 +25,10 @@
     <a href="{% url 'billing:journal_entry_list' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <span class="fw-bold fs-6">Balance par Pièce Comptable</span>
-    <span class="text-muted small ms-2">Voucher-Wise Balance — {{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
+    <span class="fw-bold fs-6">Voucher-Wise Balance</span>
+    <span class="text-muted small ms-2">{{ date_from|date:"d M Y" }} — {{ date_to|date:"d M Y" }}</span>
   </div>
-  {% include 'components/finance_export.html' with csv_url="?export=csv" %}
+  {% include 'components/finance_export.html' with csv_url="?export=csv" excel_url="?format=excel" pdf_url="javascript:window.print()" %}
 </div>
 {% endblock %}
 
@@ -40,24 +40,24 @@
   <!-- ── Filters ── -->
   <form method="get" class="row g-2 mb-4 align-items-end no-print">
     <div class="col-sm-3">
-      <label class="form-label small fw-semibold mb-1">De</label>
+      <label class="form-label small fw-semibold mb-1">From</label>
       <input type="date" name="date_from" value="{{ date_from_str }}" class="form-control form-control-sm">
     </div>
     <div class="col-sm-3">
-      <label class="form-label small fw-semibold mb-1">À</label>
+      <label class="form-label small fw-semibold mb-1">To</label>
       <input type="date" name="date_to" value="{{ date_to_str }}" class="form-control form-control-sm">
     </div>
     <div class="col-sm-3">
-      <label class="form-label small fw-semibold mb-1">Type de Journal</label>
+      <label class="form-label small fw-semibold mb-1">Journal Type</label>
       <select name="journal_type" class="form-select form-select-sm">
-        <option value="">— Tous les Types —</option>
+        <option value="">— All Types —</option>
         {% for jt in journal_types %}
         <option value="{{ jt.id }}" {% if request.GET.journal_type == jt.id|stringformat:"s" %}selected{% endif %}>{{ jt.code }} — {{ jt.name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Appliquer</button>
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
     </div>
   </form>
 
@@ -67,7 +67,7 @@
     <div class="col-6 col-lg-3">
       <div class="card border-0 shadow-sm h-100 border-start border-3 border-primary">
         <div class="card-body py-2 px-3">
-          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Nb. de Pièces</div>
+          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">No. of Vouchers</div>
           <div class="fs-5 fw-bold text-primary font-monospace">{{ rows|length }}</div>
           <div class="small text-muted">Total vouchers</div>
         </div>
@@ -76,7 +76,7 @@
     <div class="col-6 col-lg-3">
       <div class="card border-0 shadow-sm h-100 border-start border-3 border-success">
         <div class="card-body py-2 px-3">
-          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Total Débits</div>
+          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Total Debits</div>
           <div class="fs-5 fw-bold text-success font-monospace">{{ grand_dr|floatformat:0|intcomma }}</div>
           <div class="small text-muted">XAF</div>
         </div>
@@ -85,7 +85,7 @@
     <div class="col-6 col-lg-3">
       <div class="card border-0 shadow-sm h-100 border-start border-3 border-danger">
         <div class="card-body py-2 px-3">
-          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Total Crédits</div>
+          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Total Credits</div>
           <div class="fs-5 fw-bold text-danger font-monospace">{{ grand_cr|floatformat:0|intcomma }}</div>
           <div class="small text-muted">XAF</div>
         </div>
@@ -95,17 +95,17 @@
       {% if grand_dr == grand_cr %}
       <div class="card border-0 shadow-sm h-100 border-start border-3 border-success">
         <div class="card-body py-2 px-3">
-          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Équilibre</div>
+          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Balance</div>
           <div class="fs-5 fw-bold text-success"><i class="bi bi-check-circle-fill"></i></div>
-          <div class="small text-muted">Toutes pièces équilibrées</div>
+          <div class="small text-muted">All vouchers balanced</div>
         </div>
       </div>
       {% else %}
       <div class="card border-0 shadow-sm h-100 border-start border-3 border-danger">
         <div class="card-body py-2 px-3">
-          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Différence</div>
+          <div class="small text-muted fw-semibold text-uppercase" style="font-size:.65rem;letter-spacing:.06em;">Difference</div>
           <div class="fs-5 fw-bold text-danger font-monospace">{{ grand_dr|add:grand_cr|floatformat:0|intcomma }}</div>
-          <div class="small text-danger">Hors équilibre</div>
+          <div class="small text-danger">Out of balance</div>
         </div>
       </div>
       {% endif %}
@@ -115,8 +115,8 @@
 
   <!-- ── Table ── -->
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span class="fw-semibold small"><i class="bi bi-journal-text me-2"></i>Détail des Pièces Comptables</span>
-    {% if rows %}<span class="badge bg-secondary">{{ rows|length }} pièce{{ rows|length|pluralize }}</span>{% endif %}
+    <span class="fw-semibold small"><i class="bi bi-journal-text me-2"></i>Voucher Details</span>
+    {% if rows %}<span class="badge bg-secondary">{{ rows|length }} voucher{{ rows|length|pluralize }}</span>{% endif %}
   </div>
   <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <div class="table-responsive">
@@ -124,12 +124,12 @@
         <thead>
           <tr>
             <th>Date</th>
-            <th>N° Pièce</th>
+            <th>Voucher No.</th>
             <th>Type</th>
-            <th>Libellé</th>
-            <th class="text-end">Débit (XAF)</th>
-            <th class="text-end">Crédit (XAF)</th>
-            <th class="text-center">Équilibre</th>
+            <th>Description</th>
+            <th class="text-end">Debit (XAF)</th>
+            <th class="text-end">Credit (XAF)</th>
+            <th class="text-center">Balanced</th>
           </tr>
         </thead>
         <tbody>
@@ -149,9 +149,9 @@
             <td class="text-end font-monospace fw-semibold text-danger">{{ row.total_cr|floatformat:0|intcomma }}</td>
             <td class="text-center">
               {% if row.balanced %}
-              <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Équilibré</span>
+              <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Balanced</span>
               {% else %}
-              <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Écart {{ row.diff|floatformat:0|intcomma }}</span>
+              <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Variance {{ row.diff|floatformat:0|intcomma }}</span>
               {% endif %}
             </td>
           </tr>
@@ -160,7 +160,7 @@
             <td colspan="7">
               <div class="rpt-empty">
                 <i class="bi bi-journal-text"></i>
-                Aucune pièce comptable trouvée pour la période sélectionnée.
+                No accounting vouchers found for the selected period.
               </div>
             </td>
           </tr>
@@ -169,14 +169,14 @@
         {% if rows %}
         <tfoot>
           <tr class="table-dark fw-bold">
-            <td colspan="4" class="text-end pe-3 small text-uppercase" style="letter-spacing:.06em;">Grand Total — {{ rows|length }} Pièce{{ rows|length|pluralize }}</td>
+            <td colspan="4" class="text-end pe-3 small text-uppercase" style="letter-spacing:.06em;">Grand Total — {{ rows|length }} Voucher{{ rows|length|pluralize }}</td>
             <td class="text-end"><span class="font-monospace">{{ grand_dr|floatformat:0|intcomma }}</span></td>
             <td class="text-end"><span class="font-monospace">{{ grand_cr|floatformat:0|intcomma }}</span></td>
             <td class="text-center">
               {% if grand_dr == grand_cr %}
-              <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Équilibré</span>
+              <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Balanced</span>
               {% else %}
-              <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Déséquilibré</span>
+              <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Unbalanced</span>
               {% endif %}
             </td>
           </tr>
@@ -190,8 +190,8 @@
 
 <div class="print-footer">
   {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Balance par Pièce Comptable (OHADA) &nbsp;&bull;&nbsp; {{ date_from|date:"d F Y" }} — {{ date_to|date:"d F Y" }} &nbsp;&bull;&nbsp;
-  Imprimé le : <span id="vwPrintDate"></span>
+  Voucher-Wise Balance (OHADA) &nbsp;&bull;&nbsp; {{ date_from|date:"d F Y" }} — {{ date_to|date:"d F Y" }} &nbsp;&bull;&nbsp;
+  Printed: <span id="vwPrintDate"></span>
 </div>
 <script>
   (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();

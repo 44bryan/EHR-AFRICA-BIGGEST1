@@ -1,6 +1,6 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize static %}
-{% block title %}Balance Auxiliaire — Comptes de Tiers{% endblock %}
+{% block title %}Auxiliary Balance — Third Party Accounts{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -24,12 +24,12 @@
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
     <a href="{% url 'billing:trial_balance' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
-      <i class="bi bi-arrow-left me-1"></i>Balance de Vérification
+      <i class="bi bi-arrow-left me-1"></i>Trial Balance
     </a>
-    <span class="fw-bold fs-6">Balance Auxiliaire</span>
-    <span class="text-muted small ms-2">Comptes de Tiers — Au {{ as_of }}</span>
+    <span class="fw-bold fs-6">Auxiliary Balance</span>
+    <span class="text-muted small ms-2">Third Party Accounts — As of {{ as_of }}</span>
   </div>
-  {% include 'components/finance_export.html' with csv_url="?export=csv" %}
+  {% include 'components/finance_export.html' with csv_url="?export=csv" excel_url="?format=excel" pdf_url="javascript:window.print()" %}
 </div>
 {% endblock %}
 
@@ -41,11 +41,11 @@
   <!-- ── Date filter ── -->
   <form method="get" class="row g-2 mb-4 align-items-end no-print">
     <div class="col-auto">
-      <label class="form-label fw-semibold small mb-1">Au</label>
+      <label class="form-label fw-semibold small mb-1">As at</label>
       <input type="date" name="as_of" class="form-control form-control-sm" value="{{ as_of }}" style="width:165px;">
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-calculator me-1"></i>Calculer</button>
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-calculator me-1"></i>Generate</button>
     </div>
   </form>
 
@@ -62,9 +62,9 @@
       </div>
       <div>
         {% if sec.balanced %}
-        <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Réconcilié</span>
+        <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Reconciled</span>
         {% else %}
-        <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Écart : {{ sec.diff|floatformat:0|intcomma }} XAF</span>
+        <span class="badge bg-danger"><i class="bi bi-x-circle-fill me-1"></i>Variance: {{ sec.diff|floatformat:0|intcomma }} XAF</span>
         {% endif %}
       </div>
     </div>
@@ -72,13 +72,13 @@
     <!-- Reconciliation banner -->
     <div class="alert {% if sec.balanced %}alert-success{% else %}alert-danger{% endif %} d-flex gap-3 flex-wrap py-2 mb-0 border-0 rounded-0">
       <div>
-        <span class="small">Solde subsidiaire :</span>
+        <span class="small">Subsidiary balance:</span>
         <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
           {{ sec.subtotal|floatformat:0|intcomma }} XAF {{ sec.side }}
         </strong>
       </div>
       <div>
-        <span class="small">Solde GL {{ sec.code }}xxx :</span>
+        <span class="small">GL Balance {{ sec.code }}xxx:</span>
         <strong class="ms-1 {% if sec.side == 'DR' %}text-danger{% else %}text-success{% endif %}">
           {{ sec.gl_bal|floatformat:0|intcomma }} XAF {{ sec.side }}
         </strong>
@@ -86,7 +86,7 @@
       {% if not sec.balanced %}
       <div class="fw-semibold small">
         <i class="bi bi-exclamation-triangle-fill me-1"></i>
-        Écart de {{ sec.diff|floatformat:0|intcomma }} XAF — erreur de saisie ou écriture non validée
+        Variance of {{ sec.diff|floatformat:0|intcomma }} XAF — posting error or unposted entry
       </div>
       {% endif %}
     </div>
@@ -97,12 +97,12 @@
         <table class="aux-table">
           <thead>
             <tr>
-              <th style="width:120px;">Réf. / Code</th>
-              <th>Nom / Tiers</th>
+              <th style="width:120px;">Ref. / Code</th>
+              <th>Name / Party</th>
               <th class="text-end" style="width:155px;">{{ sec.col_a }} (XAF)</th>
               <th class="text-end" style="width:155px;">{{ sec.col_b }} (XAF)</th>
               <th class="text-end" style="width:165px;">
-                Solde (XAF)
+                Balance (XAF)
                 <span class="badge bg-secondary ms-1 fw-normal" style="font-size:.6rem;">{{ sec.side }}</span>
               </th>
             </tr>
@@ -124,7 +124,7 @@
             {% empty %}
             <tr>
               <td colspan="5" class="text-center text-muted py-3">
-                <i class="bi bi-inbox me-1 opacity-50"></i>Aucun solde en cours pour ce compte
+                <i class="bi bi-inbox me-1 opacity-50"></i>No outstanding balance for this account
               </td>
             </tr>
             {% endfor %}
@@ -133,7 +133,7 @@
           <tfoot>
             <tr class="table-secondary fw-semibold">
               <td colspan="2" class="text-end pe-3 small text-uppercase" style="letter-spacing:.05em;">
-                Sous-total Subsidiaire ({{ sec.rows|length }} tiers)
+                Subsidiary Subtotal ({{ sec.rows|length }} part{{ sec.rows|length|pluralize }})
               </td>
               <td class="text-end font-monospace">{{ sec.subtotal|floatformat:0|intcomma }}</td>
               <td></td>
@@ -143,7 +143,7 @@
             </tr>
             <tr class="table-light">
               <td colspan="2" class="text-end pe-3 small text-muted">
-                Solde Grand Livre — {{ sec.code }}xxx
+                General Ledger Balance — {{ sec.code }}xxx
               </td>
               <td></td>
               <td></td>
@@ -154,9 +154,9 @@
             <tr class="{% if sec.balanced %}table-success{% else %}table-danger{% endif %} fw-bold">
               <td colspan="2" class="text-end pe-3 small fw-semibold">
                 {% if sec.balanced %}
-                <i class="bi bi-check-circle-fill text-success me-1"></i>Différence
+                <i class="bi bi-check-circle-fill text-success me-1"></i>Difference
                 {% else %}
-                <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>Différence
+                <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>Difference
                 {% endif %}
               </td>
               <td></td>
@@ -177,7 +177,7 @@
   <div class="card border-0 shadow-sm">
     <div class="card-body text-center py-5 text-muted">
       <i class="bi bi-inbox d-block fs-2 mb-2 opacity-25"></i>
-      Aucun compte de tiers avec des soldes pour la date sélectionnée.
+      No third party accounts with balances for the selected date.
     </div>
   </div>
   {% endfor %}
@@ -186,8 +186,8 @@
 
 <div class="print-footer">
   {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Balance Auxiliaire — Comptes de Tiers (OHADA) &nbsp;&bull;&nbsp; Au {{ as_of }} &nbsp;&bull;&nbsp;
-  Imprimé le : <span id="auxPrintDate"></span>
+  Auxiliary Balance — Third Party Accounts (OHADA) &nbsp;&bull;&nbsp; As of {{ as_of }} &nbsp;&bull;&nbsp;
+  Printed: <span id="auxPrintDate"></span>
 </div>
 <script>
   (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
