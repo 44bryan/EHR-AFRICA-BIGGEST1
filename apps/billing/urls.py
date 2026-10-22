@@ -169,6 +169,10 @@ urlpatterns = [
     path('gl/item-category-gl/', views.item_category_gl_list, name='item_category_gl_list'),
     path('gl/item-category-gl/<str:category>/edit/', views.item_category_gl_edit, name='item_category_gl_edit'),
     path('gl/operation-cc-mapping/', views.operation_cc_mapping, name='operation_cc_mapping'),
+    # BillingOperationCC full CRUD
+    path('gl/operations/', views.billing_operation_list, name='billing_operation_list'),
+    path('gl/operations/create/', views.billing_operation_create, name='billing_operation_create'),
+    path('gl/operations/<uuid:op_id>/edit/', views.billing_operation_edit, name='billing_operation_edit'),
     # Stock Operation Types (exception/special operations only)
     path('gl/stock-operation-types/', views.stock_operation_type_list, name='stock_operation_type_list'),
     path('gl/stock-operation-types/create/', views.stock_operation_type_create, name='stock_operation_type_create'),

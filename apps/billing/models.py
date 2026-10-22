@@ -3165,6 +3165,20 @@ class BillingOperationCC(AuditModel):
         null=True, blank=True,
         related_name='operation_mappings',
     )
+    default_debit_account = models.ForeignKey(
+        'GLAccount',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='operation_debits',
+        help_text='Default debit GL account for this operation (Class 6/7 line — gets cost center)',
+    )
+    default_credit_account = models.ForeignKey(
+        'GLAccount',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='operation_credits',
+        help_text='Default credit GL account for this operation (Class 6/7 line — gets cost center)',
+    )
     sort_order     = models.PositiveSmallIntegerField(default=0)
 
     class Meta:

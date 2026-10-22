@@ -1,0 +1,164 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% block title %}{{ action }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-diagram-3 me-2"></i>{{ action }}</h5>
+    <p class="page-subtitle text-muted small mb-0">OHADA — link operation code → GL accounts → cost center</p>
+  </div>
+  <a href="{% url 'billing:billing_operation_list' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Operations
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+
+          {# ── Code + Name ── #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Operation Code <span class="text-danger">*</span></label>
+              <input type="text" name="operation_code" class="form-control form-control-sm font-monospace fw-bold"
+                     value="{{ op.operation_code|default:'' }}" placeholder="e.g. 133, 122"
+                     {% if op %}readonly{% endif %} required maxlength="20">
+              <div class="form-text">Unique code — cannot be changed after creation.</div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Operation Name <span class="text-danger">*</span></label>
+              <input type="text" name="operation_name" class="form-control form-control-sm"
+                     value="{{ op.operation_name|default:'' }}"
+                     placeholder="e.g. Ventes Optique, Stock Entry Pharmacie" required maxlength="120">
+            </div>
+          </div>
+
+          {# ── Group + Category Key + Sort ── #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Group <span class="text-danger">*</span></label>
+              <select name="group" class="form-select form-select-sm" required>
+                {% for val, label in groups %}
+                <option value="{{ val }}" {% if op.group == val or not op and val == 'REVENUE' %}selected{% endif %}>
+                  {{ label }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category Key</label>
+              <input type="text" name="category_key" class="form-control form-control-sm font-monospace"
+                     value="{{ op.category_key|default:'' }}"
+                     placeholder="e.g. CONSULT, DRUGS, LENSES" maxlength="30">
+              <div class="form-text">Internal code used by GL auto-routing.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Sort Order</label>
+              <input type="number" name="sort_order" class="form-control form-control-sm"
+                     value="{{ op.sort_order|default:'0' }}" min="0" max="9999">
+            </div>
+          </div>
+
+          {# ── GL Accounts (Dr / Cr) ── #}
+          <div class="card bg-light border-0 rounded-2 p-3 mb-3">
+            <div class="fw-semibold small mb-2">
+              <i class="bi bi-journal-check me-1 text-primary"></i>Default GL Accounts
+              <span class="text-muted fw-normal ms-1">— used for journal entry auto-fill</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Debit Account (Dr)</label>
+                <select name="default_debit_account" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for a in accounts %}
+                  <option value="{{ a.pk }}" {% if op.default_debit_account_id == a.pk %}selected{% endif %}>
+                    {{ a.code }} — {{ a.name|truncatewords:6 }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Typically Class 6 (Charges) or Class 3 (Stock)</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Credit Account (Cr)</label>
+                <select name="default_credit_account" class="form-select form-select-sm">
+                  <option value="">— None —</option>
+                  {% for a in accounts %}
+                  <option value="{{ a.pk }}" {% if op.default_credit_account_id == a.pk %}selected{% endif %}>
+                    {{ a.code }} — {{ a.name|truncatewords:6 }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Typically Class 7 (Produits) or Class 4/5 (treasury — no CC)</div>
+              </div>
+            </div>
+          </div>
+
+          {# ── Cost Center ── #}
+          <div class="card bg-light border-0 rounded-2 p-3 mb-3">
+            <div class="fw-semibold small mb-2">
+              <i class="bi bi-building me-1 text-success"></i>Cost Center (Comptabilité Analytique)
+            </div>
+            <select name="cost_center" class="form-select form-select-sm">
+              <option value="">— Unassigned —</option>
+              {% for cc in cost_centers %}
+              <option value="{{ cc.pk }}" {% if op.cost_center_id == cc.pk %}selected{% endif %}>
+                {{ cc.code }} — {{ cc.name }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text mt-1">
+              <strong>OHADA rule:</strong> assign a cost center for Class 6 &amp; 7 accounts only.
+              Class 3 (Stock), Class 4 (Créances/Dettes), Class 5 (Trésorerie) → leave unassigned.
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm px-4">
+              <i class="bi bi-check-lg me-1"></i>{% if op %}Update{% else %}Create{% endif %}
+            </button>
+            <a href="{% url 'billing:billing_operation_list' %}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold small py-2">
+        <i class="bi bi-book me-1"></i>OHADA Account Class Guide
+      </div>
+      <div class="card-body small">
+        <table class="table table-sm table-borderless mb-0" style="font-size:.8rem;">
+          <thead class="table-light">
+            <tr><th>Class</th><th>Type</th><th>Cost Center?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>1xx</code></td><td>Capitaux (Equity/Debt)</td><td><span class="text-muted">No</span></td></tr>
+            <tr><td><code>2xx</code></td><td>Immobilisations (Assets)</td><td><span class="text-muted">No</span></td></tr>
+            <tr class="table-warning"><td><code>3xx</code></td><td>Stocks</td><td><span class="text-muted">Optional</span></td></tr>
+            <tr class="table-warning"><td><code>4xx</code></td><td>Créances &amp; Dettes</td><td><strong class="text-danger">NO</strong></td></tr>
+            <tr class="table-warning"><td><code>5xx</code></td><td>Trésorerie (Cash/Bank)</td><td><strong class="text-danger">NO</strong></td></tr>
+            <tr class="table-success"><td><code>6xx</code></td><td>Charges (Expenses)</td><td><strong class="text-success">YES ✓</strong></td></tr>
+            <tr class="table-success"><td><code>7xx</code></td><td>Produits (Revenue)</td><td><strong class="text-success">YES ✓</strong></td></tr>
+            <tr><td><code>8xx</code></td><td>Résultats spéciaux</td><td><span class="text-muted">Optional</span></td></tr>
+          </tbody>
+        </table>
+        <hr class="my-2">
+        <div class="text-muted">
+          <strong>Example — Ventes Lentilles:</strong><br>
+          Dr <code>411x</code> Client → <em>no cost center</em> (Class 4)<br>
+          Cr <code>701x</code> Revenue → <strong>CC-009</strong> (Class 7)<br>
+          Dr <code>603x</code> COGS → <strong>CC-009</strong> (Class 6)<br>
+          Cr <code>311x</code> Stock → <em>optional</em> (Class 3)
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

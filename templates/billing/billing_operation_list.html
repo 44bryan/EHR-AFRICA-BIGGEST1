@@ -1,0 +1,108 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Operations Management{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Operations Management</h5>
+    <p class="page-subtitle text-muted small mb-0">
+      Configure each operation: GL accounts (Dr/Cr), cost center, and group.
+      OHADA rule — Classes 6 &amp; 7 get cost center; Classes 3, 4, 5 do not.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'billing:billing_operation_create' %}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New Operation
+    </a>
+    <a href="{% url 'billing:operation_cc_mapping' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-sliders me-1"></i>Bulk CC Assignment
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="alert alert-info border-0 small py-2 mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>OHADA Standard:</strong>
+  Each operation defines the two main GL accounts (Dr / Cr) and which cost center to tag.
+  Cost centers apply only to <strong>Class 6 (Charges)</strong> and <strong>Class 7 (Produits)</strong>.
+  Class 3 (Stock), Class 4 (Créances/Dettes), Class 5 (Trésorerie) — <strong>no cost center</strong>.
+</div>
+
+{% for group_key, ops in grouped.items %}
+{% with meta=group_meta|default_if_none:"" %}
+<div class="card shadow-sm mb-4 border-0">
+  <div class="card-header d-flex align-items-center gap-2 py-2">
+    {% if group_key == 'CASH' %}<span class="badge bg-secondary">Cash Desk</span>
+    {% elif group_key == 'REVENUE' %}<span class="badge bg-success">Revenue Sales</span>
+    {% elif group_key == 'EXPENSE' %}<span class="badge bg-danger">Expense / Purchases</span>
+    {% elif group_key == 'STOCK' %}<span class="badge bg-warning text-dark">Stock Movements</span>
+    {% elif group_key == 'INVENTORY' %}<span class="badge bg-secondary">Inventory Count</span>
+    {% elif group_key == 'ASSET' %}<span class="badge bg-dark">Asset Operations</span>
+    {% elif group_key == 'BANK' %}<span class="badge bg-info text-dark">Bank Operations</span>
+    {% elif group_key == 'YEAR_END' %}<span class="badge bg-primary">Year-End &amp; Special</span>
+    {% else %}<span class="badge bg-secondary">{{ group_key }}</span>{% endif %}
+    <span class="text-muted small ms-2">{{ ops|length }} operation{{ ops|length|pluralize }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3" style="width:90px">Code</th>
+          <th>Operation Name</th>
+          <th style="width:100px">Dr Account</th>
+          <th style="width:100px">Cr Account</th>
+          <th style="width:160px">Cost Center</th>
+          <th style="width:100px">Category Key</th>
+          <th style="width:60px" class="text-center">Order</th>
+          <th style="width:70px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for op in ops %}
+        <tr>
+          <td class="ps-3"><code class="fw-bold" style="font-size:12px;">{{ op.operation_code }}</code></td>
+          <td class="fw-semibold">{{ op.operation_name }}</td>
+          <td class="small">
+            {% if op.default_debit_account %}
+              <span class="badge bg-success bg-opacity-75 font-monospace">{{ op.default_debit_account.code }}</span>
+              <div class="text-muted" style="font-size:.68rem;">{{ op.default_debit_account.name|truncatewords:4 }}</div>
+            {% else %}<span class="text-warning">—</span>{% endif %}
+          </td>
+          <td class="small">
+            {% if op.default_credit_account %}
+              <span class="badge bg-danger bg-opacity-75 font-monospace">{{ op.default_credit_account.code }}</span>
+              <div class="text-muted" style="font-size:.68rem;">{{ op.default_credit_account.name|truncatewords:4 }}</div>
+            {% else %}<span class="text-warning">—</span>{% endif %}
+          </td>
+          <td>
+            {% if op.cost_center %}
+              <span class="badge bg-primary bg-opacity-75">{{ op.cost_center.code }}</span>
+              <span class="text-muted small ms-1">{{ op.cost_center.name|truncatewords:3 }}</span>
+            {% else %}
+              <span class="text-muted small fst-italic">Unassigned</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small font-monospace">{{ op.category_key|default:"—" }}</td>
+          <td class="text-center text-muted small">{{ op.sort_order }}</td>
+          <td>
+            <a href="{% url 'billing:billing_operation_edit' op_id=op.pk %}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endwith %}
+{% empty %}
+<div class="alert alert-warning">No operations configured yet. <a href="{% url 'billing:billing_operation_create' %}">Create the first one.</a></div>
+{% endfor %}
+
+{% endblock %}

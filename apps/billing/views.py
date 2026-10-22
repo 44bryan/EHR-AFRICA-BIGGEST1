@@ -7106,6 +7106,94 @@ def item_category_gl_edit(request, category):
 # ── Operation → Cost Center Mapping (Configurable) ───────────────────────────
 
 @login_required
+def billing_operation_list(request):
+    """Full CRUD list for BillingOperationCC — Finance Director manages all operations."""
+    if not _can_access_gl(request.user):
+        return HttpResponseForbidden()
+    ops = BillingOperationCC.objects.filter(is_deleted=False).select_related(
+        'cost_center', 'default_debit_account', 'default_credit_account'
+    ).order_by('group', 'sort_order', 'operation_code')
+    GROUP_META = {
+        'CASH': ('Cash Desk', 'bg-secondary'),
+        'REVENUE': ('Revenue Sales', 'bg-success'),
+        'EXPENSE': ('Expense / Purchases', 'bg-danger'),
+        'STOCK': ('Stock Movements', 'bg-warning text-dark'),
+        'INVENTORY': ('Inventory Count', 'bg-purple'),
+        'ASSET': ('Asset Operations', 'bg-dark'),
+        'BANK': ('Bank Operations', 'bg-info text-dark'),
+        'YEAR_END': ('Year-End & Special', 'bg-primary'),
+    }
+    grouped = {}
+    for op in ops:
+        grouped.setdefault(op.group, []).append(op)
+    return render(request, 'billing/billing_operation_list.html', {
+        'grouped': grouped, 'group_meta': GROUP_META,
+    })
+
+
+@login_required
+def billing_operation_create(request):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    if request.method == 'POST':
+        code = request.POST.get('operation_code', '').strip().upper()
+        name = request.POST.get('operation_name', '').strip()
+        group = request.POST.get('group', 'REVENUE')
+        cat_key = request.POST.get('category_key', '').strip()
+        cc_id = request.POST.get('cost_center') or None
+        dr_id = request.POST.get('default_debit_account') or None
+        cr_id = request.POST.get('default_credit_account') or None
+        sort_order = int(request.POST.get('sort_order', 0) or 0)
+        if not code or not name:
+            messages.error(request, 'Code and name are required.')
+        elif BillingOperationCC.objects.filter(operation_code=code).exists():
+            messages.error(request, f'Operation code {code} already exists.')
+        else:
+            BillingOperationCC.objects.create(
+                operation_code=code, operation_name=name, group=group,
+                category_key=cat_key, cost_center_id=cc_id,
+                default_debit_account_id=dr_id, default_credit_account_id=cr_id,
+                sort_order=sort_order, created_by=request.user,
+            )
+            messages.success(request, f'Operation {code} — {name} created.')
+            return redirect('billing:billing_operation_list')
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    return render(request, 'billing/billing_operation_form.html', {
+        'action': 'Create Operation',
+        'groups': BillingOperationCC.Group.choices,
+        'cost_centers': cost_centers, 'accounts': accounts,
+    })
+
+
+@login_required
+def billing_operation_edit(request, op_id):
+    if request.user.role not in (UserRole.FINANCE_DIRECTOR, UserRole.SUPER_ADMIN):
+        return HttpResponseForbidden()
+    op = get_object_or_404(BillingOperationCC, pk=op_id, is_deleted=False)
+    if request.method == 'POST':
+        op.operation_name = request.POST.get('operation_name', op.operation_name).strip()
+        op.group = request.POST.get('group', op.group)
+        op.category_key = request.POST.get('category_key', op.category_key).strip()
+        op.cost_center_id = request.POST.get('cost_center') or None
+        op.default_debit_account_id = request.POST.get('default_debit_account') or None
+        op.default_credit_account_id = request.POST.get('default_credit_account') or None
+        op.sort_order = int(request.POST.get('sort_order', op.sort_order) or 0)
+        op.save(update_fields=['operation_name', 'group', 'category_key', 'cost_center',
+                               'default_debit_account', 'default_credit_account',
+                               'sort_order', 'updated_at'])
+        messages.success(request, f'Operation {op.operation_code} updated.')
+        return redirect('billing:billing_operation_list')
+    cost_centers = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    accounts = GLAccount.objects.filter(is_active=True, is_deleted=False).order_by('code')
+    return render(request, 'billing/billing_operation_form.html', {
+        'op': op, 'action': 'Edit Operation',
+        'groups': BillingOperationCC.Group.choices,
+        'cost_centers': cost_centers, 'accounts': accounts,
+    })
+
+
+@login_required
 def operation_cc_mapping(request):
     """
     Setup page where the Finance Director can assign each billing operation type
@@ -7208,7 +7296,7 @@ def stock_operation_type_create(request):
             messages.success(request, f'Stock operation type {code} — {name} created.')
             return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'operation_code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False, group__in=['STOCK', 'INVENTORY']).select_related('cost_center').order_by('operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'action': 'Create Stock Operation Type',
         'categories': StockOperationCategory.choices,
@@ -7239,7 +7327,7 @@ def stock_operation_type_edit(request, sot_id):
         messages.success(request, f'Operation type {sot.code} updated.')
         return redirect('billing:stock_operation_type_list')
     accounts = GLAccount.objects.filter(is_deleted=False, is_active=True).order_by('code')
-    billing_operations = BillingOperationCC.objects.filter(is_deleted=False).select_related('cost_center').order_by('group', 'operation_code')
+    billing_operations = BillingOperationCC.objects.filter(is_deleted=False, group__in=['STOCK', 'INVENTORY']).select_related('cost_center').order_by('operation_code')
     return render(request, 'billing/stock_operation_type_form.html', {
         'sot': sot, 'action': 'Edit Stock Operation Type',
         'categories': StockOperationCategory.choices,
