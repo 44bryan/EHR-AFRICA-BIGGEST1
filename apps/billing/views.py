@@ -7321,27 +7321,35 @@ def gl_config_hub(request):
     all_item_cats = ItemCategory.choices
     item_gl_map   = {ig.category: ig for ig in item_gl_qs}
 
+    import json as _json
+    accounts_json   = _json.dumps([{'id': str(a.pk), 'code': str(a.code), 'name': a.name} for a in accounts])
+    cc_json         = _json.dumps([{'id': str(c.pk), 'code': c.code, 'name': c.name} for c in cost_centers])
+    operations_json = _json.dumps([{'id': str(op.pk), 'code': op.operation_code, 'name': op.operation_name} for op in operations])
+
     return render(request, 'billing/gl_config_hub.html', {
-        'chain_rows':    chain_rows,
-        'health':        health,
-        'total_issues':  total_issues,
-        'health_score':  health_score,
-        'gl_mappings':   gl_mappings,
-        'gl_routing':    item_gl_qs,
-        'accounts':      accounts,
-        'cost_centers':  cost_centers,
-        'groups':        BillingOperationCC.Group.choices,
-        'all_sot':       all_sot,
-        'all_item_cats': all_item_cats,
-        'item_gl_map':   item_gl_map,
-        'operations':    operations,
-        'can_edit':      can_edit,
-        'active_tab':    request.GET.get('tab', 'map'),
-        'op_total':      len(operations),
-        'entry_total':   sum(1 for t in all_sot if t.category == 'ENTRY'),
-        'exit_total':    sum(1 for t in all_sot if t.category == 'EXIT'),
-        'cc_total':      len(cost_centers),
-        'item_gl_total': len(item_gl_qs),
+        'chain_rows':       chain_rows,
+        'health':           health,
+        'total_issues':     total_issues,
+        'health_score':     health_score,
+        'gl_mappings':      gl_mappings,
+        'gl_routing':       item_gl_qs,
+        'accounts':         accounts,
+        'cost_centers':     cost_centers,
+        'groups':           BillingOperationCC.Group.choices,
+        'all_sot':          all_sot,
+        'all_item_cats':    all_item_cats,
+        'item_gl_map':      item_gl_map,
+        'operations':       operations,
+        'can_edit':         can_edit,
+        'active_tab':       request.GET.get('tab', 'map'),
+        'op_total':         len(operations),
+        'entry_total':      sum(1 for t in all_sot if t.category == 'ENTRY'),
+        'exit_total':       sum(1 for t in all_sot if t.category == 'EXIT'),
+        'cc_total':         len(cost_centers),
+        'item_gl_total':    len(item_gl_qs),
+        'accounts_json':    accounts_json,
+        'cc_json':          cc_json,
+        'operations_json':  operations_json,
     })
 
 

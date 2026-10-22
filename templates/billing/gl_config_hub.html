@@ -615,88 +615,100 @@
   {% if active_tab == 'edit' %}
   {% if can_edit %}
   <div class="tab-pane show active">
+    <script>
+      const GL_ACCOUNTS   = {{ accounts_json|safe }};
+      const GL_CCS        = {{ cc_json|safe }};
+      const GL_OPERATIONS = {{ operations_json|safe }};
+
+      function _popSel(sel, items, curId, blank) {
+        sel.innerHTML = '<option value="">\u2014 ' + blank + ' \u2014</option>';
+        items.forEach(function(it) {
+          var o = document.createElement('option');
+          o.value = it.id; o.textContent = it.code + ' \u2014 ' + it.name;
+          if (it.id === curId) o.selected = true;
+          sel.appendChild(o);
+        });
+      }
+
+      function openOpModal(btn) {
+        var r = btn.closest('tr');
+        document.getElementById('opEditId').value = r.dataset.opid;
+        document.getElementById('opEditTitle').textContent = r.dataset.opcode + ' \u2014 ' + r.dataset.opname;
+        _popSel(document.getElementById('opSelCc'),  GL_CCS,      r.dataset.cc, 'No Cost Center');
+        _popSel(document.getElementById('opSelDr'),  GL_ACCOUNTS, r.dataset.dr, 'No Debit Account');
+        _popSel(document.getElementById('opSelCr'),  GL_ACCOUNTS, r.dataset.cr, 'No Credit Account');
+        new bootstrap.Modal(document.getElementById('opEditModal')).show();
+      }
+
+      function openSotModal(btn) {
+        var r = btn.closest('tr');
+        document.getElementById('sotEditId').value = r.dataset.sotid;
+        document.getElementById('sotEditTitle').textContent = r.dataset.sotcode + ' \u2014 ' + r.dataset.sotname;
+        _popSel(document.getElementById('sotSelOp'), GL_OPERATIONS, r.dataset.op,  'Unlinked');
+        _popSel(document.getElementById('sotSelDr'), GL_ACCOUNTS,   r.dataset.dr,  'No Debit Account');
+        _popSel(document.getElementById('sotSelCr'), GL_ACCOUNTS,   r.dataset.cr,  'No Credit Account');
+        new bootstrap.Modal(document.getElementById('sotEditModal')).show();
+      }
+
+      function openItemGlModal(btn) {
+        var r = btn.closest('tr');
+        document.getElementById('iglCat').value = r.dataset.cat;
+        document.getElementById('iglTitle').textContent = r.dataset.catlabel;
+        var acc3 = GL_ACCOUNTS.filter(function(a){return a.code[0]==='3';});
+        var acc6 = GL_ACCOUNTS.filter(function(a){return a.code[0]==='6';});
+        _popSel(document.getElementById('iglSelInv'),  acc3, r.dataset.inv,  'No Inventory Account (3xx)');
+        _popSel(document.getElementById('iglSelCogs'), acc6, r.dataset.cogs, 'No COGS Account (6xx)');
+        _popSel(document.getElementById('iglSelLoss'), acc6, r.dataset.loss, 'No Loss Account (6xx)');
+        new bootstrap.Modal(document.getElementById('iglEditModal')).show();
+      }
+    </script>
 
     <div class="alert alert-info border-0 py-2 mb-3 small">
       <i class="bi bi-info-circle me-1"></i>
-      Changes take effect immediately on the next GL posting. Use the Chain Map tab to verify after saving.
+      Click <strong>Edit</strong> on any row to change its GL accounts. Changes apply immediately on the next GL posting.
     </div>
+
+    <!-- Section A: Operations -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
         <span class="fw-semibold small"><i class="bi bi-diagram-3 text-primary me-1"></i>Operations — Cost Center &amp; Default Accounts</span>
-        <div class="d-flex gap-2">
-          <select id="editGroupFilter" class="form-select form-select-sm" style="max-width:180px;" onchange="filterEditOps()">
-            <option value="">All Groups</option>
-            {% for val, label in groups %}
-            <option value="{{ val }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
+        <select id="editGroupFilter" class="form-select form-select-sm" style="max-width:180px;" onchange="filterEditOps()">
+          <option value="">All Groups</option>
+          {% for val, label in groups %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+        </select>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm mb-0" style="font-size:.8rem;" id="editOpsTable">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem;" id="editOpsTable">
             <thead class="table-light">
               <tr>
-                <th class="ps-3" style="width:60px;">Code</th>
-                <th style="min-width:160px;">Name</th>
-                <th style="width:80px;">Group</th>
-                <th style="min-width:180px;">Cost Center</th>
-                <th style="min-width:190px;">Default Dr (Debit)</th>
-                <th style="min-width:190px;">Default Cr (Credit)</th>
-                <th style="width:70px;"></th>
+                <th class="ps-3" style="width:70px;">Code</th>
+                <th>Name</th>
+                <th style="width:75px;">Group</th>
+                <th style="width:140px;">Cost Center</th>
+                <th style="width:160px;">Default Dr</th>
+                <th style="width:160px;">Default Cr</th>
+                <th style="width:55px;"></th>
               </tr>
             </thead>
             <tbody>
-              {% for op in operations %}<form id="opf{{ op.pk }}" method="post">{% csrf_token %}<input type="hidden" name="action" value="edit_operation"><input type="hidden" name="op_id" value="{{ op.pk }}"><input type="hidden" name="tab_back" value="edit"></form>{% endfor %}
               {% for op in operations %}
-              <tr class="edit-op-row" data-group="{{ op.group }}">
-                  <td class="ps-3 fw-bold font-monospace text-primary">{{ op.operation_code }}</td>
-                  <td class="fw-semibold">{{ op.operation_name }}</td>
-                  <td>
-                    <span class="badge
-                      {% if op.group == 'CASH' %}bg-info text-dark
-                      {% elif op.group == 'REVENUE' %}bg-success
-                      {% elif op.group == 'EXPENSE' %}bg-danger
-                      {% elif op.group == 'STOCK' %}bg-warning text-dark
-                      {% elif op.group == 'BANK' %}bg-primary
-                      {% else %}bg-secondary{% endif %}"
-                      style="font-size:.65rem;">{{ op.group }}</span>
-                  </td>
-                  <td>
-                    <select name="cost_center" form="opf{{ op.pk }}" class="form-select form-select-sm">
-                      <option value="">— Unassigned —</option>
-                      {% for cc in cost_centers %}
-                      <option value="{{ cc.pk }}" {% if op.cost_center_id == cc.pk %}selected{% endif %}>
-                        {{ cc.code }} — {{ cc.name }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="default_debit_account" form="opf{{ op.pk }}" class="form-select form-select-sm">
-                      <option value="">— None —</option>
-                      {% for a in accounts %}
-                      <option value="{{ a.pk }}" {% if op.default_debit_account_id == a.pk %}selected{% endif %}>
-                        {{ a.code }} — {{ a.name|truncatechars:25 }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="default_credit_account" form="opf{{ op.pk }}" class="form-select form-select-sm">
-                      <option value="">— None —</option>
-                      {% for a in accounts %}
-                      <option value="{{ a.pk }}" {% if op.default_credit_account_id == a.pk %}selected{% endif %}>
-                        {{ a.code }} — {{ a.name|truncatechars:25 }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <button type="submit" form="opf{{ op.pk }}" class="btn btn-primary btn-sm py-0 px-2" style="font-size:.75rem;">
-                      <i class="bi bi-check-lg"></i> Save
-                    </button>
-                  </td>
+              <tr class="edit-op-row" data-group="{{ op.group }}"
+                  data-opid="{{ op.pk }}"
+                  data-opcode="{{ op.operation_code }}"
+                  data-opname="{{ op.operation_name|escapejs }}"
+                  data-cc="{{ op.cost_center_id|default:'' }}"
+                  data-dr="{{ op.default_debit_account_id|default:'' }}"
+                  data-cr="{{ op.default_credit_account_id|default:'' }}">
+                <td class="ps-3 fw-bold font-monospace text-primary">{{ op.operation_code }}</td>
+                <td class="fw-semibold">{{ op.operation_name }}</td>
+                <td>
+                  <span class="badge {% if op.group == 'CASH' %}bg-info text-dark{% elif op.group == 'REVENUE' %}bg-success{% elif op.group == 'EXPENSE' %}bg-danger{% elif op.group == 'STOCK' %}bg-warning text-dark{% elif op.group == 'BANK' %}bg-primary{% else %}bg-secondary{% endif %}" style="font-size:.65rem;">{{ op.group }}</span>
+                </td>
+                <td class="text-muted" style="font-size:.75rem;">{{ op.cost_center.code|default:"—" }}{% if op.cost_center %} <span class="text-secondary">{{ op.cost_center.name|truncatechars:14 }}</span>{% endif %}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{{ op.default_debit_account.code|default:"—" }}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{{ op.default_credit_account.code|default:"—" }}</td>
+                <td><button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:.72rem;" onclick="openOpModal(this)"><i class="bi bi-pencil"></i></button></td>
               </tr>
               {% endfor %}
             </tbody>
@@ -704,79 +716,47 @@
         </div>
       </div>
     </div>
+
+    <!-- Section B: Entry/Exit Types -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white border-bottom py-2 d-flex justify-content-between align-items-center">
         <span class="fw-semibold small"><i class="bi bi-arrow-left-right text-success me-1"></i>Entry / Exit Types — Operation Link &amp; Accounts</span>
-        <div class="d-flex gap-2">
-          <select id="editSotFilter" class="form-select form-select-sm" style="max-width:160px;" onchange="filterEditSot()">
-            <option value="">ENTRY + EXIT</option>
-            <option value="ENTRY">Entry only</option>
-            <option value="EXIT">Exit only</option>
-          </select>
-        </div>
+        <select id="editSotFilter" class="form-select form-select-sm" style="max-width:160px;" onchange="filterEditSot()">
+          <option value="">ENTRY + EXIT</option>
+          <option value="ENTRY">Entry only</option>
+          <option value="EXIT">Exit only</option>
+        </select>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm mb-0" style="font-size:.8rem;" id="editSotTable">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem;" id="editSotTable">
             <thead class="table-light">
               <tr>
-                <th class="ps-3" style="width:80px;">Code</th>
-                <th style="min-width:150px;">Name</th>
-                <th style="width:55px;">Dir</th>
-                <th style="min-width:190px;">Linked Operation</th>
-                <th style="min-width:190px;">Debit Account (Dr)</th>
-                <th style="min-width:190px;">Credit Account (Cr)</th>
-                <th style="width:70px;"></th>
+                <th class="ps-3" style="width:90px;">Code</th>
+                <th>Name</th>
+                <th style="width:45px;">Dir</th>
+                <th style="width:160px;">Linked Operation</th>
+                <th style="width:140px;">Debit (Dr)</th>
+                <th style="width:140px;">Credit (Cr)</th>
+                <th style="width:55px;"></th>
               </tr>
             </thead>
             <tbody>
-              {% for sot in all_sot %}<form id="sotf{{ sot.pk }}" method="post">{% csrf_token %}<input type="hidden" name="action" value="edit_entry_exit"><input type="hidden" name="sot_id" value="{{ sot.pk }}"><input type="hidden" name="tab_back" value="edit"></form>{% endfor %}
               {% for sot in all_sot %}
-              <tr class="edit-sot-row" data-cat="{{ sot.category }}">
-                  <td class="ps-3 fw-bold font-monospace text-success">{{ sot.code }}</td>
-                  <td>{{ sot.name|truncatechars:28 }}</td>
-                  <td>
-                    {% if sot.category == 'ENTRY' %}
-                      <span class="badge bg-success" style="font-size:.65rem;">IN</span>
-                    {% else %}
-                      <span class="badge bg-danger" style="font-size:.65rem;">OUT</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <select name="billing_operation" form="sotf{{ sot.pk }}" class="form-select form-select-sm">
-                      <option value="">— Unlinked —</option>
-                      {% for op in operations %}
-                      <option value="{{ op.pk }}" {% if sot.billing_operation_id == op.pk %}selected{% endif %}>
-                        {{ op.operation_code }} — {{ op.operation_name|truncatechars:28 }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="debit_account" form="sotf{{ sot.pk }}" class="form-select form-select-sm">
-                      <option value="">— None —</option>
-                      {% for a in accounts %}
-                      <option value="{{ a.pk }}" {% if sot.debit_account_id == a.pk %}selected{% endif %}>
-                        {{ a.code }} — {{ a.name|truncatechars:25 }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="credit_account" form="sotf{{ sot.pk }}" class="form-select form-select-sm">
-                      <option value="">— None —</option>
-                      {% for a in accounts %}
-                      <option value="{{ a.pk }}" {% if sot.credit_account_id == a.pk %}selected{% endif %}>
-                        {{ a.code }} — {{ a.name|truncatechars:25 }}
-                      </option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <button type="submit" form="sotf{{ sot.pk }}" class="btn btn-success btn-sm py-0 px-2" style="font-size:.75rem;">
-                      <i class="bi bi-check-lg"></i> Save
-                    </button>
-                  </td>
+              <tr class="edit-sot-row" data-cat="{{ sot.category }}"
+                  data-sotid="{{ sot.pk }}"
+                  data-sotcode="{{ sot.code }}"
+                  data-sotname="{{ sot.name|escapejs }}"
+                  data-op="{{ sot.billing_operation_id|default:'' }}"
+                  data-dr="{{ sot.debit_account_id|default:'' }}"
+                  data-cr="{{ sot.credit_account_id|default:'' }}">
+                <td class="ps-3 fw-bold font-monospace text-success">{{ sot.code }}</td>
+                <td>{{ sot.name|truncatechars:30 }}</td>
+                <td>{% if sot.category == 'ENTRY' %}<span class="badge bg-success" style="font-size:.65rem;">IN</span>{% else %}<span class="badge bg-danger" style="font-size:.65rem;">OUT</span>{% endif %}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{{ sot.billing_operation.operation_code|default:"—" }}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{{ sot.debit_account.code|default:"—" }}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{{ sot.credit_account.code|default:"—" }}</td>
+                <td><button type="button" class="btn btn-outline-success btn-sm py-0 px-2" style="font-size:.72rem;" onclick="openSotModal(this)"><i class="bi bi-pencil"></i></button></td>
               </tr>
               {% endfor %}
             </tbody>
@@ -784,69 +764,150 @@
         </div>
       </div>
     </div>
+
+    <!-- Section C: Item Category GL -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white border-bottom py-2">
         <span class="fw-semibold small"><i class="bi bi-tags text-info me-1"></i>Item Category GL Routing — Inventory, COGS &amp; Loss Accounts</span>
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm mb-0" style="font-size:.8rem;">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem;">
             <thead class="table-light">
               <tr>
                 <th class="ps-3" style="min-width:130px;">Category</th>
-                <th style="min-width:200px;">Inventory Account (3xx — Stock)</th>
-                <th style="min-width:200px;">COGS Account (6xx — Charges)</th>
-                <th style="min-width:200px;">Loss Account (6xx — Disposal)</th>
-                <th style="width:70px;"></th>
+                <th style="min-width:160px;">Inventory (3xx)</th>
+                <th style="min-width:160px;">COGS (6xx)</th>
+                <th style="min-width:160px;">Loss (6xx)</th>
+                <th style="width:55px;"></th>
               </tr>
             </thead>
             <tbody>
-              {% for cat_val, cat_label in all_item_cats %}<form id="itemglf-{{ cat_val }}" method="post">{% csrf_token %}<input type="hidden" name="action" value="edit_item_gl"><input type="hidden" name="category" value="{{ cat_val }}"><input type="hidden" name="tab_back" value="edit"></form>{% endfor %}
               {% for cat_val, cat_label in all_item_cats %}
-              <tr>
-                  <td class="ps-3 fw-semibold">{{ cat_label }}</td>
-                  <td>
-                    <select name="inventory_account" form="itemglf-{{ cat_val }}" class="form-select form-select-sm">
-                      <option value="">— None (3xx) —</option>
-                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "3" %}
-                      <option value="{{ a.pk }}"
-                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.inventory_account_id == a.pk %}selected{% endif %}{% endfor %}>
-                        {{ a.code }} — {{ a.name|truncatechars:28 }}
-                      </option>
-                      {% endif %}{% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="cogs_account" form="itemglf-{{ cat_val }}" class="form-select form-select-sm">
-                      <option value="">— None (6xx) —</option>
-                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "6" %}
-                      <option value="{{ a.pk }}"
-                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.cogs_account_id == a.pk %}selected{% endif %}{% endfor %}>
-                        {{ a.code }} — {{ a.name|truncatechars:28 }}
-                      </option>
-                      {% endif %}{% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <select name="loss_account" form="itemglf-{{ cat_val }}" class="form-select form-select-sm">
-                      <option value="">— None (6xx) —</option>
-                      {% for a in accounts %}{% if a.code|stringformat:"s"|slice:":1" == "6" %}
-                      <option value="{{ a.pk }}"
-                        {% for ig_item in gl_routing %}{% if ig_item.category == cat_val and ig_item.loss_account_id == a.pk %}selected{% endif %}{% endfor %}>
-                        {{ a.code }} — {{ a.name|truncatechars:28 }}
-                      </option>
-                      {% endif %}{% endfor %}
-                    </select>
-                  </td>
-                  <td>
-                    <button type="submit" form="itemglf-{{ cat_val }}" class="btn btn-info btn-sm py-0 px-2" style="font-size:.75rem;">
-                      <i class="bi bi-check-lg"></i> Save
-                    </button>
-                  </td>
+              {% with ig=item_gl_map|default_if_none:'' %}
+              <tr data-cat="{{ cat_val }}"
+                  data-catlabel="{{ cat_label|escapejs }}"
+                  data-inv="{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.inventory_account_id|default:'' }}{% endif %}{% endfor %}"
+                  data-cogs="{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.cogs_account_id|default:'' }}{% endif %}{% endfor %}"
+                  data-loss="{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.loss_account_id|default:'' }}{% endif %}{% endfor %}">
+                <td class="ps-3 fw-semibold">{{ cat_label }}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.inventory_account.code|default:"—" }}{% endif %}{% endfor %}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.cogs_account.code|default:"—" }}{% endif %}{% endfor %}</td>
+                <td class="text-muted font-monospace" style="font-size:.75rem;">{% for r in gl_routing %}{% if r.category == cat_val %}{{ r.loss_account.code|default:"—" }}{% endif %}{% endfor %}</td>
+                <td><button type="button" class="btn btn-outline-info btn-sm py-0 px-2" style="font-size:.72rem;" onclick="openItemGlModal(this)"><i class="bi bi-pencil"></i></button></td>
               </tr>
+              {% endwith %}
               {% endfor %}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal A: Edit Operation -->
+    <div class="modal fade" id="opEditModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_operation">
+            <input type="hidden" name="tab_back" value="edit">
+            <input type="hidden" name="op_id" id="opEditId">
+            <div class="modal-header py-2">
+              <h6 class="modal-title fw-semibold" id="opEditTitle"></h6>
+              <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Cost Center</label>
+                <select name="cost_center" id="opSelCc" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Default Debit Account (Dr)</label>
+                <select name="default_debit_account" id="opSelDr" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-0">
+                <label class="form-label small fw-semibold">Default Credit Account (Cr)</label>
+                <select name="default_credit_account" id="opSelCr" class="form-select form-select-sm"></select>
+              </div>
+            </div>
+            <div class="modal-footer py-2">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal B: Edit Entry/Exit Type -->
+    <div class="modal fade" id="sotEditModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_entry_exit">
+            <input type="hidden" name="tab_back" value="edit">
+            <input type="hidden" name="sot_id" id="sotEditId">
+            <div class="modal-header py-2">
+              <h6 class="modal-title fw-semibold" id="sotEditTitle"></h6>
+              <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Linked Billing Operation</label>
+                <select name="billing_operation" id="sotSelOp" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Debit Account (Dr)</label>
+                <select name="debit_account" id="sotSelDr" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-0">
+                <label class="form-label small fw-semibold">Credit Account (Cr)</label>
+                <select name="credit_account" id="sotSelCr" class="form-select form-select-sm"></select>
+              </div>
+            </div>
+            <div class="modal-footer py-2">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal C: Edit Item Category GL -->
+    <div class="modal fade" id="iglEditModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_item_gl">
+            <input type="hidden" name="tab_back" value="edit">
+            <input type="hidden" name="category" id="iglCat">
+            <div class="modal-header py-2">
+              <h6 class="modal-title fw-semibold" id="iglTitle"></h6>
+              <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Inventory Account <span class="text-muted">(3xx — Stock on Hand)</span></label>
+                <select name="inventory_account" id="iglSelInv" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">COGS Account <span class="text-muted">(6xx — Cost of Goods Sold)</span></label>
+                <select name="cogs_account" id="iglSelCogs" class="form-select form-select-sm"></select>
+              </div>
+              <div class="mb-0">
+                <label class="form-label small fw-semibold">Loss Account <span class="text-muted">(6xx — Stock Disposal / Shrinkage)</span></label>
+                <select name="loss_account" id="iglSelLoss" class="form-select form-select-sm"></select>
+              </div>
+            </div>
+            <div class="modal-footer py-2">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-info btn-sm text-white"><i class="bi bi-check-lg me-1"></i>Save</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -887,38 +948,23 @@
                 </tr>
               </thead>
               <tbody>
-                {% if can_edit %}{% for m in mgrp.list %}<form id="glmapf{{ m.pk }}" method="post">{% csrf_token %}<input type="hidden" name="action" value="edit_gl_mapping"><input type="hidden" name="mapping_id" value="{{ m.pk }}"><input type="hidden" name="tab_back" value="system"></form>{% endfor %}{% endif %}
                 {% for m in mgrp.list %}
-                <tr>
-                  {% if can_edit %}
-                    <td class="ps-3 font-monospace fw-semibold text-primary" style="font-size:.78rem;">{{ m.source_key }}</td>
-                    <td class="text-muted">{{ m.description|default:m.source_key }}</td>
-                    <td>
-                      <select name="gl_account" form="glmapf{{ m.pk }}" class="form-select form-select-sm">
-                        <option value="">— None (use hardcoded default) —</option>
-                        {% for a in accounts %}
-                        <option value="{{ a.pk }}" {% if m.gl_account_id == a.pk %}selected{% endif %}>
-                          {{ a.code }} — {{ a.name|truncatechars:30 }}
-                        </option>
-                        {% endfor %}
-                      </select>
-                    </td>
-                    <td>
-                      <button type="submit" form="glmapf{{ m.pk }}" class="btn btn-primary btn-sm py-0 px-2" style="font-size:.75rem;">
-                        <i class="bi bi-check-lg"></i>
-                      </button>
-                    </td>
-                  {% else %}
+                <tr data-mapid="{{ m.pk }}"
+                    data-mapkey="{{ m.source_key|escapejs }}"
+                    data-mapdesc="{{ m.description|default:m.source_key|escapejs }}"
+                    data-acct="{{ m.gl_account_id|default:'' }}">
                   <td class="ps-3 font-monospace fw-semibold text-primary" style="font-size:.78rem;">{{ m.source_key }}</td>
                   <td class="text-muted">{{ m.description|default:m.source_key }}</td>
                   <td>
                     {% if m.gl_account %}
                       <code>{{ m.gl_account.code }}</code>
-                      <span class="text-muted ms-1">{{ m.gl_account.name }}</span>
+                      <span class="text-muted ms-1 small">{{ m.gl_account.name|truncatechars:30 }}</span>
                     {% else %}
                       <span class="text-muted fst-italic small">Using hardcoded default</span>
                     {% endif %}
                   </td>
+                  {% if can_edit %}
+                  <td><button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:.72rem;" onclick="openGlMapModal(this)"><i class="bi bi-pencil"></i></button></td>
                   {% endif %}
                 </tr>
                 {% endfor %}
@@ -977,6 +1023,52 @@
       </div>
 
     </div>
+
+  {% if can_edit %}
+  <!-- Modal D: Edit GL Mapping -->
+  <script>
+    const GL_ACCOUNTS_SYS = {{ accounts_json|safe }};
+    function openGlMapModal(btn) {
+      var r = btn.closest('tr');
+      document.getElementById('glmapId').value   = r.dataset.mapid;
+      document.getElementById('glmapTitle').textContent = r.dataset.mapkey + ' \u2014 ' + r.dataset.mapdesc;
+      var sel = document.getElementById('glmapSelAcct');
+      sel.innerHTML = '<option value="">\u2014 None (use hardcoded default) \u2014</option>';
+      GL_ACCOUNTS_SYS.forEach(function(a) {
+        var o = document.createElement('option');
+        o.value = a.id; o.textContent = a.code + ' \u2014 ' + a.name;
+        if (a.id === r.dataset.acct) o.selected = true;
+        sel.appendChild(o);
+      });
+      new bootstrap.Modal(document.getElementById('glmapEditModal')).show();
+    }
+  </script>
+  <div class="modal fade" id="glmapEditModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="edit_gl_mapping">
+          <input type="hidden" name="tab_back" value="system">
+          <input type="hidden" name="mapping_id" id="glmapId">
+          <div class="modal-header py-2">
+            <h6 class="modal-title fw-semibold" id="glmapTitle"></h6>
+            <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label small fw-semibold">GL Account</label>
+            <select name="gl_account" id="glmapSelAcct" class="form-select form-select-sm"></select>
+          </div>
+          <div class="modal-footer py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   </div>
   {% endif %}
 
