@@ -1,6 +1,6 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}Compte de Résultat par Centre de Coût{% endblock %}
+{% block title %}P&L by Cost Center{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -27,8 +27,8 @@
     <a href="{% url 'billing:chart_of_accounts' %}" class="btn btn-sm btn-outline-secondary me-2 no-print">
       <i class="bi bi-arrow-left me-1"></i>Back
     </a>
-    <span class="fw-bold fs-6">Compte de Résultat par Centre de Coût</span>
-    <span class="text-muted small ms-2">P&amp;L by Cost Center (OHADA Cl. 6 &amp; 7)</span>
+    <span class="fw-bold fs-6">P&amp;L by Cost Center</span>
+    <span class="text-muted small ms-2">OHADA Cl. 6 &amp; 7 — Revenue &amp; Expenses</span>
   </div>
   {% include 'components/finance_export.html' with csv_url="?export=csv" %}
 </div>
@@ -44,24 +44,24 @@
     <div class="card-body py-2">
       <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
         <div>
-          <label class="form-label small fw-semibold mb-0 me-1">De:</label>
+          <label class="form-label small fw-semibold mb-0 me-1">From:</label>
           <input type="date" name="date_from" class="form-control form-control-sm d-inline" value="{{ date_from }}" style="width:145px">
         </div>
         <div>
-          <label class="form-label small fw-semibold mb-0 me-1">À:</label>
+          <label class="form-label small fw-semibold mb-0 me-1">To:</label>
           <input type="date" name="date_to" class="form-control form-control-sm d-inline" value="{{ date_to }}" style="width:145px">
         </div>
         <select name="cc_select" class="form-select form-select-sm" style="width:220px" onchange="this.form.submit()">
-          <option value="">— Tous les Centres de Coût —</option>
+          <option value="">— All Cost Centers —</option>
           {% for cc in cost_centers %}
           <option value="{{ cc.pk }}" {% if cc_filter == cc.pk|stringformat:"s" %}selected{% endif %}>{{ cc.code }} — {{ cc.name }}</option>
           {% endfor %}
         </select>
-        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filtrer</button>
-        <a href="{% url 'billing:cost_center_pl_report' %}" class="btn btn-sm btn-outline-secondary">Réinitialiser</a>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="{% url 'billing:cost_center_pl_report' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
         <button type="button" class="btn btn-sm btn-outline-info"
           onclick="var f=this.form;f.querySelector('[name=date_from]').value='{{ today }}';f.querySelector('[name=date_to]').value='{{ today }}';f.submit();">
-          <i class="bi bi-calendar-day me-1"></i>Aujourd'hui
+          <i class="bi bi-calendar-day me-1"></i>Today
         </button>
       </form>
     </div>
@@ -72,28 +72,28 @@
   <div class="kpi-strip no-print">
     <div class="kpi-pill card border-0 shadow-sm border-start border-3 border-success">
       <div class="card-body py-2 px-3">
-        <div class="lbl text-muted">Total Produits</div>
+        <div class="lbl text-muted">Total Revenue</div>
         <div class="val text-success">{{ grand_revenue|intcomma }}</div>
         <div class="small text-muted">XAF</div>
       </div>
     </div>
     <div class="kpi-pill card border-0 shadow-sm border-start border-3 border-danger">
       <div class="card-body py-2 px-3">
-        <div class="lbl text-muted">Total Charges</div>
+        <div class="lbl text-muted">Total Expenses</div>
         <div class="val text-danger">{{ grand_expense|intcomma }}</div>
         <div class="small text-muted">XAF</div>
       </div>
     </div>
     <div class="kpi-pill card border-0 shadow-sm border-start border-3 {% if grand_margin >= 0 %}border-success{% else %}border-danger{% endif %}">
       <div class="card-body py-2 px-3">
-        <div class="lbl text-muted">Résultat Global</div>
+        <div class="lbl text-muted">Overall Result</div>
         <div class="val {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">{{ grand_margin|intcomma }}</div>
         <div class="small text-muted">XAF</div>
       </div>
     </div>
     <div class="kpi-pill card border-0 shadow-sm border-start border-3 border-primary">
       <div class="card-body py-2 px-3">
-        <div class="lbl text-muted">Taux de Marge</div>
+        <div class="lbl text-muted">Margin Rate</div>
         <div class="val text-primary">{% if grand_revenue %}{% widthratio grand_margin grand_revenue 100 %}%{% else %}—{% endif %}</div>
         <div class="small text-muted">Net Margin</div>
       </div>
@@ -103,7 +103,7 @@
 
   <!-- ── Report Table ── -->
   <div class="card-header fw-semibold small text-uppercase border-start border-3 border-primary">
-    <i class="bi bi-building me-2 text-primary"></i>Résultats par Centre de Coût
+    <i class="bi bi-building me-2 text-primary"></i>Results by Cost Center
   </div>
   <div class="card border-0 shadow-sm" style="border-radius:0 0 8px 8px; overflow:hidden;">
     <div class="table-responsive">
@@ -111,11 +111,11 @@
         <thead class="table-light">
           <tr style="border-bottom:2px solid #e2e8f0;">
             <th style="width:90px">Code</th>
-            <th>Compte / Centre de Coût</th>
-            <th class="text-end" style="width:140px">Produits Cl.7 (XAF)</th>
-            <th class="text-end" style="width:140px">Charges Cl.6 (XAF)</th>
-            <th class="text-end" style="width:130px">Résultat (XAF)</th>
-            <th class="text-end" style="width:75px">Marge %</th>
+            <th>Account / Cost Center</th>
+            <th class="text-end" style="width:140px">Revenue Cl.7 (XAF)</th>
+            <th class="text-end" style="width:140px">Expenses Cl.6 (XAF)</th>
+            <th class="text-end" style="width:130px">Result (XAF)</th>
+            <th class="text-end" style="width:75px">Margin %</th>
           </tr>
         </thead>
         <tbody>
@@ -177,7 +177,7 @@
           <tr>
             <td colspan="6" class="text-center text-muted py-4">
               <i class="bi bi-inbox d-block fs-3 mb-2 opacity-25"></i>
-              Aucun centre de coût avec des écritures validées pour cette période.
+              No cost centers with posted entries for the selected period.
             </td>
           </tr>
         {% endfor %}
@@ -185,7 +185,7 @@
         {% if cc_sections %}
         <tfoot>
           <tr class="table-secondary fw-bold">
-            <td colspan="2" class="ps-3">GRAND TOTAL — TOUS CENTRES DE COÛT</td>
+            <td colspan="2" class="ps-3">GRAND TOTAL — ALL COST CENTERS</td>
             <td class="text-end text-success">{{ grand_revenue|intcomma }}</td>
             <td class="text-end text-danger">({{ grand_expense|intcomma }})</td>
             <td class="text-end {% if grand_margin >= 0 %}text-success{% else %}text-danger{% endif %}">{{ grand_margin|intcomma }}</td>
@@ -202,17 +202,17 @@
   <!-- Note -->
   <div class="text-muted small mt-3 px-1" style="font-size:.72rem;">
     <i class="bi bi-info-circle me-1"></i>
-    <strong>Note :</strong> Produits = solde créditeur net des comptes de Classe 7.
-    Charges = solde débiteur net des comptes de Classe 6.
-    Seules les écritures comptables <em>validées (POSTED)</em> dans la période sélectionnée sont incluses.
+    <strong>Note:</strong> Revenue = net credit balance of Class 7 accounts.
+    Expenses = net debit balance of Class 6 accounts.
+    Only <em>posted (POSTED)</em> journal entries within the selected period are included.
   </div>
 
 </div><!-- /rpt-wrap -->
 
 <div class="print-footer">
   {{ request.user.get_full_name|default:request.user.username }} &nbsp;&bull;&nbsp;
-  Compte de Résultat par Centre de Coût (OHADA) &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }} &nbsp;&bull;&nbsp;
-  Imprimé le : <span id="ccPrintDate"></span>
+  P&amp;L by Cost Center (OHADA) &nbsp;&bull;&nbsp; {{ date_from }} — {{ date_to }} &nbsp;&bull;&nbsp;
+  Printed: <span id="ccPrintDate"></span>
 </div>
 <script>
   (function(){ var d=new Date(), s=d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
