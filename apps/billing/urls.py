@@ -146,6 +146,7 @@ urlpatterns = [
 
     # ── Asset Register ────────────────────────────────────────────────────────
     path('assets/', views.asset_list, name='asset_list'),
+    path('assets/depreciation/run/', views.trigger_depreciation_run, name='trigger_depreciation_run'),
     path('assets/create/', views.asset_create, name='asset_create'),
     path('assets/<uuid:asset_id>/edit/', views.asset_edit, name='asset_edit'),
 
@@ -264,6 +265,7 @@ urlpatterns = [
     path('bank/reconciliation/<uuid:recon_id>/', views.bank_reconciliation_detail, name='bank_reconciliation_detail'),
     path('bank/reconciliation/<uuid:recon_id>/complete/', views.bank_reconciliation_complete, name='bank_reconciliation_complete'),
     path('bank/reconciliation/<uuid:recon_id>/review/', views.bank_reconciliation_review, name='bank_reconciliation_review'),
+    path('bank/accounts/<uuid:account_id>/auto-match/', views.bank_statement_auto_match, name='bank_statement_auto_match'),
 
     # ── Cash-to-Bank Deposits ───────────────────────────────────────────────
     path('bank/deposits/', views.cash_to_bank_list, name='cash_to_bank_list'),

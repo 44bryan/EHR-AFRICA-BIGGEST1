@@ -259,6 +259,86 @@ def auto_bill_bed_charges(self):
     return {'status': 'ok', 'billed': billed, 'date': str(today), 'errors': errors}
 
 
+@shared_task(name='billing.monthly_depreciation', bind=True, max_retries=1, default_retry_delay=300)
+def monthly_depreciation_task(self):
+    """
+    Monthly fixed asset depreciation posting.
+    Runs on the 1st of every month — posts one JE per active, non-fully-deprecated asset.
+    Dr 681301 Dotations aux amortissements / Cr 284xxx Amortissements cumulés (OHADA Op 160).
+    """
+    today = timezone.localdate()
+    period_year  = today.year
+    period_month = today.month
+
+    posted  = 0
+    skipped = 0
+    errors  = []
+
+    try:
+        from apps.billing.models import AssetRegister, AssetStatus
+        from apps.billing.gl_service import post_depreciation_monthly
+
+        assets = AssetRegister.objects.filter(
+            status=AssetStatus.ACTIVE,
+            is_deleted=False,
+        ).exclude(useful_life_years=0)
+
+        for asset in assets:
+            if asset.is_fully_depreciated:
+                skipped += 1
+                continue
+            try:
+                entry = post_depreciation_monthly(asset, period_year, period_month)
+                if entry:
+                    posted += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                errors.append(f"{asset.asset_number}: {exc}")
+                logger.warning('monthly_depreciation: error on %s — %s', asset.asset_number, exc)
+
+    except Exception as exc:
+        logger.exception('monthly_depreciation_task failed: %s', exc)
+        try:
+            raise self.retry(exc=exc)
+        except self.MaxRetriesExceededError:
+            return {'status': 'failed', 'error': str(exc)}
+
+    logger.info('monthly_depreciation: posted=%d skipped=%d errors=%d for %04d/%02d',
+                posted, skipped, len(errors), period_year, period_month)
+
+    # Notify Finance Director
+    try:
+        from apps.notifications.models import Notification
+        from apps.accounts.models import User, UserRole
+        recipients = User.objects.filter(
+            role__in=[UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN],
+            is_active=True,
+        )
+        for u in recipients:
+            Notification.objects.create(
+                recipient=u,
+                title=f'Monthly Depreciation Run — {today.strftime("%b %Y")}',
+                message=(
+                    f'Automated depreciation posting completed for {today.strftime("%B %Y")}. '
+                    f'{posted} asset(s) posted, {skipped} skipped (fully depreciated or zero). '
+                    + (f'{len(errors)} error(s): {"; ".join(errors[:3])}' if errors else 'No errors.')
+                ),
+                notification_type='SUCCESS' if not errors else 'WARNING',
+                link='/billing/gl/journal/',
+            )
+    except Exception as e:
+        logger.warning('monthly_depreciation: notification failed — %s', e)
+
+    return {
+        'status': 'ok',
+        'period': f'{period_year}/{period_month:02d}',
+        'posted': posted,
+        'skipped': skipped,
+        'errors': errors,
+    }
+
+
 @shared_task(name='consultations.check_cosign_deadlines', bind=True, max_retries=1, default_retry_delay=120)
 def check_cosign_deadlines_task(self):
     """

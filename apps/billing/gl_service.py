@@ -1871,6 +1871,81 @@ def post_cash_withdrawal(withdrawal, user=None):
         return None
 
 
+def post_depreciation_monthly(asset, period_year, period_month, user=None):
+    """
+    Monthly straight-line depreciation journal entry per OHADA SYSCOHADA.
+
+    OHADA Op 160:
+        Dr  681301  Dotations aux amortissements — immobilisations corporelles
+        Cr  284400  Amortissements des équipements (or category-specific acc. dep. account)
+
+    Idempotency: reference "DEP-{asset_number}-{YYYYMM}" prevents double-posting.
+    """
+    from decimal import Decimal as _D
+    try:
+        annual = _D(str(asset.annual_depreciation or 0))
+        if annual <= 0:
+            return None
+
+        monthly_amount = (annual / 12).quantize(_D('0.01'))
+        if monthly_amount <= 0:
+            return None
+
+        # Already posted for this period?
+        period_ref = f"DEP-{asset.asset_number}-{period_year}{period_month:02d}"
+        from apps.billing.models import JournalEntry
+        if JournalEntry.objects.filter(reference=period_ref).exists():
+            return None
+
+        # Depreciation expense account (OHADA 681xxx)
+        dep_exp_code = '681301'
+        dep_exp = GLAccount.objects.filter(code=dep_exp_code, is_deleted=False).first()
+        if not dep_exp:
+            dep_exp = GLAccount.objects.filter(code__startswith='681', is_deleted=False).first()
+
+        # Accumulated depreciation account — map by category
+        ACCUM_MAP = {
+            'BUILDING':     '281100',
+            'VEHICLE':      '284500',
+            'EQUIPMENT':    '284400',
+            'IT_EQUIPMENT': '284200',
+            'FURNITURE':    '284400',
+            'MEDICAL':      '284400',
+            'OTHER':        '284900',
+        }
+        accum_code = ACCUM_MAP.get(str(asset.category), '284400')
+        accum_acc = GLAccount.objects.filter(code=accum_code, is_deleted=False).first()
+        if not accum_acc:
+            accum_acc = GLAccount.objects.filter(code__startswith='284', is_deleted=False).first()
+
+        if not dep_exp or not accum_acc:
+            logger.warning(f"Depreciation GL accounts not found for {asset.asset_number} — skipping.")
+            return None
+
+        import datetime
+        period_date = datetime.date(period_year, period_month, 1)
+
+        return _create_entry(
+            date=period_date,
+            description=f"Dotations aux amortissements — {asset.name} [{asset.asset_number}] {period_year}/{period_month:02d}",
+            reference=period_ref,
+            source_type='depreciation',
+            source_id=asset.pk,
+            lines=[
+                (dep_exp_code, monthly_amount, 0,
+                 f"Amort. {asset.name} — {period_year}/{period_month:02d}"),
+                (accum_acc.code, 0, monthly_amount,
+                 f"Amort. cumulé {asset.name} — {period_year}/{period_month:02d}"),
+            ],
+            user=user,
+            cost_center=_billing_cc('013'),
+            operation=_op_for_key('DEPRECIATION', 'ASSET'),
+        )
+    except Exception as e:
+        logger.exception(f"GL depreciation post failed for {asset.asset_number}: {e}")
+        return None
+
+
 def post_desk_supply(supply, user=None):
     """
     GL posting for Approvisionnement Caisse (desk fund/drain).

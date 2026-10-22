@@ -6320,6 +6320,32 @@ def wallet_search_ajax(request):
 # =============================================================================
 
 @login_required
+@require_POST
+def trigger_depreciation_run(request):
+    """
+    Manually trigger the monthly depreciation task for the current month.
+    Finance Director / Senior Accountant / Super Admin only.
+    Useful if Celery Beat missed the 1st-of-month run or for testing.
+    """
+    if not (request.user.role in (
+        UserRole.FINANCE_DIRECTOR, UserRole.SENIOR_ACCOUNTANT, UserRole.SUPER_ADMIN,
+    ) or request.user.is_superuser):
+        messages.error(request, 'Access denied — Finance Director or above required.')
+        return redirect('billing:asset_list')
+
+    try:
+        from apps.core.tasks import monthly_depreciation_task
+        result = monthly_depreciation_task.delay()
+        messages.success(request,
+            f'Depreciation run queued (task ID: {result.id}). '
+            f'Results will appear in the journal and a notification will be sent when complete.')
+    except Exception as e:
+        messages.error(request, f'Failed to queue depreciation task: {e}')
+
+    return redirect('billing:asset_list')
+
+
+@login_required
 def asset_list(request):
     """List all hospital assets with category / status / search filters."""
     from .models import AssetRegister, AssetCategory, AssetStatus
@@ -10689,7 +10715,11 @@ def bank_reconciliation_list(request):
     recons = BankReconciliation.objects.filter(is_deleted=False).select_related(
         'bank_account', 'prepared_by', 'reviewed_by'
     )
-    return render(request, 'billing/bank_reconciliation_list.html', {'recons': recons})
+    bank_accounts = BankAccount.objects.filter(is_deleted=False, is_active=True)
+    return render(request, 'billing/bank_reconciliation_list.html', {
+        'recons': recons,
+        'bank_accounts': bank_accounts,
+    })
 
 
 @login_required
@@ -10775,6 +10805,84 @@ def bank_reconciliation_review(request, recon_id):
         messages.error(request, 'Only Finance Manager can review reconciliations.')
         return redirect('billing:dashboard')
     recon = get_object_or_404(BankReconciliation, pk=recon_id, is_deleted=False)
+
+
+@login_required
+@require_POST
+def bank_statement_auto_match(request, account_id):
+    """
+    Auto-match unreconciled bank statement lines to journal entries.
+
+    Matching algorithm (in priority order):
+    1. Exact reference match: BankStatement.reference == JournalEntry.reference
+    2. Amount + date proximity (±3 days): amount matches exactly, date within 3 days
+    Skips lines already reconciled. Finance/Accountant access only.
+    """
+    if not _can_do_reconciliation(request.user):
+        messages.error(request, 'Access denied.')
+        return redirect('billing:bank_account_list')
+
+    bank_account = get_object_or_404(BankAccount, pk=account_id, is_deleted=False)
+
+    from datetime import timedelta
+    from apps.billing.models import JournalEntry, JournalLine
+
+    unmatched = BankStatement.objects.filter(
+        bank_account=bank_account,
+        is_reconciled=False,
+        is_deleted=False,
+    )
+
+    matched = 0
+    skipped = 0
+
+    for stmt in unmatched:
+        # Amount is debit or credit on the statement
+        stmt_amount = stmt.debit_amount if stmt.debit_amount > 0 else stmt.credit_amount
+        if stmt_amount <= 0:
+            skipped += 1
+            continue
+
+        date_from = stmt.statement_date - timedelta(days=3)
+        date_to   = stmt.statement_date + timedelta(days=3)
+
+        je = None
+
+        # Pass 1: exact reference match
+        if stmt.reference:
+            je = JournalEntry.objects.filter(
+                reference__iexact=stmt.reference.strip(),
+                is_deleted=False,
+            ).first()
+
+        # Pass 2: amount + date window
+        if not je:
+            matching_line = JournalLine.objects.filter(
+                Q(debit_amount=stmt_amount) | Q(credit_amount=stmt_amount),
+                entry__entry_date__range=(date_from, date_to),
+                entry__is_deleted=False,
+            ).select_related('entry').first()
+            if matching_line:
+                je = matching_line.entry
+
+        if je:
+            stmt.is_reconciled = True
+            stmt.reconciled_with = je
+            stmt.save(update_fields=['is_reconciled', 'reconciled_with'])
+            matched += 1
+        else:
+            skipped += 1
+
+    if matched:
+        messages.success(request,
+            f'Auto-match complete: {matched} statement line(s) matched to journal entries. '
+            f'{skipped} line(s) could not be matched automatically.')
+    else:
+        messages.info(request,
+            f'Auto-match found no new matches. {skipped} unmatched line(s) remain — '
+            f'review manually or import more journal entries.')
+
+    return redirect('billing:bank_reconciliation_list')
     if recon.status == BankReconciliationStatus.COMPLETED:
         recon.status = BankReconciliationStatus.REVIEWED
         recon.reviewed_by = request.user

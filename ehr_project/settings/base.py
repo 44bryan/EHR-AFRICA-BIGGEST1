@@ -395,6 +395,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'consultations.check_cosign_deadlines',
         'schedule': crontab(minute=15),  # :15 past every hour
     },
+    # 1st of every month at 01:00 — post monthly fixed asset depreciation
+    'monthly-depreciation': {
+        'task': 'billing.monthly_depreciation',
+        'schedule': crontab(hour=1, minute=0, day_of_month=1),
+    },
 }
 
 # DICOM Imaging Viewer
