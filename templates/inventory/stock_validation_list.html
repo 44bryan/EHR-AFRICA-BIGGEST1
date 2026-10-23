@@ -1,22 +1,26 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}{% if is_store_keeper_view %}My Submissions{% else %}Stock Validations{% endif %}{% endblock %}
+{% block title %}{% if is_store_keeper_view %}Mes Soumissions{% else %}Validations GL — Stock{% endif %}{% endblock %}
 
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
     {% if is_store_keeper_view %}
-    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>My Submissions</h5>
-    <p class="text-muted small mb-0">Track your stock entries — view approval or rejection reasons</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2"></i>Mes Soumissions</h5>
+    <p class="text-muted small mb-0">Suivi de vos entrées/sorties — statut d'approbation Finance</p>
     {% else %}
-    <h5 class="fw-bold mb-0"><i class="bi bi-shield-check me-2 text-primary"></i>Stock Validations</h5>
-    <p class="text-muted small mb-0">4-Eyes Principle — Finance Director validates stock transactions before GL posting</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-shield-check me-2"></i>Validations GL — Stock</h5>
+    <p class="text-muted small mb-0">Principe des 4 yeux — le Directeur Financier valide avant écriture GL</p>
     {% endif %}
   </div>
   {% if is_store_keeper_view and my_rejected > 0 %}
-  <span class="badge bg-danger fs-6 px-3 py-2"><i class="bi bi-x-circle me-1"></i>{{ my_rejected }} rejected — action needed</span>
+  <span class="badge fw-semibold px-3 py-2" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">
+    <i class="bi bi-x-circle me-1"></i>{{ my_rejected }} rejeté(s) — action requise
+  </span>
   {% elif pending_count > 0 and not is_store_keeper_view %}
-  <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-hourglass-split me-1"></i>{{ pending_count }} pending review</span>
+  <span class="badge fw-semibold px-3 py-2" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;">
+    <i class="bi bi-hourglass-split me-1"></i>{{ pending_count }} en attente
+  </span>
   {% endif %}
 </div>
 {% endblock %}
@@ -24,9 +28,10 @@
 {% block content %}
 
 {% if is_store_keeper_view and my_rejected > 0 %}
-<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
-  <i class="bi bi-x-octagon-fill fs-5 flex-shrink-0"></i>
-  <span><strong>{{ my_rejected }} transaction(s) were rejected.</strong> Open the row to read the Finance Director's reason and resubmit.</span>
+<div class="alert small py-2 mb-3" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">
+  <i class="bi bi-x-octagon-fill me-1"></i>
+  <strong>{{ my_rejected }} transaction(s) rejetée(s).</strong>
+  Ouvrez la ligne pour lire la raison et resoumettez.
 </div>
 {% endif %}
 
@@ -35,105 +40,104 @@
   <div class="card-body py-2">
     <form method="get" class="row g-2 align-items-center">
       <div class="col-md-5">
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search reference or description…" value="{{ search }}">
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Référence, description..." value="{{ search }}">
       </div>
       <div class="col-md-3">
         <select name="status" class="form-select form-select-sm">
-          <option value="">All Statuses</option>
+          <option value="">Tous statuts</option>
           {% for val, label in status_choices %}
           <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-4 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+      <div class="col-md-4 d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-dark btn-sm"><i class="bi bi-funnel me-1"></i>Filtrer</button>
         {% if search or status_filter %}
-        <a href="{% url 'inventory:stock_validation_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <a href="{% url 'inventory:stock_validation_list' %}" class="btn btn-outline-secondary btn-sm">Tout</a>
         {% endif %}
-        <span class="text-muted small ms-auto align-self-center">{{ page_obj.paginator.count }} record{{ page_obj.paginator.count|pluralize }}</span>
+        <span class="text-muted small ms-auto">{{ page_obj.paginator.count }} entrée{{ page_obj.paginator.count|pluralize }}</span>
       </div>
     </form>
   </div>
 </div>
 
-{# ── Main table with date grouping ── #}
+{# ── Main table ── #}
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
-        <thead class="table-light">
-          <tr>
-            <th class="ps-3" style="width:90px;">Time</th>
-            <th style="width:90px;">Type</th>
-            <th style="width:140px;">Reference</th>
+      <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+        <thead>
+          <tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6;">
+            <th class="ps-3" style="width:90px;">Heure</th>
+            <th style="width:100px;">Type</th>
+            <th style="width:145px;">Référence</th>
             <th>Description</th>
-            <th class="text-end" style="width:110px;">Value (XAF)</th>
-            <th style="width:100px;">Submitted by</th>
-            <th style="width:90px;">Status</th>
-            <th style="width:70px;"></th>
+            <th class="text-end" style="width:120px;">Valeur (FCFA)</th>
+            <th style="width:110px;">Soumis par</th>
+            <th style="width:95px;">Statut</th>
+            <th style="width:75px;"></th>
           </tr>
         </thead>
         <tbody>
           {% regroup validations by submit_date as date_groups %}
           {% for date_group in date_groups %}
-          {# ── Date separator ── #}
-          <tr class="table-secondary">
-            <td colspan="8" class="ps-3 py-1 fw-semibold small text-secondary">
+          <tr style="background:#f1f3f5;">
+            <td colspan="8" class="ps-3 py-1 text-muted fw-semibold" style="font-size:.75rem;border-bottom:1px solid #dee2e6;">
               <i class="bi bi-calendar3 me-1"></i>{{ date_group.grouper|date:"l, d F Y" }}
-              <span class="badge bg-secondary bg-opacity-50 text-dark ms-2">{{ date_group.list|length }} operation{{ date_group.list|length|pluralize }}</span>
+              <span class="ms-2 text-muted fw-normal">— {{ date_group.list|length }} opération{{ date_group.list|length|pluralize }}</span>
             </td>
           </tr>
           {% for sv in date_group.list %}
-          <tr class="{% if sv.status == 'REJECTED' %}table-danger bg-opacity-25{% endif %}">
-            <td class="ps-3 text-muted" style="font-size:.75rem;">{{ sv.submitted_at|date:"H:i" }}</td>
+          <tr style="border-bottom:1px solid #f1f3f5;{% if sv.status == 'REJECTED' %}background:#fef9f9;{% endif %}">
+            <td class="ps-3 text-muted" style="font-size:.74rem;">{{ sv.submitted_at|date:"H:i" }}</td>
             <td>
-              {% if sv.validation_type == 'GRN' %}
-                <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25">GRN</span>
-              {% elif sv.validation_type == 'ENTRY' %}
-                <span class="badge bg-success-subtle text-success border border-success border-opacity-25">Stock In</span>
-              {% elif sv.validation_type == 'EXIT' %}
-                <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25">Stock Out</span>
-              {% elif sv.validation_type == 'DISPOSAL' %}
-                <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25">Disposal</span>
-              {% elif sv.validation_type == 'ADJUSTMENT' %}
-                <span class="badge bg-warning-subtle text-warning border border-warning border-opacity-25">Adjustment</span>
-              {% elif sv.validation_type == 'COUNT' %}
-                <span class="badge bg-secondary-subtle text-secondary border border-secondary border-opacity-25">Count</span>
-              {% elif sv.validation_type == 'RETURN' %}
-                <span class="badge bg-success-subtle text-success border border-success border-opacity-25">Return</span>
-              {% elif sv.validation_type == 'ISSUE' %}
-                <span class="badge bg-warning-subtle text-warning border border-warning border-opacity-25">Issue</span>
-              {% endif %}
+              <span class="badge fw-semibold"
+                    style="font-size:.7rem;background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">
+                {% if sv.validation_type == 'GRN' %}GRN
+                {% elif sv.validation_type == 'ENTRY' %}Bon d'Entrée
+                {% elif sv.validation_type == 'EXIT' %}Bon de Sortie
+                {% elif sv.validation_type == 'DISPOSAL' %}Mise au rebut
+                {% elif sv.validation_type == 'ADJUSTMENT' %}Ajustement
+                {% elif sv.validation_type == 'COUNT' %}Inventaire
+                {% elif sv.validation_type == 'RETURN' %}Retour
+                {% elif sv.validation_type == 'ISSUE' %}Sortie Dép.
+                {% else %}{{ sv.get_validation_type_display }}{% endif %}
+              </span>
             </td>
-            <td class="fw-semibold font-monospace small">{{ sv.reference }}</td>
+            <td class="fw-semibold font-monospace" style="font-size:.78rem;">{{ sv.reference }}</td>
             <td class="text-muted small">
-              {{ sv.description|truncatechars:60 }}
+              {{ sv.description|truncatechars:65 }}
               {% if sv.operation_type %}
-              <span class="badge bg-light text-secondary border ms-1" style="font-size:.65rem;" title="{{ sv.operation_type.name }}">{{ sv.operation_type.code }}</span>
+              <span class="badge ms-1" style="font-size:.62rem;background:#f1f3f5;color:#6c757d;border:1px solid #dee2e6;">{{ sv.operation_type.code }}</span>
               {% endif %}
             </td>
             <td class="text-end fw-semibold">{{ sv.total_value|floatformat:0|intcomma }}</td>
             <td class="text-muted small text-nowrap">{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username|truncatechars:16 }}</td>
             <td>
               {% if sv.status == 'PENDING' %}
-                <span class="badge bg-warning text-dark">Pending</span>
+              <span class="badge fw-semibold" style="font-size:.72rem;background:#fef9c3;color:#713f12;border:1px solid #fde68a;">En attente</span>
               {% elif sv.status == 'VALIDATED' %}
-                <span class="badge bg-success">Validated</span>
+              <span class="badge fw-semibold" style="font-size:.72rem;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">Validé</span>
               {% elif sv.status == 'REJECTED' %}
-                <span class="badge bg-danger">Rejected</span>
+              <span class="badge fw-semibold" style="font-size:.72rem;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Rejeté</span>
               {% endif %}
             </td>
             <td>
-              <a href="{% url 'inventory:stock_validation_detail' sv.pk %}" class="btn btn-sm btn-outline-primary py-0 px-2">
-                {% if sv.status == 'PENDING' and can_validate %}Review{% else %}View{% endif %}
+              <a href="{% url 'inventory:stock_validation_detail' sv.pk %}"
+                 class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.74rem;">
+                {% if sv.status == 'PENDING' and can_validate %}Réviser{% else %}Voir{% endif %}
               </a>
             </td>
           </tr>
           {% endfor %}
           {% empty %}
-          <tr><td colspan="8" class="text-center text-muted py-5">
-            <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>No validations found.
-          </td></tr>
+          <tr>
+            <td colspan="8" class="text-center text-muted py-5">
+              <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>
+              Aucune validation trouvée.
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
