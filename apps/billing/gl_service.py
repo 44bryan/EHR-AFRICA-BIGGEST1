@@ -316,7 +316,8 @@ _CLINICAL_CAT_PARENT = {
     'LAB':       '705211',   # Laboratory
     'SURGICAL':  '705208',   # Other Surgery (generic; specific surgery ops use BillingOperationCC directly)
     'ADMISSION': '705212',   # Hospitalization
-    'REG':       '705215',   # Sundry Income
+    'REG':       '705160',   # Sales of Patient Folders (registration fees by tier)
+    'OPTICAL':   '705100',   # Sales of Frames (generic optical product by tier)
     'OTHER':     '705215',   # Sundry Income
 }
 
@@ -329,12 +330,12 @@ def get_tier_revenue_code(category_key, tier=None):
     per patient tier (Standard, Express, Insured, VIP, Outreach, EVIP, Non-National).
     This function resolves the correct one.
 
-    Pharmacy / Optical product sales are NOT tier-differentiated in the COA —
-    they fall back to get_revenue_code() which uses product-type sub-accounts.
+    PHARMACY uses product-type sub-accounts (not tier-differentiated in the COA).
+    OPTICAL uses Sales-of-Frames tier accounts (705100 → 7051001-7051007).
 
     Falls back to get_revenue_code(category_key) if the tier account is not in DB.
     """
-    if category_key in ('PHARMACY', 'OPTICAL'):
+    if category_key == 'PHARMACY':
         return get_revenue_code(category_key)
 
     parent_code = _CLINICAL_CAT_PARENT.get(category_key)
