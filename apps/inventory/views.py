@@ -3844,31 +3844,47 @@ def stock_validation_approve(request, validation_id):
 
         elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT):
             op_type = sv.operation_type  # StockOperationType or None
-            # Recalculate amount from movement's CURRENT unit_cost.
-            # Handles the case where price was 0 at entry time but set before validation.
-            m_ref = StockMovement.objects.filter(pk=sv.source_id).select_related('item').first()
-            live_total = sv.total_value
-            if m_ref and (live_total == 0):
-                live_total = abs(m_ref.quantity or 0) * (m_ref.item.unit_cost or 0)
+            # source_id points to StockEntryNote (ENTRY) or StockExitNote (EXIT)
+            from apps.inventory.models import StockEntryNote, StockExitNote
+            if sv.validation_type == StockValidationType.ENTRY:
+                note_ref = StockEntryNote.objects.filter(pk=sv.source_id).first()
+                movements = StockMovement.objects.filter(
+                    entry_note_id=sv.source_id, is_deleted=False
+                ).select_related('item') if note_ref else []
+            else:
+                note_ref = StockExitNote.objects.filter(pk=sv.source_id).first()
+                movements = StockMovement.objects.filter(
+                    exit_note_id=sv.source_id, is_deleted=False
+                ).select_related('item') if note_ref else []
+
+            # Recalculate live total from current item unit_cost (handles 0-value entries)
+            live_total = Decimal(str(sv.total_value)) if sv.total_value else Decimal('0')
+            if live_total == 0 and movements:
+                live_total = sum(
+                    Decimal(str(abs(m.quantity or 0))) * Decimal(str(m.item.unit_cost or 0))
+                    for m in movements
+                )
+            # Persist corrected total_value for future reference
+            if sv.total_value == 0 and live_total > 0:
+                sv.total_value = live_total
 
             if op_type and op_type.debit_account and op_type.credit_account and live_total > 0:
                 # Fast path: operation type has explicit GL accounts + computed total.
                 from apps.inventory.gl_service import _create_entry
-                from decimal import Decimal as _D
-                amt = _D(str(live_total))
+                amt = live_total
                 lines_direct = [
-                    (op_type.debit_account.code, amt, 0,
+                    (op_type.debit_account.code, amt, Decimal('0'),
                      f"{sv.get_validation_type_display()} - {sv.reference}"),
-                    (op_type.credit_account.code, 0, amt,
+                    (op_type.credit_account.code, Decimal('0'), amt,
                      f"{sv.get_validation_type_display()} - {sv.reference}"),
                 ]
-                # Cost center: prefer billing_operation CC, fallback to store location CC
+                # Cost center from billing operation or store location
                 _billing_op = op_type.billing_operation if op_type.billing_operation_id else None
                 _cost_center = _billing_op.cost_center if (_billing_op and _billing_op.cost_center_id) else None
-                if not _cost_center and m_ref and m_ref.item and m_ref.item.store_location_id:
+                if not _cost_center and note_ref and note_ref.destination_store_id:
                     try:
                         _sl = StoreLocation.objects.select_related('cost_center').get(
-                            pk=m_ref.item.store_location_id
+                            pk=note_ref.destination_store_id
                         )
                         _cost_center = _sl.cost_center if _sl.cost_center_id else None
                     except Exception:
@@ -3881,22 +3897,25 @@ def stock_validation_approve(request, validation_id):
                     source_id=sv.pk,
                     lines=lines_direct,
                     user=request.user,
-                    operation=_billing_op,  # direct FK, no string lookup
+                    operation=_billing_op,
                     cost_center=_cost_center,
                 )
-            elif m_ref and live_total > 0:
+            elif movements and live_total > 0:
                 # Fallback: no operation type — use item-level GL mapping
-                items_data = [(m_ref.item, abs(m_ref.quantity), m_ref.item.unit_cost)]
+                items_data = [
+                    (m.item, abs(m.quantity or 0), m.item.unit_cost)
+                    for m in movements
+                ]
                 if sv.validation_type == StockValidationType.ENTRY:
                     journal_entry = post_stock_entry(
                         sv.reference, items_data,
-                        m_ref.created_at.date(), user=request.user,
+                        note_ref.created_at.date(), user=request.user,
                         operation_type=op_type,
                     )
                 else:
                     journal_entry = post_stock_exit(
                         sv.reference, items_data,
-                        m_ref.created_at.date(), reason=sv.description, user=request.user,
+                        note_ref.created_at.date(), reason=sv.description, user=request.user,
                         operation_type=op_type,
                     )
 
@@ -3939,7 +3958,7 @@ def stock_validation_approve(request, validation_id):
     except Exception as e:
         logger.warning('stock_validation_approve: notification failed — %s', e)
 
-    return redirect('inventory:stock_validation_list')
+    return redirect('inventory:stock_validation_detail', validation_id=sv.pk)
 
 
 @login_required

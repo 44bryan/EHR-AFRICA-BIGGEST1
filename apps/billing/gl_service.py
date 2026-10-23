@@ -1545,21 +1545,21 @@ def post_cash_variance(variance, user=None):
 # PHARMACY → ACCOUNTING GL POSTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PHARMACY_STOCK   = '321000'   # OHADA Class 3 — Pharmacy Stock (Marchandises)
-THEATRE_STOCK    = '323000'   # OHADA Class 3 — Theatre/OT Consumables Stock
-COGS_PHARMACY    = '601000'   # OHADA Class 6 — Cost of Goods Sold (Achats de marchandises)
-PHARMACY_REVENUE = '7051501'  # Sales of Medications-MICEI (postable child of 705150)
-STOCK_LOSS       = '603000'   # OHADA Class 6 — Stock Losses (damage, expiry, pilferage)
-STOCK_GAIN       = '321000'   # Surplus goes back to stock
+PHARMACY_STOCK   = '312000'   # OHADA Class 3 — Stock of Medications & Consumables
+THEATRE_STOCK    = '331000'   # OHADA Class 3 — Stock of Other Supplies (Theatre/OT)
+COGS_PHARMACY    = '603000'   # OHADA Class 6 — Variation des Stocks (pharmacy COGS)
+PHARMACY_REVENUE = '705150'   # Sales of Medications (Pharmacy Sales)
+STOCK_LOSS       = '603000'   # OHADA Class 6 — Variation des Stocks (losses/expiry)
+STOCK_GAIN       = '312000'   # Stock surplus goes back to medications stock
 
 # GL account by PharmacyLocation type
 _PHARMA_LOC_GL = {
-    'MAIN':       '321000',
-    'SATELLITE':  '321000',
-    'WARD':       '321000',
-    'OUTPATIENT': '321000',
-    'EMERGENCY':  '321000',
-    'THEATRE':    '323000',
+    'MAIN':       '312000',
+    'SATELLITE':  '312000',
+    'WARD':       '312000',
+    'OUTPATIENT': '312000',
+    'EMERGENCY':  '312000',
+    'THEATRE':    '331000',
 }
 
 
@@ -1638,8 +1638,8 @@ def post_pharmacy_transfer(transfer, user=None):
     """
     try:
         from django.utils import timezone as _tz
-        src_code = _PHARMA_LOC_GL.get(transfer.from_location.location_type, '321000')
-        dst_code = _PHARMA_LOC_GL.get(transfer.to_location.location_type, '321000')
+        src_code = _PHARMA_LOC_GL.get(transfer.from_location.location_type, '312000')
+        dst_code = _PHARMA_LOC_GL.get(transfer.to_location.location_type, '312000')
         if src_code == dst_code:
             return None  # Same sub-account — no reclass needed
 
@@ -1791,10 +1791,10 @@ def post_stock_adjustment(adjustment, user=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # OHADA accounts for optical merchandise:
-#   371000 — Optical stock (Marchandises — Optique)
-#   607000 — COGS optical (Achats de marchandises optiques)
-OPTICAL_STOCK = '371000'
-OPTICAL_COGS  = '607000'
+#   311000 — Optical stock (Stock of Optical Products)
+#   603100 — COGS optical (Cost of Sales of Optical Products)
+OPTICAL_STOCK = '311000'
+OPTICAL_COGS  = '603100'
 
 
 def post_optical_cogs(order, user=None):
