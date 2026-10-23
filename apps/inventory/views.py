@@ -3521,12 +3521,19 @@ def stock_entry_create(request):
     import json as _json
     from apps.accounts.models import UserRole
     store_codes = {str(s.pk): (s.store_code or s.location_type[:4]) for s in store_locations}
-    # HEAD_PHARMACIST: pre-select the pharmacy store so the form loads filtered
+    # HEAD_PHARMACIST: pre-select the pharmacy store and default op so the form loads filtered
     default_store_id = ''
+    default_op_id = ''
     if request.user.role == UserRole.HEAD_PHARMACIST:
         pharm_store = store_locations.filter(location_type='PHARMACY').first()
         if pharm_store:
             default_store_id = str(pharm_store.pk)
+        # Auto-select the primary pharmacy receipt operation
+        pharm_op = entry_op_types.filter(
+            location_types__contains='PHARMACY', name__icontains='Receipt'
+        ).first() or entry_op_types.filter(location_types__contains='PHARMACY').first()
+        if pharm_op:
+            default_op_id = str(pharm_op.pk)
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES, 'store_locations': store_locations,
@@ -3534,6 +3541,7 @@ def stock_entry_create(request):
         'store_codes': store_codes,
         'store_codes_json': _json.dumps(store_codes),
         'default_store_id': default_store_id,
+        'default_op_id': default_op_id,
     })
 
 

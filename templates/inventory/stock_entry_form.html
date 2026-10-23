@@ -25,7 +25,7 @@
 
   {# ── Row 1: Store (FIRST), Source, Entry Type, Supplier ── #}
   <div class="row g-2 mb-3">
-    <div class="col-md-3">
+    <div class="{% if request.user.role == 'head_pharmacist' %}col-md-4{% else %}col-md-3{% endif %}">
       <label class="form-label small fw-semibold">Destination Store <span class="text-danger">*</span></label>
       <select name="destination_store" class="form-select form-select-sm" required id="storeSelect">
         <option value="">-- Select Store First --</option>
@@ -36,6 +36,7 @@
       </select>
       <div style="font-size:.7rem;" id="storeGlHint" class="text-muted">Store GL account displayed after selection</div>
     </div>
+    {% if request.user.role != 'head_pharmacist' %}
     <div class="col-md-2">
       <label class="form-label small fw-semibold">
         Reason for Entry <span class="text-danger">*</span>
@@ -47,7 +48,10 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-4">
+    {% else %}
+    <input type="hidden" name="source" value="PURCHASE">
+    {% endif %}
+    <div class="{% if request.user.role == 'head_pharmacist' %}col-md-5{% else %}col-md-4{% endif %}">
       <label class="form-label small fw-semibold">
         Entry Type <span class="text-danger">*</span>
         <span class="text-muted fw-normal" style="font-size:.7rem;"> — auto-filtered for selected store</span>
@@ -181,6 +185,7 @@ const ALL_OP_TYPES = [
   {% endfor %}
 ];
 const STORE_CODES = {{ store_codes_json|default:"{}"|safe }};
+const DEFAULT_OP_ID = "{{ default_op_id|default:'' }}";
 var currentItems = [];
 
 function filterOpTypes(storeType) {
@@ -231,6 +236,15 @@ document.getElementById('storeSelect').addEventListener('change', function() {
   } else if (ops.length === 1) {
     sel.selectedIndex = 1; // auto-select when only 1 option
     sel.dispatchEvent(new Event('change'));
+  } else if (DEFAULT_OP_ID) {
+    // Auto-select the store-specific default op (e.g. pharmacy receipt for pharmacy head)
+    for (let i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === DEFAULT_OP_ID) {
+        sel.selectedIndex = i;
+        sel.dispatchEvent(new Event('change'));
+        break;
+      }
+    }
   }
   resetOpGlHint();
 
