@@ -401,7 +401,15 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
     """
     Create a balanced JournalEntry with the given lines.
     lines = list of (account_code, debit, credit, description)
-    cost_center: billing.CostCenter instance — auto-tagged from store location.
+
+    Cost Center tagging — Finance Director rule:
+      Only Class 6 (Expense) and Class 7 (Revenue) lines are tagged with the
+      cost_center.  Balance-sheet accounts (Class 1-5) carry no CC — they are
+      enterprise-wide accounts not attributable to a single department.
+
+      CC is stamped on each qualifying JournalLine so the Trial Balance filtered
+      by CC shows only the P&L accounts for that department, not AR/Cash/Stock.
+
     operation: BillingOperationCC instance — TurboClinic operation code.
     Returns the JournalEntry or None if accounts not found / not balanced.
     """
@@ -433,10 +441,12 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
         source_id=str(source_id),
         is_posted=True,
         created_by=user,
-        cost_center=cost_center,
         operation=operation,
     )
     for seq, (acct, debit, credit, desc) in enumerate(resolved, 1):
+        # Class 6 (Expense) and Class 7 (Revenue) lines carry the CC.
+        # All other classes (1-5: assets, liabilities, cash, stock, AR/AP) do not.
+        line_cc = cost_center if (cost_center and acct.code and acct.code[0] in ('6', '7')) else None
         JournalLine.objects.create(
             entry=entry,
             account=acct,
@@ -444,6 +454,7 @@ def _create_entry(date, description, reference, source_type, source_id, lines,
             credit_amount=credit,
             description=desc,
             sequence=seq,
+            cost_center=line_cc,
         )
     return entry
 

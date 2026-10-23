@@ -7757,7 +7757,7 @@ def cost_center_pl_report(request):
             JournalLine.objects
             .filter(
                 entry__is_deleted=False, entry__is_posted=True,
-                entry__cost_center=cc,
+                cost_center=cc,
                 entry__entry_date__gte=date_from,
                 entry__entry_date__lte=date_to,
                 account__code__startswith='7',
@@ -7771,7 +7771,7 @@ def cost_center_pl_report(request):
             JournalLine.objects
             .filter(
                 entry__is_deleted=False, entry__is_posted=True,
-                entry__cost_center=cc,
+                cost_center=cc,
                 entry__entry_date__gte=date_from,
                 entry__entry_date__lte=date_to,
                 account__code__startswith='6',
@@ -7988,8 +7988,8 @@ def trial_balance(request):
         entry__entry_date__lte=date_to,
     )
     if cc_filter:
-        open_base = open_base.filter(entry__cost_center_id=cc_filter)
-        move_base = move_base.filter(entry__cost_center_id=cc_filter)
+        open_base = open_base.filter(cost_center_id=cc_filter)
+        move_base = move_base.filter(cost_center_id=cc_filter)
 
     open_bulk = open_base.values('account_id').annotate(
         total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount')
@@ -8080,23 +8080,25 @@ def trial_balance(request):
         all_ccs_q = CostCenter.objects.filter(is_active=True, is_deleted=False).order_by('code')
         move_by_cc = (
             move_base
-            .values('entry__cost_center_id', 'account_id')
+            .filter(cost_center__isnull=False)
+            .values('cost_center_id', 'account_id')
             .annotate(total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount'))
         )
         open_by_cc = (
             open_base
-            .values('entry__cost_center_id', 'account_id')
+            .filter(cost_center__isnull=False)
+            .values('cost_center_id', 'account_id')
             .annotate(total_dr=Sum('debit_amount'), total_cr=Sum('credit_amount'))
         )
         move_data = defaultdict(dict)
         for r in move_by_cc:
-            if r['entry__cost_center_id']:
-                move_data[r['entry__cost_center_id']][r['account_id']] = (
+            if r['cost_center_id']:
+                move_data[r['cost_center_id']][r['account_id']] = (
                     r['total_dr'] or D0, r['total_cr'] or D0)
         open_data = defaultdict(dict)
         for r in open_by_cc:
-            if r['entry__cost_center_id']:
-                open_data[r['entry__cost_center_id']][r['account_id']] = (
+            if r['cost_center_id']:
+                open_data[r['cost_center_id']][r['account_id']] = (
                     r['total_dr'] or D0, r['total_cr'] or D0)
 
         # Precompute parent→children map and standalone leaves (used for auxiliaire CC)
