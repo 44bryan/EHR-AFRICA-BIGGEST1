@@ -1,21 +1,21 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}État de Stock — Valorisation{% endblock %}
+{% block title %}État de Stock — Valorisation CUMP{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div>
-    <h5 class="mb-0 fw-bold"><i class="bi bi-archive me-2 text-primary"></i>État de Stock — Valorisation</h5>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-archive me-2"></i>État de Stock — Valorisation</h5>
     <div class="text-muted small">
-      Méthode : <strong class="text-primary">CUMP</strong> (Coût Unitaire Moyen Pondéré — OHADA/SYSCOHADA)
-      &nbsp;·&nbsp; Au : <strong>{{ as_of|date:"d M Y" }}</strong>
+      Méthode <strong>CUMP</strong> (Coût Unitaire Moyen Pondéré — OHADA/SYSCOHADA)
+      &nbsp;·&nbsp; Au <strong>{{ as_of|date:"d M Y" }}</strong>
     </div>
   </div>
-  <div class="d-flex gap-2">
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary d-print-none">
-      <i class="bi bi-printer me-1"></i>Imprimer
+  <div class="d-flex gap-2 d-print-none">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Imprimer / PDF
     </button>
-    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary d-print-none">
+    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Retour
     </a>
   </div>
@@ -24,8 +24,11 @@
 
 {% block content %}
 
+{# ── Letterhead ── #}
+{% include 'components/letterhead.html' %}
+
 {# ── Filter bar ── #}
-<div class="card border-0 shadow-sm mb-3 d-print-none">
+<div class="card border-0 shadow-sm mb-4 d-print-none">
   <div class="card-body py-2">
     <form method="get" class="row g-2 align-items-center">
       <div class="col-md-4">
@@ -38,55 +41,55 @@
       </div>
       <div class="col-md-5">
         <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm"
-               placeholder="Rechercher par désignation ou code...">
+               placeholder="Rechercher par désignation ou code article...">
       </div>
       <div class="col-md-3 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm flex-fill">
+        <button type="submit" class="btn btn-dark btn-sm flex-fill">
           <i class="bi bi-funnel me-1"></i>Filtrer
         </button>
         {% if search or category %}
-        <a href="{% url 'inventory:report_valuation' %}" class="btn btn-outline-secondary btn-sm">Effacer</a>
+        <a href="{% url 'inventory:report_valuation' %}" class="btn btn-outline-secondary btn-sm">Tout</a>
         {% endif %}
       </div>
     </form>
   </div>
 </div>
 
-{# ── KPI cards ── #}
+{# ── KPI summary strip ── #}
 <div class="row g-3 mb-4">
-  <div class="col-sm-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
-        <div class="text-muted small mb-1">Références</div>
-        <div class="fs-3 fw-bold text-primary">{{ total_items|intcomma }}</div>
-        <div class="text-muted" style="font-size:.72rem;">articles actifs</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small mb-1">Références actives</div>
+        <div class="fs-3 fw-bold">{{ total_items|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">articles en catalogue</div>
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
         <div class="text-muted small mb-1">Quantité totale</div>
-        <div class="fs-3 fw-bold text-info">{{ total_qty|intcomma }}</div>
+        <div class="fs-3 fw-bold">{{ total_qty|intcomma }}</div>
         <div class="text-muted" style="font-size:.72rem;">unités en stock</div>
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
-        <div class="text-muted small mb-1">Valeur totale (FCFA)</div>
-        <div class="fs-4 fw-bold text-success">{{ total_value|floatformat:0|intcomma }}</div>
-        <div class="text-muted" style="font-size:.72rem;">au coût CUMP</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small mb-1">Familles d'articles</div>
+        <div class="fs-3 fw-bold">{{ categories_data|length }}</div>
+        <div class="text-muted" style="font-size:.72rem;">catégories</div>
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-md-3">
-    <div class="card border-0 shadow-sm text-center h-100">
-      <div class="card-body py-3">
-        <div class="text-muted small mb-1">Catégories</div>
-        <div class="fs-3 fw-bold text-warning">{{ categories_data|length }}</div>
-        <div class="text-muted" style="font-size:.72rem;">familles d'articles</div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100" style="border-left: 3px solid #1c3a5e !important;">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small mb-1">Valeur totale (FCFA)</div>
+        <div class="fs-4 fw-bold" style="color:#1c3a5e;">{{ total_value|floatformat:0|intcomma }}</div>
+        <div class="text-muted" style="font-size:.72rem;">méthode CUMP</div>
       </div>
     </div>
   </div>
@@ -99,71 +102,86 @@
     Aucun article trouvé{% if search %} pour "{{ search }}"{% endif %}.
   </div>
 </div>
+
 {% else %}
 
-{# ── One table per category ── #}
+{# ── Category tables ── #}
 {% for cat_code, cat in categories_data %}
 <div class="card border-0 shadow-sm mb-3">
-  <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
-    <span class="fw-semibold text-dark">
-      <i class="bi bi-tag me-1 text-primary"></i>{{ cat.label }}
-      <span class="badge bg-secondary ms-1">{{ cat.rows|length }}</span>
+  <div class="card-header py-2 d-flex justify-content-between align-items-center"
+       style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
+    <span class="fw-semibold text-dark" style="font-size:.9rem;">
+      {{ cat.label }}
+      <span class="text-muted fw-normal ms-1" style="font-size:.8rem;">({{ cat.rows|length }} référence{{ cat.rows|length|pluralize }})</span>
     </span>
-    <span class="fw-bold text-primary">
+    <span class="fw-bold" style="font-size:.9rem; color:#1c3a5e;">
       {{ cat.subtotal|floatformat:0|intcomma }} FCFA
       {% if total_value %}
-      <span class="text-muted fw-normal small">
-        ({% widthratio cat.subtotal total_value 100 %}%)
+      <span class="text-muted fw-normal" style="font-size:.78rem;">
+        — {% widthratio cat.subtotal total_value 100 %}% du total
       </span>
       {% endif %}
     </span>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0" style="font-size:.82rem;">
-        <thead class="table-light">
-          <tr>
-            <th style="width:110px">Code</th>
+      <table class="table table-sm align-middle mb-0" style="font-size:.82rem;">
+        <thead>
+          <tr style="background:#f1f3f5; border-bottom:1px solid #dee2e6;">
+            <th class="ps-3" style="width:110px;">Code</th>
             <th>Désignation</th>
-            <th style="width:80px">Unité</th>
-            <th class="text-end" style="width:100px">Qté en stock</th>
-            <th class="text-end" style="width:120px">CUMP (FCFA)</th>
-            <th class="text-end" style="width:130px">Valeur (FCFA)</th>
-            <th class="text-end d-print-none" style="width:50px"></th>
+            <th style="width:70px;">Unité</th>
+            <th class="text-end" style="width:110px;">Qté en stock</th>
+            <th class="text-end" style="width:130px;">CUMP (FCFA)</th>
+            <th class="text-end pe-3" style="width:140px;">Valeur (FCFA)</th>
+            <th class="text-end d-print-none" style="width:40px;"></th>
           </tr>
         </thead>
         <tbody>
           {% for row in cat.rows %}
-          <tr {% if row.item.current_stock == 0 %}class="text-muted"{% endif %}>
-            <td><code class="small">{{ row.item.item_code }}</code></td>
-            <td class="fw-semibold">
-              {{ row.item.name }}
+          <tr style="border-bottom:1px solid #f1f3f5;">
+            <td class="ps-3 text-muted">
+              <code style="font-size:.78rem; color:#555;">{{ row.item.item_code }}</code>
+            </td>
+            <td>
+              <span class="{% if row.item.current_stock == 0 %}text-muted{% else %}fw-semibold{% endif %}">
+                {{ row.item.name }}
+              </span>
               {% if row.item.current_stock == 0 %}
-              <span class="badge bg-danger ms-1" style="font-size:.65rem;">Rupture</span>
+              <span class="ms-1 badge rounded-pill"
+                    style="font-size:.65rem; background:#fee2e2; color:#b91c1c;">Rupture</span>
               {% elif row.item.needs_reorder %}
-              <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Seuil</span>
+              <span class="ms-1 badge rounded-pill"
+                    style="font-size:.65rem; background:#fef3c7; color:#92400e;">Seuil min.</span>
               {% endif %}
             </td>
             <td class="text-muted">{{ row.item.unit|default:"unité" }}</td>
-            <td class="text-end">{{ row.item.current_stock|intcomma }}</td>
-            <td class="text-end">{{ row.item.unit_cost|floatformat:0|intcomma }}</td>
-            <td class="text-end fw-semibold {% if row.value > 0 %}text-success{% endif %}">
+            <td class="text-end {% if row.item.current_stock == 0 %}text-muted{% endif %}">
+              {{ row.item.current_stock|intcomma }}
+            </td>
+            <td class="text-end text-muted">{{ row.item.unit_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end pe-3 fw-semibold">
+              {% if row.item.current_stock == 0 %}
+              <span class="text-muted">0</span>
+              {% else %}
               {{ row.value|floatformat:0|intcomma }}
+              {% endif %}
             </td>
             <td class="text-end d-print-none">
-              <a href="{% url 'inventory:item_detail' row.item.pk %}" class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:.7rem;">
+              <a href="{% url 'inventory:item_detail' row.item.pk %}"
+                 class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:.7rem;">
                 <i class="bi bi-eye"></i>
               </a>
             </td>
           </tr>
           {% endfor %}
         </tbody>
-        <tfoot class="table-light">
-          <tr class="fw-bold">
-            <td colspan="3" class="text-end small text-muted">Sous-total {{ cat.label }} :</td>
-            <td class="text-end">{{ cat.qty|intcomma }}</td>
+        <tfoot>
+          <tr style="background:#f8f9fa; border-top:2px solid #dee2e6;">
+            <td colspan="3" class="ps-3 text-end text-muted small">Sous-total :</td>
+            <td class="text-end fw-semibold">{{ cat.qty|intcomma }}</td>
             <td></td>
-            <td class="text-end text-primary">{{ cat.subtotal|floatformat:0|intcomma }}</td>
+            <td class="text-end pe-3 fw-bold" style="color:#1c3a5e;">{{ cat.subtotal|floatformat:0|intcomma }}</td>
             <td class="d-print-none"></td>
           </tr>
         </tfoot>
@@ -173,20 +191,20 @@
 </div>
 {% endfor %}
 
-{# ── Grand total footer ── #}
-<div class="card border-0 shadow-sm border-top border-primary border-3">
+{# ── Grand total ── #}
+<div class="card border-0 shadow-sm mb-4" style="border-top:3px solid #1c3a5e !important;">
   <div class="card-body py-3">
     <div class="row align-items-center">
-      <div class="col text-end fw-bold fs-6">
-        TOTAL GÉNÉRAL — Valeur du stock au {{ as_of|date:"d/m/Y" }} (méthode CUMP) :
+      <div class="col text-end text-muted small">
+        {{ total_items }} référence{{ total_items|pluralize }} &nbsp;·&nbsp;
+        {{ total_qty|intcomma }} unités &nbsp;·&nbsp;
+        {{ categories_data|length }} catégorie{{ categories_data|length|pluralize }}
+        &nbsp;·&nbsp; Au {{ as_of|date:"d/m/Y" }} &nbsp;·&nbsp; Méthode CUMP
       </div>
       <div class="col-auto">
-        <span class="fs-4 fw-bold text-success">{{ total_value|floatformat:0|intcomma }} FCFA</span>
-      </div>
-    </div>
-    <div class="row mt-1">
-      <div class="col text-end text-muted small">
-        {{ total_items }} références — {{ total_qty|intcomma }} unités — {{ categories_data|length }} catégories
+        <span class="fw-bold fs-5" style="color:#1c3a5e;">
+          {{ total_value|floatformat:0|intcomma }} <span class="text-muted fw-normal" style="font-size:.85rem;">FCFA</span>
+        </span>
       </div>
     </div>
   </div>
@@ -196,9 +214,11 @@
 
 <style>
 @media print {
+  .d-print-none { display: none !important; }
   .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
-  body { font-size: 11px; }
-  .fs-4 { font-size: 1rem !important; }
+  body { font-size: 10.5px; }
+  .fs-4, .fs-3 { font-size: 1rem !important; }
+  thead tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
 {% endblock %}
