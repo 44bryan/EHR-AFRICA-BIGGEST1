@@ -246,6 +246,157 @@ class PurchaseOrderItem(TimeStampedModel):
         super().save(*args, **kwargs)
 
 
+class StockEntryNoteStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'En attente — Pending Finance Validation'
+    VALIDATED = 'VALIDATED', 'Validé — GL Posted'
+    REJECTED  = 'REJECTED',  'Rejeté — Rejected'
+
+
+class StockEntryNote(AuditModel):
+    """
+    Bon d'Entrée (BE) — OHADA standard stock receipt document.
+    Groups all lines of a single physical delivery under one numbered document.
+    Finance Director validates → GL journal entry posted.
+    """
+    ENTRY_SOURCES = [
+        ('PURCHASE',    'Achat fournisseur / Purchase'),
+        ('DONATION',    'Don / Donation'),
+        ('TRANSFER_IN', 'Transfert entrant / Transfer In'),
+        ('RETURN',      'Retour département / Dept Return'),
+        ('FOUND',       'Trouvé / Found (+Adjustment)'),
+        ('OPENING',     'Stock initial / Opening Stock'),
+        ('OTHER',       'Autre / Other'),
+    ]
+    entry_number      = models.CharField(max_length=30, unique=True)
+    entry_date        = models.DateField(default=timezone.localdate)
+    source            = models.CharField(max_length=20, choices=ENTRY_SOURCES, default='PURCHASE')
+    destination_store = models.ForeignKey(
+        'StoreLocation', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='entry_notes',
+    )
+    vendor_name       = models.CharField(max_length=200, blank=True)
+    delivery_note     = models.CharField(max_length=100, blank=True)
+    invoice_number    = models.CharField(max_length=100, blank=True)
+    po_reference      = models.CharField(max_length=100, blank=True)
+    condition         = models.CharField(max_length=20, default='GOOD')
+    temp_check        = models.CharField(max_length=30, blank=True)
+    total_value       = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_lines       = models.PositiveIntegerField(default=0)
+    notes             = models.TextField(blank=True)
+    operation_type    = models.ForeignKey(
+        'billing.StockOperationType', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='entry_notes',
+    )
+    status            = models.CharField(
+        max_length=20, choices=StockEntryNoteStatus.choices,
+        default=StockEntryNoteStatus.PENDING,
+    )
+    validated_by      = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='validated_entry_notes',
+    )
+    validated_at      = models.DateTimeField(null=True, blank=True)
+    journal_entry     = models.ForeignKey(
+        'billing.JournalEntry', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='entry_notes',
+    )
+
+    class Meta:
+        ordering = ['-entry_date', '-created_at']
+
+    def __str__(self):
+        return f"BE {self.entry_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.entry_number:
+            today = timezone.localdate()
+            store_code = (
+                self.destination_store.store_code
+                if self.destination_store and self.destination_store.store_code
+                else 'GEN'
+            )
+            count = StockEntryNote.objects.filter(
+                entry_date__year=today.year
+            ).count() + 1
+            self.entry_number = f"BE-{store_code}-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
+class StockExitNoteStatus(models.TextChoices):
+    PENDING   = 'PENDING',   'En attente — Pending Finance Validation'
+    VALIDATED = 'VALIDATED', 'Validé — GL Posted'
+    REJECTED  = 'REJECTED',  'Rejeté — Rejected'
+
+
+class StockExitNote(AuditModel):
+    """
+    Bon de Sortie (BS) — OHADA standard stock issue document.
+    Groups all lines of a single physical withdrawal under one numbered document.
+    Finance Director validates → GL journal entry posted.
+    """
+    EXIT_REASONS = [
+        ('DEPT_ISSUE',  'Sortie département / Department Issue'),
+        ('INTERNAL',    'Consommation interne / Internal Use'),
+        ('EXPIRED',     'Périmé / Expired Write-off'),
+        ('DAMAGED',     'Cassé/Détérioré / Damaged'),
+        ('LOST',        'Perdu / Lost'),
+        ('TRANSFER_OUT','Transfert sortant / Transfer Out'),
+        ('SALE',        'Vente directe / Direct Sale'),
+        ('OTHER',       'Autre / Other'),
+    ]
+    exit_number    = models.CharField(max_length=30, unique=True)
+    exit_date      = models.DateField(default=timezone.localdate)
+    reason         = models.CharField(max_length=20, choices=EXIT_REASONS, default='DEPT_ISSUE')
+    source_store   = models.ForeignKey(
+        'StoreLocation', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='exit_notes',
+    )
+    recipient_dept = models.CharField(max_length=100, blank=True,
+                                      help_text='Receiving department or person')
+    recipient_name = models.CharField(max_length=200, blank=True)
+    authorized_by  = models.CharField(max_length=200, blank=True)
+    total_value    = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_lines    = models.PositiveIntegerField(default=0)
+    notes          = models.TextField(blank=True)
+    operation_type = models.ForeignKey(
+        'billing.StockOperationType', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='exit_notes',
+    )
+    status         = models.CharField(
+        max_length=20, choices=StockExitNoteStatus.choices,
+        default=StockExitNoteStatus.PENDING,
+    )
+    validated_by   = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='validated_exit_notes',
+    )
+    validated_at   = models.DateTimeField(null=True, blank=True)
+    journal_entry  = models.ForeignKey(
+        'billing.JournalEntry', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='exit_notes',
+    )
+
+    class Meta:
+        ordering = ['-exit_date', '-created_at']
+
+    def __str__(self):
+        return f"BS {self.exit_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.exit_number:
+            today = timezone.localdate()
+            store_code = (
+                self.source_store.store_code
+                if self.source_store and self.source_store.store_code
+                else 'GEN'
+            )
+            count = StockExitNote.objects.filter(
+                exit_date__year=today.year
+            ).count() + 1
+            self.exit_number = f"BS-{store_code}-{today.strftime('%Y')}-{count:04d}"
+        super().save(*args, **kwargs)
+
+
 class StockMovement(TimeStampedModel):
     """Audit trail of all stock movements"""
     item          = models.ForeignKey(InventoryItem, on_delete=models.PROTECT, related_name='movements')
@@ -264,6 +415,17 @@ class StockMovement(TimeStampedModel):
         'BatchStock', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='movements',
         help_text='Linked batch (for expiry-tracked items)'
+    )
+    # Document grouping — links movement back to its source OHADA document
+    entry_note    = models.ForeignKey(
+        'StockEntryNote', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='movements',
+        help_text='Bon d\'Entrée this movement belongs to',
+    )
+    exit_note     = models.ForeignKey(
+        'StockExitNote', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='movements',
+        help_text='Bon de Sortie this movement belongs to',
     )
 
     class Meta:

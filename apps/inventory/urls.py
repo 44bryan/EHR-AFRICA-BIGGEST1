@@ -131,13 +131,17 @@ urlpatterns = [
     path('budget/create/', views.budget_create, name='budget_create'),
     path('budget/<uuid:budget_id>/edit/', views.budget_edit, name='budget_edit'),
 
-    # ── Stock Entry / Exit ─────────────────────────────────────────
-    path('stock-exit/', views.stock_exit_list, name='stock_exit_list'),
-    path('stock-exit/create/', views.stock_exit_create, name='stock_exit_create'),
-    path('stock-exit/pdf/', views.stock_exit_pdf, name='stock_exit_pdf'),
+    # ── Stock Entry (Bon d'Entrée) ─────────────────────────────────
     path('stock-entry/', views.stock_entry_list, name='stock_entry_list'),
     path('stock-entry/create/', views.stock_entry_create, name='stock_entry_create'),
     path('stock-entry/pdf/', views.stock_entry_pdf, name='stock_entry_pdf'),
+    path('stock-entry/<uuid:note_id>/', views.stock_entry_detail, name='stock_entry_detail'),
+
+    # ── Stock Exit (Bon de Sortie) ──────────────────────────────────
+    path('stock-exit/', views.stock_exit_list, name='stock_exit_list'),
+    path('stock-exit/create/', views.stock_exit_create, name='stock_exit_create'),
+    path('stock-exit/pdf/', views.stock_exit_pdf, name='stock_exit_pdf'),
+    path('stock-exit/<uuid:note_id>/', views.stock_exit_detail, name='stock_exit_detail'),
 
     # ── 4-Eyes Stock Validation (Finance Director) ────────────────
     path('validations/', views.stock_validation_list, name='stock_validation_list'),

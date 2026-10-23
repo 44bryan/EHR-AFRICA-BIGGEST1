@@ -23,6 +23,7 @@ from .models import (
     SupplierInvoice, SupplierInvoiceItem, SupplierInvoiceStatus,
     ThreeWayMatch, ThreeWayMatchStatus,
     PurchaseOrderStatus,
+    StockEntryNote, StockExitNote,
 )
 
 
@@ -616,8 +617,17 @@ def po_receive(request, po_id):
             po_item.save(update_fields=['quantity_received', 'lot_number', 'expiry_date', 'manufactured_date'])
 
             inv_item = po_item.item
+            # CUMP update on GRN receipt
+            po_cost = po_item.unit_price or Decimal('0')
+            old_qty_grn = inv_item.current_stock
             inv_item.current_stock += qty_received
-            inv_item.save(update_fields=['current_stock'])
+            if po_cost > 0:
+                if old_qty_grn > 0 and inv_item.unit_cost and inv_item.unit_cost > 0:
+                    new_wacc_grn = (Decimal(old_qty_grn) * inv_item.unit_cost + Decimal(qty_received) * po_cost) / Decimal(old_qty_grn + qty_received)
+                    inv_item.unit_cost = new_wacc_grn.quantize(Decimal('1'))
+                else:
+                    inv_item.unit_cost = po_cost.quantize(Decimal('1'))
+            inv_item.save(update_fields=['current_stock', 'unit_cost'])
 
             # Create BatchStock record if item requires expiry tracking
             batch = None
@@ -1538,16 +1548,29 @@ def report_stock_valuation(request):
         items = items.filter(category=category)
     if q:
         items = items.filter(Q(name__icontains=q) | Q(item_code__icontains=q))
-    items = items.order_by('name')
-    total_value = 0
-    rows = []
+    items = items.order_by('category', 'name')
+    from collections import defaultdict
+    cat_map = defaultdict(lambda: {'label': '', 'rows': [], 'subtotal': Decimal('0'), 'qty': 0})
+    cat_label = {code: label for code, label in ItemCategory.choices}
+    total_value = Decimal('0')
+    total_qty = 0
     for item in items:
-        val = item.current_stock * float(item.unit_cost)
+        val = Decimal(str(item.current_stock)) * (item.unit_cost or Decimal('0'))
         total_value += val
-        rows.append({'item': item, 'value': val})
+        total_qty += item.current_stock
+        cat_map[item.category]['label'] = cat_label.get(item.category, item.category)
+        cat_map[item.category]['rows'].append({'item': item, 'value': val})
+        cat_map[item.category]['subtotal'] += val
+        cat_map[item.category]['qty'] += item.current_stock
+    # Sort by category subtotal desc
+    categories_data = sorted(cat_map.items(), key=lambda x: -x[1]['subtotal'])
     return render(request, 'inventory/report_valuation.html', {
-        'rows': rows, 'total_value': total_value,
+        'categories_data': categories_data,
+        'total_value': total_value,
+        'total_qty': total_qty,
+        'total_items': sum(len(v['rows']) for v in cat_map.values()),
         'categories': ItemCategory.choices, 'category': category, 'search': q,
+        'as_of': timezone.localdate(),
     })
 
 
@@ -3114,23 +3137,39 @@ EXIT_REASONS = [
 
 @login_required
 def stock_exit_list(request):
-    """List all stock exit/issue records."""
+    """List Bon de Sortie (BS) documents — one row per issue, grouped."""
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
     import datetime
     days = int(request.GET.get('days', 30))
     search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
     cutoff = timezone.localdate() - datetime.timedelta(days=days)
-    exits = StockMovement.objects.filter(
-        movement_type__in=['OUT', 'ISSUE', 'EXPIRE'],
-        created_at__date__gte=cutoff,
-    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    qs = StockExitNote.objects.filter(
+        is_deleted=False, exit_date__gte=cutoff,
+    ).select_related('source_store', 'created_by', 'operation_type').order_by('-exit_date', '-created_at')
     if search:
-        exits = exits.filter(
-            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        qs = qs.filter(
+            Q(exit_number__icontains=search) |
+            Q(recipient_dept__icontains=search) |
+            Q(recipient_name__icontains=search)
         )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
     return render(request, 'inventory/stock_exit_list.html', {
-        'exits': exits[:500], 'days': days, 'search': search,
+        'exits': qs[:300], 'days': days, 'search': search, 'status_filter': status_filter,
+    })
+
+
+@login_required
+def stock_exit_detail(request, note_id):
+    """Bon de Sortie detail — shows all lines of one BS document."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    note = get_object_or_404(StockExitNote, pk=note_id, is_deleted=False)
+    movements = note.movements.select_related('item', 'batch', 'performed_by').order_by('created_at')
+    return render(request, 'inventory/stock_exit_detail.html', {
+        'note': note, 'movements': movements,
     })
 
 
@@ -3157,7 +3196,6 @@ def stock_exit_create(request):
         department = request.POST.get('department', '').strip()
         op_type_id = request.POST.get('operation_type', '')
         reason = request.POST.get('reason', 'DEPT_ISSUE')
-        reference = request.POST.get('reference', '').strip()
         notes = request.POST.get('notes', '').strip()
         authorized_by = request.POST.get('authorized_by', '').strip()
         source_store_id = request.POST.get('source_store', '')
@@ -3166,7 +3204,33 @@ def stock_exit_create(request):
         item_ids = request.POST.getlist('item_id[]')
         quantities = request.POST.getlist('quantity[]')
 
+        src_store = None
+        if source_store_id:
+            try:
+                src_store = StoreLocation.objects.get(pk=source_store_id)
+            except StoreLocation.DoesNotExist:
+                pass
+
+        op_obj_exit = None
+        if op_type_id:
+            op_obj_exit = StockOperationType.objects.filter(pk=op_type_id).first()
+
+        # ── Step 1: Create the Bon de Sortie header document ──────────────────
+        exit_note = StockExitNote.objects.create(
+            reason=reason,
+            source_store=src_store,
+            recipient_dept=department,
+            recipient_name=received_by_name,
+            authorized_by=authorized_by,
+            notes=notes,
+            operation_type=op_obj_exit,
+            created_by=request.user,
+        )
+
+        # ── Step 2: Process each item line, link to the BS header ─────────────
         issued_count = 0
+        total_value = Decimal('0')
+
         for i, item_id in enumerate(item_ids):
             if not item_id:
                 continue
@@ -3201,64 +3265,38 @@ def stock_exit_create(request):
                     if not batch_ref:
                         batch_ref = batch
 
-            ref_parts = [reason]
-            if department:
-                ref_parts.append(department)
-            if source_store_id:
-                try:
-                    src = StoreLocation.objects.get(pk=source_store_id)
-                    ref_parts.append(f'Store: {src.name}')
-                except StoreLocation.DoesNotExist:
-                    pass
-            note_parts = []
-            if authorized_by:
-                note_parts.append(f'Auth: {authorized_by}')
-            if received_by_name:
-                note_parts.append(f'Rcvd: {received_by_name}')
-            if notes:
-                note_parts.append(notes)
+            line_value = Decimal(actual_qty) * (inv_item.unit_cost or Decimal('0'))
+            total_value += line_value
 
             StockMovement.objects.create(
                 item=inv_item, movement_type='OUT', quantity=-actual_qty,
                 balance_after=inv_item.current_stock,
-                reference=' | '.join(ref_parts),
-                notes=' | '.join(note_parts),
+                reference=exit_note.exit_number,
+                notes=notes,
                 performed_by=request.user, batch=batch_ref,
+                exit_note=exit_note,
             )
             _trigger_auto_reorder(inv_item, request.user)
             issued_count += 1
 
+        # ── Step 3: Update BS header totals ───────────────────────────────────
+        exit_note.total_lines = issued_count
+        exit_note.total_value = total_value
+        exit_note.save(update_fields=['total_lines', 'total_value'])
+
         if issued_count:
-            # 4-Eyes: Create validation for stock exit GL posting
-            recent_movements = StockMovement.objects.filter(
-                performed_by=request.user, movement_type='OUT',
-            ).order_by('-created_at')[:issued_count]
-            total_value = sum(
-                abs(m.quantity or 0) * float(m.item.unit_cost or 0)
-                for m in recent_movements.select_related('item')
-            )
-            # Get store code for document number
-            try:
-                _exit_store = StoreLocation.objects.get(pk=source_store_id)
-                _exit_store_code = _exit_store.store_code or _exit_store.location_type[:4]
-            except StoreLocation.DoesNotExist:
-                _exit_store_code = 'GEN'
-            exit_ref = _next_doc_number('EXIT', _exit_store_code)
-            op_label = ''
-            if op_type_id:
-                op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
-                if op_obj:
-                    op_label = f' [OP:{op_obj.code}]'
+            op_label = f' [OP:{op_obj_exit.code}]' if op_obj_exit else ''
             _create_stock_validation(
                 validation_type=StockValidationType.EXIT,
-                source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
-                reference=exit_ref,
-                description=f'Stock exit — {reason} — {department or "N/A"} — {issued_count} item(s){op_label}',
-                total_value=total_value, user=request.user,
+                source_id=exit_note.pk,
+                reference=exit_note.exit_number,
+                description=f'BS {exit_note.exit_number} — {reason} — {department or "N/A"} — {issued_count} ligne(s){op_label}',
+                total_value=float(total_value), user=request.user,
                 operation_type_id=op_type_id or None,
             )
-            messages.success(request, f'{issued_count} item(s) issued — awaiting GL validation.')
+            messages.success(request, f'Bon de Sortie {exit_note.exit_number} créé — {issued_count} ligne(s) — en attente validation GL.')
         else:
+            exit_note.delete()
             messages.warning(request, 'No items were issued — check stock availability.')
         return redirect('inventory:stock_exit_list')
 
@@ -3290,23 +3328,40 @@ ENTRY_SOURCES = [
 
 @login_required
 def stock_entry_list(request):
-    """List all stock entry records."""
+    """List Bon d'Entrée (BE) documents — one row per delivery, grouped."""
     if not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
     import datetime
     days = int(request.GET.get('days', 30))
     search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
     cutoff = timezone.localdate() - datetime.timedelta(days=days)
-    entries = StockMovement.objects.filter(
-        movement_type='IN',
-        created_at__date__gte=cutoff,
-    ).select_related('item', 'performed_by', 'batch').order_by('-created_at')
+    qs = StockEntryNote.objects.filter(
+        is_deleted=False, entry_date__gte=cutoff,
+    ).select_related('destination_store', 'created_by', 'operation_type').order_by('-entry_date', '-created_at')
     if search:
-        entries = entries.filter(
-            Q(item__name__icontains=search) | Q(item__item_code__icontains=search)
+        qs = qs.filter(
+            Q(entry_number__icontains=search) |
+            Q(vendor_name__icontains=search) |
+            Q(invoice_number__icontains=search) |
+            Q(delivery_note__icontains=search)
         )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
     return render(request, 'inventory/stock_entry_list.html', {
-        'entries': entries[:500], 'days': days, 'search': search,
+        'entries': qs[:300], 'days': days, 'search': search, 'status_filter': status_filter,
+    })
+
+
+@login_required
+def stock_entry_detail(request, note_id):
+    """Bon d'Entrée detail — shows all lines of one BE document."""
+    if not _can_access_store(request.user):
+        return HttpResponseForbidden('Access denied.')
+    note = get_object_or_404(StockEntryNote, pk=note_id, is_deleted=False)
+    movements = note.movements.select_related('item', 'batch', 'performed_by').order_by('created_at')
+    return render(request, 'inventory/stock_entry_detail.html', {
+        'note': note, 'movements': movements,
     })
 
 
@@ -3348,7 +3403,43 @@ def stock_entry_create(request):
         expiry_dates = request.POST.getlist('expiry_date[]')
         unit_costs = request.POST.getlist('unit_cost[]')
 
+        dest_store = None
+        if dest_store_id:
+            try:
+                dest_store = StoreLocation.objects.get(pk=dest_store_id)
+            except StoreLocation.DoesNotExist:
+                pass
+
+        op_obj = None
+        if op_type_id:
+            op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
+
+        # ── Step 1: Create the Bon d'Entrée header document ───────────────────
+        entry_note = StockEntryNote.objects.create(
+            source=source,
+            destination_store=dest_store,
+            vendor_name=vendor_name,
+            delivery_note=delivery_note,
+            invoice_number=invoice_number,
+            po_reference=po_reference,
+            condition=condition,
+            temp_check=temp_check,
+            notes=notes,
+            operation_type=op_obj,
+            created_by=request.user,
+        )
+
+        # ── Step 2: Process each item line, link to the BE header ─────────────
         received_count = 0
+        total_value = Decimal('0')
+        movement_note = f'Inv:{invoice_number}' if invoice_number else ''
+        if condition and condition != 'GOOD':
+            movement_note += f' Condition:{condition}'
+        if temp_check:
+            movement_note += f' Temp:{temp_check}'
+        if notes:
+            movement_note += f' {notes}'
+
         for i, item_id in enumerate(item_ids):
             if not item_id:
                 continue
@@ -3364,9 +3455,15 @@ def stock_entry_create(request):
             exp = expiry_dates[i] if i < len(expiry_dates) and expiry_dates[i] else None
             cost = Decimal(unit_costs[i]) if i < len(unit_costs) and unit_costs[i] else inv_item.unit_cost
 
+            # CUMP — Coût Unitaire Moyen Pondéré (OHADA standard weighted average cost)
+            old_qty = inv_item.current_stock
             inv_item.current_stock += qty
-            if cost and cost != inv_item.unit_cost:
-                inv_item.unit_cost = cost
+            if cost and cost > 0:
+                if old_qty > 0 and inv_item.unit_cost and inv_item.unit_cost > 0:
+                    new_wacc = (Decimal(old_qty) * inv_item.unit_cost + Decimal(qty) * cost) / Decimal(old_qty + qty)
+                    inv_item.unit_cost = new_wacc.quantize(Decimal('1'))
+                else:
+                    inv_item.unit_cost = cost.quantize(Decimal('1'))
             inv_item.save(update_fields=['current_stock', 'unit_cost'])
 
             batch = None
@@ -3378,70 +3475,38 @@ def stock_entry_create(request):
                     unit_cost=cost,
                 )
 
-            ref_parts = [source]
-            if vendor_name:
-                ref_parts.append(vendor_name)
-            if delivery_note:
-                ref_parts.append(f'DN:{delivery_note}')
-            if po_reference:
-                ref_parts.append(f'PO:{po_reference}')
-            if dest_store_id:
-                try:
-                    dst = StoreLocation.objects.get(pk=dest_store_id)
-                    ref_parts.append(f'Store: {dst.name}')
-                except StoreLocation.DoesNotExist:
-                    pass
-
-            note_parts = []
-            if invoice_number:
-                note_parts.append(f'INV:{invoice_number}')
-            if condition and condition != 'GOOD':
-                note_parts.append(f'Condition: {condition}')
-            if temp_check:
-                note_parts.append(f'Temp: {temp_check}')
-            if notes:
-                note_parts.append(notes)
+            line_value = Decimal(qty) * (cost or Decimal('0'))
+            total_value += line_value
 
             StockMovement.objects.create(
                 item=inv_item, movement_type='IN', quantity=qty,
                 balance_after=inv_item.current_stock,
-                reference=(entry_ref + ' | ' + ' | '.join(ref_parts)).strip(' | ') if 'entry_ref' in dir() else ' | '.join(ref_parts),
-                notes=' | '.join(note_parts) if note_parts else '',
+                reference=entry_note.entry_number,
+                notes=movement_note.strip(),
                 performed_by=request.user, batch=batch,
+                entry_note=entry_note,
             )
             received_count += 1
 
+        # ── Step 3: Update BE header totals ───────────────────────────────────
+        entry_note.total_lines = received_count
+        entry_note.total_value = total_value
+        entry_note.save(update_fields=['total_lines', 'total_value'])
+
         if received_count:
-            # 4-Eyes: Create validation for stock entry GL posting
-            # Recalculate total from movements just created
-            recent_movements = StockMovement.objects.filter(
-                performed_by=request.user, movement_type='IN',
-            ).order_by('-created_at')[:received_count]
-            total_value = sum(
-                abs(m.quantity or 0) * float(m.item.unit_cost or 0)
-                for m in recent_movements.select_related('item')
-            )
-            # Get store code for document number
-            try:
-                _entry_store = StoreLocation.objects.get(pk=dest_store_id)
-                _entry_store_code = _entry_store.store_code or _entry_store.location_type[:4]
-            except StoreLocation.DoesNotExist:
-                _entry_store_code = 'GEN'
-            entry_ref = _next_doc_number('ENTRY', _entry_store_code)
-            op_label = ''
-            if op_type_id:
-                op_obj = StockOperationType.objects.filter(pk=op_type_id).first()
-                if op_obj:
-                    op_label = f' [OP:{op_obj.code}]'
+            # 4-Eyes: Create validation for GL posting
+            op_label = f' [OP:{op_obj.code}]' if op_obj else ''
             _create_stock_validation(
                 validation_type=StockValidationType.ENTRY,
-                source_id=recent_movements.first().pk if recent_movements.exists() else request.user.pk,
-                reference=entry_ref,
-                description=f'Stock entry — {source} — {vendor_name or "N/A"} — {received_count} item(s){op_label}',
-                total_value=total_value, user=request.user,
+                source_id=entry_note.pk,
+                reference=entry_note.entry_number,
+                description=f'BE {entry_note.entry_number} — {source} — {vendor_name or "N/A"} — {received_count} ligne(s){op_label}',
+                total_value=float(total_value), user=request.user,
                 operation_type_id=op_type_id or None,
             )
-            messages.success(request, f'{received_count} item(s) received — awaiting GL validation.')
+            messages.success(request, f'Bon d\'Entrée {entry_note.entry_number} créé — {received_count} ligne(s) — en attente validation GL.')
+        else:
+            entry_note.delete()
         return redirect('inventory:stock_entry_list')
 
     # Build store_code map for JS preview
