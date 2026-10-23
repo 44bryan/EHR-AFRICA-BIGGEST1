@@ -3735,7 +3735,7 @@ def transfer_create(request):
     from apps.inventory.models import StoreLocation
     ph_locations = list(PharmacyLocation.objects.filter(is_deleted=False, is_active=True))
     # Non-pharmacy store locations for cross-store transfers (OT, Optical, Central, etc.)
-    store_locations = list(StoreLocation.objects.filter(is_deleted=False, is_active=True).order_by('store_type', 'store_code'))
+    store_locations = list(StoreLocation.objects.filter(is_deleted=False, is_active=True).order_by('location_type', 'store_code'))
     if request.method == 'POST':
         from_loc = get_object_or_404(PharmacyLocation, pk=request.POST.get('from_location'))
         to_raw = request.POST.get('to_location', '')
