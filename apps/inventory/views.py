@@ -3694,23 +3694,47 @@ def stock_validation_detail(request, validation_id):
             source_items = list(source_obj.items.select_related('item').filter(condition='GOOD'))
     elif sv.validation_type in (StockValidationType.ENTRY, StockValidationType.EXIT,
                                  StockValidationType.ADJUSTMENT):
-        # source_id = primary StockMovement pk; find all movements in the same session
-        primary_m = StockMovement.objects.filter(pk=sv.source_id).select_related(
-            'item', 'item__store_location', 'batch'
-        ).first()
-        if primary_m:
-            source_obj = primary_m
-            t_start = primary_m.created_at - timedelta(seconds=90)
-            t_end   = primary_m.created_at + timedelta(seconds=90)
-            source_items = list(
-                StockMovement.objects.filter(
-                    performed_by=primary_m.performed_by,
-                    movement_type=primary_m.movement_type,
-                    created_at__range=(t_start, t_end),
-                ).select_related('item', 'item__store_location', 'batch').order_by('created_at')
-            )
-            if not source_items:
-                source_items = [primary_m]
+        # New OHADA flow: source_id is a StockEntryNote or StockExitNote pk
+        if sv.validation_type == StockValidationType.ENTRY:
+            entry_note_obj = StockEntryNote.objects.filter(pk=sv.source_id).select_related(
+                'destination_store', 'created_by'
+            ).first()
+            if entry_note_obj:
+                source_obj = entry_note_obj
+                source_items = list(
+                    StockMovement.objects.filter(entry_note=entry_note_obj)
+                    .select_related('item', 'item__store_location', 'batch')
+                    .order_by('created_at')
+                )
+        elif sv.validation_type == StockValidationType.EXIT:
+            exit_note_obj = StockExitNote.objects.filter(pk=sv.source_id).select_related(
+                'source_store', 'created_by'
+            ).first()
+            if exit_note_obj:
+                source_obj = exit_note_obj
+                source_items = list(
+                    StockMovement.objects.filter(exit_note=exit_note_obj)
+                    .select_related('item', 'item__store_location', 'batch')
+                    .order_by('created_at')
+                )
+        # Legacy fallback: source_id was a StockMovement pk (old flow)
+        if source_obj is None:
+            primary_m = StockMovement.objects.filter(pk=sv.source_id).select_related(
+                'item', 'item__store_location', 'batch'
+            ).first()
+            if primary_m:
+                source_obj = primary_m
+                t_start = primary_m.created_at - timedelta(seconds=90)
+                t_end   = primary_m.created_at + timedelta(seconds=90)
+                source_items = list(
+                    StockMovement.objects.filter(
+                        performed_by=primary_m.performed_by,
+                        movement_type=primary_m.movement_type,
+                        created_at__range=(t_start, t_end),
+                    ).select_related('item', 'item__store_location', 'batch').order_by('created_at')
+                )
+                if not source_items:
+                    source_items = [primary_m]
 
     # Build GL preview: show what Dr/Cr will post on validation
     gl_preview = None
