@@ -1,6 +1,6 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
-{% block title %}{{ sv.reference }} — Validation GL{% endblock %}
+{% block title %}{{ sv.reference }} — Stock Validation{% endblock %}
 
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -13,22 +13,22 @@
     {% if sv.status == 'PENDING' %}
     <span class="badge fw-semibold px-3 py-2"
           style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">
-      <i class="bi bi-hourglass-split me-1"></i>En attente de révision
+      <i class="bi bi-hourglass-split me-1"></i>Awaiting Review
     </span>
     {% elif sv.status == 'VALIDATED' %}
     <span class="badge fw-semibold px-3 py-2"
           style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">
-      <i class="bi bi-check-circle-fill me-1"></i>Validé
+      <i class="bi bi-check-circle-fill me-1"></i>Validated
     </span>
     {% elif sv.status == 'REJECTED' %}
     <span class="badge fw-semibold px-3 py-2"
           style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">
-      <i class="bi bi-x-circle-fill me-1"></i>Rejeté
+      <i class="bi bi-x-circle-fill me-1"></i>Rejected
     </span>
     {% endif %}
   </div>
   <a href="{% url 'inventory:stock_validation_list' %}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-arrow-left me-1"></i>Retour liste
+    <i class="bi bi-arrow-left me-1"></i>Back
   </a>
 </div>
 {% endblock %}
@@ -41,17 +41,17 @@
   <div class="card-body d-flex gap-3 align-items-start py-3">
     <i class="bi bi-x-octagon-fill fs-3 flex-shrink-0 mt-1" style="color:#991b1b;"></i>
     <div class="flex-grow-1">
-      <h6 class="fw-bold mb-2" style="color:#991b1b;">Rejeté par le Directeur Financier</h6>
+      <h6 class="fw-bold mb-2" style="color:#991b1b;">Rejected by Finance Director</h6>
       <div class="row g-2 mb-2 small text-muted">
-        <div class="col-sm-6">Par : <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
-        <div class="col-sm-6">Le : <strong class="text-dark">{{ sv.validated_at|date:"d M Y à H:i" }}</strong></div>
+        <div class="col-sm-6">By: <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
+        <div class="col-sm-6">On: <strong class="text-dark">{{ sv.validated_at|date:"d M Y H:i" }}</strong></div>
       </div>
       <div class="p-3 rounded mb-3 small" style="background:#fef2f2;border:1px solid #fca5a5;">
-        <div class="text-muted fw-semibold mb-1">Motif du rejet :</div>
-        <div class="fw-semibold text-dark">{{ sv.validation_notes|default:"Aucun motif fourni." }}</div>
+        <div class="text-muted fw-semibold mb-1">Reason:</div>
+        <div class="fw-semibold text-dark">{{ sv.validation_notes|default:"No reason provided." }}</div>
       </div>
       <a href="{% url 'inventory:stock_validation_resubmit' sv.pk %}" class="btn btn-sm btn-primary fw-semibold">
-        <i class="bi bi-arrow-repeat me-1"></i>Corriger et resoumettre
+        <i class="bi bi-arrow-repeat me-1"></i>Edit &amp; Resubmit
       </a>
     </div>
   </div>
@@ -64,15 +64,15 @@
      style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">
   <i class="bi bi-check-circle-fill flex-shrink-0"></i>
   <div>
-    <strong>Validé &amp; GL Posté</strong> par {{ sv.validated_by.get_full_name }}
-    le {{ sv.validated_at|date:"d M Y à H:i" }}
+    <strong>Validated &amp; GL Posted</strong> by {{ sv.validated_by.get_full_name }}
+    on {{ sv.validated_at|date:"d M Y H:i" }}
     {% if sv.journal_entry %}
     &bull; <a href="{% url 'billing:journal_entry_detail' sv.journal_entry.pk %}"
               class="fw-semibold" style="color:#166534;">
       <i class="bi bi-journal-check me-1"></i>{{ sv.journal_entry.entry_number }}
     </a>
     {% endif %}
-    {% if sv.validation_notes %}<div class="mt-1 small">Note : {{ sv.validation_notes }}</div>{% endif %}
+    {% if sv.validation_notes %}<div class="mt-1 small">Note: {{ sv.validation_notes }}</div>{% endif %}
   </div>
 </div>
 {% endif %}
@@ -85,21 +85,21 @@
     {# Info strip #}
     <div class="d-flex flex-wrap gap-3 mb-3 p-3 rounded small"
          style="background:#f8f9fa;border:1px solid #e9ecef;">
-      <div><span class="text-muted">Soumis par</span> <strong>{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username }}</strong></div>
-      <div><span class="text-muted">Date</span> <strong>{{ sv.submitted_at|date:"d M Y à H:i" }}</strong></div>
+      <div><span class="text-muted">Submitted by</span> <strong>{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username }}</strong></div>
+      <div><span class="text-muted">Date</span> <strong>{{ sv.submitted_at|date:"d M Y H:i" }}</strong></div>
       {% if sv.operation_type %}
       <div>
-        <span class="text-muted">Opération GL</span>
+        <span class="text-muted">GL Operation</span>
         <span class="badge ms-1" style="font-size:.72rem;background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">{{ sv.operation_type.code }}</span>
         {{ sv.operation_type.name }}
       </div>
       {% endif %}
-      <div><span class="text-muted">Valeur</span> <strong style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} FCFA</strong></div>
+      <div><span class="text-muted">Value</span> <strong style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} XAF</strong></div>
     </div>
 
     {% if sv.description %}
     <div class="mb-3 p-3 rounded small" style="background:#fff;border:1px solid #e9ecef;">
-      <span class="text-muted fw-semibold">Description : </span>{{ sv.description }}
+      <span class="text-muted fw-semibold">Description: </span>{{ sv.description }}
     </div>
     {% endif %}
 
@@ -109,23 +109,23 @@
       <div class="card-header py-2 d-flex justify-content-between align-items-center"
            style="background:#f8f9fa;border-bottom:2px solid #dee2e6;">
         <span class="fw-semibold small">
-          <i class="bi bi-list-ul me-1"></i>Lignes de transaction
+          <i class="bi bi-list-ul me-1"></i>Transaction Lines
           <span class="badge ms-1 fw-semibold"
                 style="font-size:.7rem;background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">{{ source_items|length }}</span>
         </span>
-        <span class="text-muted small">{{ sv.total_value|floatformat:0|intcomma }} FCFA</span>
+        <span class="text-muted small">{{ sv.total_value|floatformat:0|intcomma }} XAF total</span>
       </div>
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0" style="font-size:.82rem;">
           <thead>
             <tr style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">
-              <th class="ps-3">#&nbsp;Article</th>
-              <th class="text-end" style="width:80px;">Qté</th>
-              <th class="text-end" style="width:130px;">CUMP (FCFA)</th>
+              <th class="ps-3">#&nbsp;Item</th>
+              <th class="text-end" style="width:80px;">Qty</th>
+              <th class="text-end" style="width:130px;">Unit Cost (XAF)</th>
               {% if sv.validation_type == 'GRN' %}<th style="width:140px;">Lot / Expiry</th>{% endif %}
-              {% if sv.validation_type == 'COUNT' %}<th class="text-center" style="width:90px;">Écart</th>{% endif %}
+              {% if sv.validation_type == 'COUNT' %}<th class="text-center" style="width:90px;">Variance</th>{% endif %}
               {% if sv.validation_type == 'ENTRY' or sv.validation_type == 'EXIT' or sv.validation_type == 'ADJUSTMENT' %}
-              <th style="width:140px;">Magasin</th>{% endif %}
+              <th style="width:140px;">Store</th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -164,7 +164,7 @@
           <tfoot>
             <tr style="background:#f8f9fa;border-top:2px solid #dee2e6;">
               <td class="ps-3 fw-bold" colspan="2">Total</td>
-              <td class="text-end fw-bold" style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} FCFA</td>
+              <td class="text-end fw-bold" style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} XAF</td>
               <td></td>
             </tr>
           </tfoot>
@@ -174,7 +174,7 @@
     {% else %}
     <div class="alert small py-2" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">
       <i class="bi bi-exclamation-triangle me-1"></i>
-      Aucune ligne trouvée — l'enregistrement source a peut-être été modifié.
+      No line items found — source record may have been modified.
     </div>
     {% endif %}
 
@@ -182,20 +182,20 @@
     {% if gl_preview and sv.status == 'PENDING' and can_validate %}
     <div class="card mt-3" style="border:1px solid #bbf7d0;">
       <div class="card-header py-2 small fw-semibold" style="background:#dcfce7;color:#166534;border-bottom:1px solid #bbf7d0;">
-        <i class="bi bi-journal-arrow-up me-1"></i>Écriture GL qui sera postée à la validation
+        <i class="bi bi-journal-arrow-up me-1"></i>GL Entry that will post on approval
       </div>
       <div class="card-body py-3">
         <div class="row g-3">
           <div class="col-6">
             <div class="p-3 rounded text-center" style="background:#f8f9fa;border:1px solid #dee2e6;">
-              <div class="small text-muted fw-semibold mb-1">DÉBIT (Dr)</div>
+              <div class="small text-muted fw-semibold mb-1">DEBIT (Dr)</div>
               <div class="fw-bold font-monospace" style="color:#1c3a5e;">{{ gl_preview.dr.code }}</div>
               <div class="small text-muted">{{ gl_preview.dr.name }}</div>
             </div>
           </div>
           <div class="col-6">
             <div class="p-3 rounded text-center" style="background:#f8f9fa;border:1px solid #dee2e6;">
-              <div class="small text-muted fw-semibold mb-1">CRÉDIT (Cr)</div>
+              <div class="small text-muted fw-semibold mb-1">CREDIT (Cr)</div>
               <div class="fw-bold font-monospace" style="color:#1c3a5e;">{{ gl_preview.cr.code }}</div>
               <div class="small text-muted">{{ gl_preview.cr.name }}</div>
             </div>
@@ -209,8 +209,8 @@
     {% elif sv.status == 'PENDING' and can_validate %}
     <div class="alert small mt-3 py-2" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">
       <i class="bi bi-exclamation-triangle me-1"></i>
-      Aucun compte GL configuré — la validation ne postera pas d'écriture.
-      <a href="{% url 'billing:gl_config_hub' %}" class="fw-semibold" style="color:#713f12;">Configurer dans le GL Hub</a>.
+      No GL accounts configured — approval will not post a journal entry.
+      <a href="{% url 'billing:gl_config_hub' %}" class="fw-semibold" style="color:#713f12;">Configure in GL Hub</a>.
     </div>
     {% endif %}
 
@@ -223,15 +223,15 @@
 
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-header py-2 fw-semibold small" style="background:#dcfce7;color:#166534;border-bottom:1px solid #bbf7d0;">
-        <i class="bi bi-check-circle me-1"></i>Valider &amp; Poster GL
+        <i class="bi bi-check-circle me-1"></i>Approve &amp; Post GL
       </div>
       <div class="card-body">
         <form method="post" action="{% url 'inventory:stock_validation_approve' sv.pk %}">
           {% csrf_token %}
           <textarea name="notes" class="form-control form-control-sm mb-3" rows="2"
-                    placeholder="Note pour le magasinier (optionnel)"></textarea>
+                    placeholder="Notes for store keeper (optional)"></textarea>
           <button class="btn btn-primary w-100 fw-semibold">
-            <i class="bi bi-check-lg me-1"></i>Approuver &amp; Poster
+            <i class="bi bi-check-lg me-1"></i>Approve &amp; Post
           </button>
         </form>
       </div>
@@ -239,15 +239,15 @@
 
     <div class="card border-0 shadow-sm">
       <div class="card-header py-2 fw-semibold small" style="background:#fee2e2;color:#991b1b;border-bottom:1px solid #fca5a5;">
-        <i class="bi bi-x-circle me-1"></i>Rejeter
+        <i class="bi bi-x-circle me-1"></i>Reject
       </div>
       <div class="card-body">
         <form method="post" action="{% url 'inventory:stock_validation_reject' sv.pk %}">
           {% csrf_token %}
           <textarea name="notes" class="form-control form-control-sm mb-3" rows="3" required
-                    placeholder="Indiquer précisément au magasinier ce qu'il faut corriger..."></textarea>
+                    placeholder="Tell the store keeper exactly what to fix..."></textarea>
           <button class="btn btn-outline-danger w-100 fw-semibold">
-            <i class="bi bi-x-lg me-1"></i>Rejeter &amp; Notifier
+            <i class="bi bi-x-lg me-1"></i>Reject &amp; Notify
           </button>
         </form>
       </div>
@@ -256,24 +256,24 @@
     {% elif sv.status == 'PENDING' %}
     <div class="card border-0 shadow-sm text-center p-4">
       <i class="bi bi-hourglass-split text-muted" style="font-size:2.5rem;"></i>
-      <p class="fw-semibold mt-2 mb-0 text-muted">En attente de révision Finance</p>
+      <p class="fw-semibold mt-2 mb-0 text-muted">Awaiting Finance Review</p>
     </div>
 
     {% elif sv.status == 'REJECTED' %}
     <div class="card border-0 shadow-sm">
       <div class="card-header py-2 fw-semibold small" style="background:#fee2e2;color:#991b1b;border-bottom:1px solid #fca5a5;">
-        <i class="bi bi-x-circle-fill me-1"></i>Rejeté
+        <i class="bi bi-x-circle-fill me-1"></i>Rejected
       </div>
       <div class="card-body small">
-        <div class="text-muted mb-1">Par <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
-        <div class="text-muted mb-2">{{ sv.validated_at|date:"d M Y à H:i" }}</div>
+        <div class="text-muted mb-1">By <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
+        <div class="text-muted mb-2">{{ sv.validated_at|date:"d M Y H:i" }}</div>
         {% if sv.validation_notes %}
         <div class="p-2 rounded mb-2 small" style="background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;">
-          <strong>Motif :</strong> {{ sv.validation_notes }}
+          <strong>Reason:</strong> {{ sv.validation_notes }}
         </div>
         {% endif %}
         <a href="{% url 'inventory:stock_validation_resubmit' sv.pk %}" class="btn btn-primary w-100 btn-sm fw-semibold">
-          <i class="bi bi-arrow-repeat me-1"></i>Corriger &amp; Resoumettre
+          <i class="bi bi-arrow-repeat me-1"></i>Edit &amp; Resubmit
         </a>
       </div>
     </div>
@@ -281,49 +281,49 @@
     {% elif sv.status == 'VALIDATED' %}
     <div class="card border-0 shadow-sm">
       <div class="card-header py-2 fw-semibold small" style="background:#dcfce7;color:#166534;border-bottom:1px solid #bbf7d0;">
-        <i class="bi bi-check-circle-fill me-1"></i>Validé
+        <i class="bi bi-check-circle-fill me-1"></i>Validated
       </div>
       <div class="card-body small">
-        <div class="text-muted">Par <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
-        <div class="text-muted mb-2">{{ sv.validated_at|date:"d M Y à H:i" }}</div>
+        <div class="text-muted">By <strong class="text-dark">{{ sv.validated_by.get_full_name }}</strong></div>
+        <div class="text-muted mb-2">{{ sv.validated_at|date:"d M Y H:i" }}</div>
         {% if sv.journal_entry %}
         <a href="{% url 'billing:journal_entry_detail' sv.journal_entry.pk %}"
            class="btn btn-sm btn-outline-secondary w-100">
           <i class="bi bi-journal-check me-1"></i>{{ sv.journal_entry.entry_number }}
         </a>
         {% else %}
-        <span class="badge" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">GL non posté</span>
+        <span class="badge" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">GL not posted</span>
         {% endif %}
       </div>
     </div>
     {% endif %}
 
-    {# Summary card #}
+    {# Summary #}
     <div class="card border-0 shadow-sm mt-3">
-      <div class="card-header py-2 small fw-semibold" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">Récapitulatif</div>
+      <div class="card-header py-2 small fw-semibold" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">Summary</div>
       <ul class="list-group list-group-flush small">
         <li class="list-group-item d-flex justify-content-between py-2">
-          <span class="text-muted">Référence</span>
+          <span class="text-muted">Reference</span>
           <span class="font-monospace fw-semibold">{{ sv.reference }}</span>
         </li>
         <li class="list-group-item d-flex justify-content-between py-2">
-          <span class="text-muted">Lignes</span>
+          <span class="text-muted">Lines</span>
           <span class="fw-semibold">{{ source_items|length }}</span>
         </li>
         <li class="list-group-item d-flex justify-content-between py-2">
-          <span class="text-muted">Valeur</span>
-          <span class="fw-bold" style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} FCFA</span>
+          <span class="text-muted">Value</span>
+          <span class="fw-bold" style="color:#1c3a5e;">{{ sv.total_value|floatformat:0|intcomma }} XAF</span>
         </li>
         <li class="list-group-item d-flex justify-content-between py-2">
           <span class="text-muted">GL</span>
           {% if sv.journal_entry %}
-          <span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">Posté</span>
+          <span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">Posted</span>
           {% elif sv.status == 'REJECTED' %}
-          <span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Non posté</span>
+          <span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Not Posted</span>
           {% elif sv.status == 'VALIDATED' %}
-          <span class="badge" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">Ignoré</span>
+          <span class="badge" style="background:#fef9c3;color:#713f12;border:1px solid #fde68a;">Skipped</span>
           {% else %}
-          <span class="badge" style="background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">En attente</span>
+          <span class="badge" style="background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">Pending</span>
           {% endif %}
         </li>
       </ul>
