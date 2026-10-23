@@ -3546,25 +3546,43 @@ def _can_validate_stock(user):
 
 @login_required
 def stock_validation_list(request):
-    """List all pending stock validations for Finance Director review."""
+    """
+    Stock validation list.
+    - Finance Director / Senior Accountant: sees ALL validations (review queue)
+    - Store Keeper / other staff: sees ONLY their own submissions (My Submissions)
+    """
     if not _can_validate_stock(request.user) and not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
     status = request.GET.get('status', '')
     search = request.GET.get('q', '').strip()
+
+    is_store_keeper_view = not _can_validate_stock(request.user)
     qs = StockValidation.objects.filter(is_deleted=False).select_related('submitted_by', 'validated_by')
+
+    # Store keepers only see their own submissions
+    if is_store_keeper_view:
+        qs = qs.filter(submitted_by=request.user)
+
     if status:
         qs = qs.filter(status=status)
     if search:
         qs = qs.filter(
             Q(reference__icontains=search) | Q(description__icontains=search)
         )
+
     pending_count = StockValidation.objects.filter(status=StockValidationStatus.PENDING, is_deleted=False).count()
+    my_rejected = 0
+    if is_store_keeper_view:
+        my_rejected = qs.filter(status=StockValidationStatus.REJECTED).count()
+
     return render(request, 'inventory/stock_validation_list.html', {
         'validations': qs[:200],
         'status_filter': status, 'search': search,
         'status_choices': StockValidationStatus.choices,
         'pending_count': pending_count,
         'can_validate': _can_validate_stock(request.user),
+        'is_store_keeper_view': is_store_keeper_view,
+        'my_rejected': my_rejected,
     })
 
 
