@@ -238,9 +238,13 @@ class MedicalHistory(AuditModel):
 
 
 class ServiceTier(models.TextChoices):
-    STANDARD = 'STANDARD', _('Standard')
-    EXPRESS  = 'EXPRESS',  _('Express')
-    VIP      = 'VIP',      _('VIP')
+    STANDARD     = 'STANDARD',     _('Standard')
+    EXPRESS      = 'EXPRESS',      _('Express / Fast Track')
+    VIP          = 'VIP',          _('VIP')
+    EVIP         = 'EVIP',         _('Executive VIP')
+    INSURED      = 'INSURED',      _('Insured / HMO')
+    OUTREACH     = 'OUTREACH',     _('Outreach')
+    NON_NATIONAL = 'NON_NATIONAL', _('Non-National')
 
 
 class VisitStatus(models.TextChoices):

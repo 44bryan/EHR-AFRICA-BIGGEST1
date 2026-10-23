@@ -15,32 +15,34 @@ logger = logging.getLogger(__name__)
 # ── HARDCODED FALLBACKS (used when GLMapping table is empty or not yet seeded) ─
 
 _SYSTEM_DEFAULTS = {
-    'CASH_ACCOUNT':       '571000',   # Cash in Hand (OHADA 571)
-    'BANK_ACCOUNT':       '521100',   # Local Bank (OHADA 521)
-    'MOBILE_MONEY':       '552000',   # Electronic Money (MTN MoMo)
-    'AR_PATIENT':         '412000',   # Clients-usagers Patients (OHADA 412)
-    'AR_INSURANCE':       '412000',   # Insurance claims (same 412 unless split)
-    'AR_CORPORATE':       '412000',   # Corporate clients
-    'AP_VENDORS':         '401100',   # Local Suppliers (OHADA 401)
-    'PATIENT_DEPOSITS':   '499100',   # Provisions / deposits
-    'STAFF_ADVANCES':     '421100',   # Personnel Advance (OHADA 421)
+    'CASH_ACCOUNT':       '5710001',  # Main Safe — postable child of 571000 (Cash in Hand)
+    'BANK_ACCOUNT':       '521000',   # Bank Account — Main (OHADA 521)
+    'MOBILE_MONEY':       '5520001',  # MTN Mobile Money - MASTER (postable child of 552000)
+    'AR_PATIENT':         '4120001',  # Clients-Patients (Direct Pay / Cash)
+    'AR_INSURANCE':       '4120002',  # Clients-Patients (HMO / CNPS Insurance)
+    'AR_CORPORATE':       '4120003',  # Clients-Patients (Corporate Accounts)
+    'AP_VENDORS':         '4011001',  # D Boy Distribution Sarl.U (default vendor)
+    'PATIENT_DEPOSITS':   '4192001',  # Clients-Advances Received (Proforma)
+    'STAFF_ADVANCES':     '421100',   # Personnel Advance parent — staff-specific sub-accounts used per-posting
     'LOSS_ON_DISPOSAL':   '654000',   # Loss on disposal
     'GAIN_ON_DISPOSAL':   '754000',   # Gain on disposal
-    'ACCUM_DEPRECIATION': '281000',   # Accumulated depreciation
-    'FIXED_ASSETS':       '241000',   # Fixed assets
+    'ACCUM_DEPRECIATION': '284401',   # Accumulated Depreciation - Equipment (main)
+    'FIXED_ASSETS':       '240001',   # Equipment (main fixed asset account)
 }
 
 _REVENUE_DEFAULTS = {
-    'CONSULT':   '701000',
-    'CLINICAL':  '701000',
-    'INVEST':    '702000',
-    'LAB':       '703000',
-    'PHARMACY':  '704000',
-    'OPTICAL':   '705000',
-    'SURGICAL':  '706000',
-    'ADMISSION': '707000',
-    'REG':       '708000',
-    'OTHER':     '709000',
+    # Clinical services — Standard-tier sub-account as fallback (tier routing handled by get_tier_revenue_code)
+    'CONSULT':   '7052001',  # Consultation - Standard
+    'CLINICAL':  '7052141',  # Other Medical Services - Standard
+    'INVEST':    '7052091',  # Investigations - Standard
+    'LAB':       '7052111',  # Laboratory - Standard
+    'SURGICAL':  '7052081',  # Other Surgery - Standard
+    'ADMISSION': '7052121',  # Hospitalization - Standard
+    'REG':       '7052151',  # Sundry Income - Standard
+    # Product sales — not tier-differentiated in COA
+    'PHARMACY':  '7051501',  # Sales of Medications-MICEI
+    'OPTICAL':   '7051001',  # Sales of Frames - Standard
+    'OTHER':     '758800',   # Other Miscellaneous Income
 }
 
 _EXPENSE_DEFAULTS = {
@@ -57,12 +59,12 @@ _EXPENSE_DEFAULTS = {
 }
 
 _PAYMENT_DEFAULTS = {
-    'CASH':      '572000',
-    'CARD':      '521000',
-    'TRANSFER':  '521000',
-    'MOBILE':    '521100',
-    'INSURANCE': '412000',
-    'NHIS':      '412000',
+    'CASH':      '5710001',  # Main Safe
+    'CARD':      '521000',   # Bank Account — Main
+    'TRANSFER':  '521000',   # Bank Account — Main
+    'MOBILE':    '5520001',  # MTN Mobile Money - MASTER
+    'INSURANCE': '4120002',  # Clients-Patients (HMO / CNPS Insurance)
+    'NHIS':      '4120002',  # Clients-Patients (HMO / CNPS Insurance)
     'WAIVER':    None,
 }
 
@@ -290,6 +292,68 @@ def get_revenue_code(category_key):
     return _get_mapping('REVENUE', category_key, _REVENUE_DEFAULTS.get(category_key, _REVENUE_DEFAULTS['OTHER']))
 
 
+# ── Tier-based revenue routing (Finance Director COA 2026-10-23) ──────────────
+# Each clinical service has 7 sub-accounts — one per patient tier.
+# Structure: 6-digit parent + 1-digit suffix  e.g. 705200 + 4 = 7052004 (VIP)
+# Suffix:  1=Standard  2=Express/FT  3=Insured  4=VIP  5=Outreach  6=EVIP  7=Non-National
+
+_TIER_TO_SUFFIX = {
+    'STANDARD':     '1',
+    'EXPRESS':      '2',
+    'FAST_TRACK':   '2',
+    'INSURED':      '3',
+    'VIP':          '4',
+    'OUTREACH':     '5',
+    'EVIP':         '6',
+    'NON_NATIONAL': '7',
+}
+
+# ServiceCategory → 6-digit revenue parent code
+_CLINICAL_CAT_PARENT = {
+    'CONSULT':   '705200',   # Ophthalmology Consultation
+    'CLINICAL':  '705214',   # Other Medical Services
+    'INVEST':    '705209',   # Investigation
+    'LAB':       '705211',   # Laboratory
+    'SURGICAL':  '705208',   # Other Surgery (generic; specific surgery ops use BillingOperationCC directly)
+    'ADMISSION': '705212',   # Hospitalization
+    'REG':       '705215',   # Sundry Income
+    'OTHER':     '705215',   # Sundry Income
+}
+
+
+def get_tier_revenue_code(category_key, tier=None):
+    """
+    Return the 7-digit GL revenue account for a service category + patient tier.
+
+    Clinical services (CONSULT, LAB, INVEST, etc.) have 7 COA sub-accounts — one
+    per patient tier (Standard, Express, Insured, VIP, Outreach, EVIP, Non-National).
+    This function resolves the correct one.
+
+    Pharmacy / Optical product sales are NOT tier-differentiated in the COA —
+    they fall back to get_revenue_code() which uses product-type sub-accounts.
+
+    Falls back to get_revenue_code(category_key) if the tier account is not in DB.
+    """
+    if category_key in ('PHARMACY', 'OPTICAL'):
+        return get_revenue_code(category_key)
+
+    parent_code = _CLINICAL_CAT_PARENT.get(category_key)
+    suffix = _TIER_TO_SUFFIX.get((tier or 'STANDARD').upper(), '1')
+
+    if parent_code:
+        candidate = parent_code + suffix   # e.g. '705200' + '1' = '7052001'
+        try:
+            from apps.billing.models import GLAccount
+            if GLAccount.objects.filter(
+                code=candidate, is_summary=False, is_active=True
+            ).exists():
+                return candidate
+        except Exception:
+            pass
+
+    return get_revenue_code(category_key)
+
+
 def get_expense_code(category_key):
     """Get GL code for an expense category."""
     return _get_mapping('EXPENSE', category_key, _EXPENSE_DEFAULTS.get(category_key, _EXPENSE_DEFAULTS['EXP_OTHER']))
@@ -411,21 +475,28 @@ def post_invoice_issued(invoice, user=None):
         amount = Decimal(str(total))
         lines = []
 
-        # Debit: Patient AR — resolved from DB mapping (SYSTEM AR_PATIENT)
-        ar_patient = get_system_account('AR_PATIENT')
-        lines.append((ar_patient, amount, 0,
+        # Resolve patient tier from visit for tier-specific GL routing
+        visit = getattr(invoice, 'visit', None)
+        patient_tier = (getattr(visit, 'service_tier', None) or 'STANDARD').upper()
+
+        # Debit: AR account — insured patients use AR_INSURANCE, others AR_PATIENT
+        if patient_tier == 'INSURED':
+            ar_code = get_system_account('AR_INSURANCE') or get_system_account('AR_PATIENT')
+        else:
+            ar_code = get_system_account('AR_PATIENT')
+        lines.append((ar_code, amount, 0,
                        f"Invoice {invoice.invoice_number} — {invoice.patient.full_name}"))
 
-        # Credit: Revenue split by service category (item-level GL when available)
+        # Credit: Revenue split by service category + patient tier
         total_allocated = Decimal('0')
         item_list = list(items)
         for i, item in enumerate(item_list):
-            # Prefer item-level GL → sub-category GL → category default
+            # Prefer item-level GL → sub-category GL → tier-based category default
             rev_code = getattr(item, 'gl_account_code', '') or ''
             if not rev_code and hasattr(item, 'resolve_gl_code'):
                 rev_code = item.resolve_gl_code()
             if not rev_code:
-                rev_code = get_revenue_code(item.category)
+                rev_code = get_tier_revenue_code(item.category, patient_tier)
             if i == len(item_list) - 1:
                 item_amount = amount - total_allocated
             else:

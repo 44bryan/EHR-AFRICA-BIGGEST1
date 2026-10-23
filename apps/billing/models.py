@@ -45,12 +45,14 @@ class ServiceTierFilter(models.TextChoices):
     Controls which cashier desk tier can bill this service.
     Blank = visible to ALL cashier desks.
     """
-    ALL        = '',          'All Tiers (No restriction)'
-    STANDARD   = 'STANDARD',  'Standard Desk Only'
-    EXPRESS    = 'EXPRESS',   'Express Desk Only'
-    VIP        = 'VIP',       'VIP Desk Only'
-    EVIP       = 'EVIP',      'Executive VIP Desk Only'
-    INSURED    = 'INSURED',   'Insured / HMO Desk Only'
+    ALL          = '',            'All Tiers (No restriction)'
+    STANDARD     = 'STANDARD',    'Standard Desk Only'
+    EXPRESS      = 'EXPRESS',     'Express / Fast Track Desk Only'
+    VIP          = 'VIP',         'VIP Desk Only'
+    EVIP         = 'EVIP',        'Executive VIP Desk Only'
+    INSURED      = 'INSURED',     'Insured / HMO Desk Only'
+    OUTREACH     = 'OUTREACH',    'Outreach Only'
+    NON_NATIONAL = 'NON_NATIONAL', 'Non-National Only'
 
 
 class DeskType(models.TextChoices):
