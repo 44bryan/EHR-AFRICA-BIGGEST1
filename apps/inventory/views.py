@@ -3301,13 +3301,21 @@ def stock_exit_create(request):
         return redirect('inventory:stock_exit_list')
 
     import json as _json
+    from apps.accounts.models import UserRole
     store_codes = {str(s.pk): (s.store_code or s.location_type[:4]) for s in store_locations}
+    # HEAD_PHARMACIST: pre-select the pharmacy store so the form loads filtered
+    default_store_id = ''
+    if request.user.role == UserRole.HEAD_PHARMACIST:
+        pharm_store = store_locations.filter(location_type='PHARMACY').first()
+        if pharm_store:
+            default_store_id = str(pharm_store.pk)
     return render(request, 'inventory/stock_exit_form.html', {
         'items': items, 'departments': DEPARTMENTS,
         'reasons': EXIT_REASONS, 'store_locations': store_locations,
         'operation_types': exit_op_types,
         'store_codes': store_codes,
         'store_codes_json': _json.dumps(store_codes),
+        'default_store_id': default_store_id,
     })
 
 
@@ -3511,13 +3519,21 @@ def stock_entry_create(request):
 
     # Build store_code map for JS preview
     import json as _json
+    from apps.accounts.models import UserRole
     store_codes = {str(s.pk): (s.store_code or s.location_type[:4]) for s in store_locations}
+    # HEAD_PHARMACIST: pre-select the pharmacy store so the form loads filtered
+    default_store_id = ''
+    if request.user.role == UserRole.HEAD_PHARMACIST:
+        pharm_store = store_locations.filter(location_type='PHARMACY').first()
+        if pharm_store:
+            default_store_id = str(pharm_store.pk)
     return render(request, 'inventory/stock_entry_form.html', {
         'items': items, 'vendors': vendors,
         'sources': ENTRY_SOURCES, 'store_locations': store_locations,
         'operation_types': entry_op_types,
         'store_codes': store_codes,
         'store_codes_json': _json.dumps(store_codes),
+        'default_store_id': default_store_id,
     })
 
 
