@@ -1,40 +1,41 @@
 {% extends 'layouts/base_authenticated.html' %}
 {% load humanize %}
 {% block title %}{% if is_store_keeper_view %}My Submissions{% else %}Stock Validations{% endif %}{% endblock %}
+
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
   <div>
     {% if is_store_keeper_view %}
-    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2"></i>My Submissions</h5>
-    <p class="page-subtitle text-muted small mb-0">Track the status of your stock entries — see approval or rejection reasons</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>My Submissions</h5>
+    <p class="text-muted small mb-0">Track your stock entries — view approval or rejection reasons</p>
     {% else %}
-    <h5 class="fw-bold mb-0"><i class="bi bi-shield-check me-2"></i>Stock Validations</h5>
-    <p class="page-subtitle text-muted small mb-0">4-Eyes Principle — Finance Director validates stock transactions before GL posting</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-shield-check me-2 text-primary"></i>Stock Validations</h5>
+    <p class="text-muted small mb-0">4-Eyes Principle — Finance Director validates stock transactions before GL posting</p>
     {% endif %}
   </div>
   {% if is_store_keeper_view and my_rejected > 0 %}
-  <span class="badge bg-danger fs-6"><i class="bi bi-x-circle me-1"></i>{{ my_rejected }} rejected — action needed</span>
+  <span class="badge bg-danger fs-6 px-3 py-2"><i class="bi bi-x-circle me-1"></i>{{ my_rejected }} rejected — action needed</span>
   {% elif pending_count > 0 and not is_store_keeper_view %}
-  <span class="badge bg-warning text-dark fs-6"><i class="bi bi-hourglass-split me-1"></i>{{ pending_count }} pending review</span>
+  <span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-hourglass-split me-1"></i>{{ pending_count }} pending review</span>
   {% endif %}
 </div>
 {% endblock %}
+
 {% block content %}
+
 {% if is_store_keeper_view and my_rejected > 0 %}
-<div class="alert alert-danger d-flex align-items-center gap-2 mb-3 border-danger">
+<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
   <i class="bi bi-x-octagon-fill fs-5 flex-shrink-0"></i>
-  <span>
-    <strong>{{ my_rejected }} transaction(s) were rejected.</strong>
-    Click the row below to view the Finance Director's reason and resubmit.
-  </span>
+  <span><strong>{{ my_rejected }} transaction(s) were rejected.</strong> Open the row to read the Finance Director's reason and resubmit.</span>
 </div>
 {% endif %}
-<!-- Filter bar -->
+
+{# ── Filter bar ── #}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body py-2">
     <form method="get" class="row g-2 align-items-center">
-      <div class="col-md-4">
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search reference or description..." value="{{ search }}">
+      <div class="col-md-5">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search reference or description…" value="{{ search }}">
       </div>
       <div class="col-md-3">
         <select name="status" class="form-select form-select-sm">
@@ -44,87 +45,129 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-4 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
         {% if search or status_filter %}
-        <a href="{% url 'inventory:stock_validation_list' %}" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+        <a href="{% url 'inventory:stock_validation_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
         {% endif %}
+        <span class="text-muted small ms-auto align-self-center">{{ page_obj.paginator.count }} record{{ page_obj.paginator.count|pluralize }}</span>
       </div>
     </form>
   </div>
 </div>
 
-<div class="card mb-3 border-0 shadow-sm">
+{# ── Main table with date grouping ── #}
+<div class="card border-0 shadow-sm">
   <div class="card-body p-0">
-  <div class="table-responsive">
-    <table class="table table-sm table-hover mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Date</th>
-          <th>Type</th>
-          <th>Operation</th>
-          <th>Reference</th>
-          <th>Description</th>
-          <th class="text-end">Value (XAF)</th>
-          <th>GL Dr / Cr</th>
-          <th>Submitted By</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for sv in validations %}
-        <tr>
-          <td class="text-muted small text-nowrap">{{ sv.submitted_at|date:"d M Y" }}<br><span class="text-muted" style="font-size:.7rem;">{{ sv.submitted_at|date:"H:i" }}</span></td>
-          <td>
-            {% if sv.validation_type == 'GRN' %}<span class="badge bg-info-subtle text-info">GRN</span>
-            {% elif sv.validation_type == 'ENTRY' %}<span class="badge bg-success-subtle text-success">Stock In</span>
-            {% elif sv.validation_type == 'EXIT' %}<span class="badge bg-warning-subtle text-warning">Stock Out</span>
-            {% elif sv.validation_type == 'DISPOSAL' %}<span class="badge bg-danger-subtle text-danger">Disposal</span>
-            {% elif sv.validation_type == 'ADJUSTMENT' %}<span class="badge bg-secondary-subtle text-secondary">Adjustment</span>
-            {% elif sv.validation_type == 'COUNT' %}<span class="badge bg-primary-subtle text-primary">Count</span>
-            {% elif sv.validation_type == 'RETURN' %}<span class="badge bg-success-subtle text-success">Return</span>
-            {% elif sv.validation_type == 'ISSUE' %}<span class="badge bg-warning-subtle text-warning">Issue</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if sv.operation_type %}
-              <span class="badge bg-dark text-white" style="font-size:.7rem;" title="{{ sv.operation_type.name }}">{{ sv.operation_type.code }}</span>
-              <div class="text-muted" style="font-size:.65rem;">{{ sv.operation_type.name|truncatechars:25 }}</div>
-            {% else %}
-              <span class="text-muted small">&mdash;</span>
-            {% endif %}
-          </td>
-          <td class="fw-bold font-monospace small">{{ sv.reference }}</td>
-          <td class="small">{{ sv.description|truncatechars:50 }}</td>
-          <td class="text-end fw-semibold">{{ sv.total_value|floatformat:0|intcomma }}</td>
-          <td style="font-size:.7rem;" class="font-monospace">
-            {% if sv.operation_type %}
-              <span class="text-success">Dr {{ sv.operation_type.debit_account.code }}</span><br>
-              <span class="text-danger">Cr {{ sv.operation_type.credit_account.code }}</span>
-            {% else %}
-              <span class="text-muted">Auto</span>
-            {% endif %}
-          </td>
-          <td class="text-muted small">{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username }}</td>
-          <td>
-            {% if sv.status == 'PENDING' %}<span class="badge bg-warning text-dark">Pending</span>
-            {% elif sv.status == 'VALIDATED' %}<span class="badge bg-success">Validated</span>
-            {% elif sv.status == 'REJECTED' %}<span class="badge bg-danger">Rejected</span>
-            {% endif %}
-          </td>
-          <td>
-            <a href="{% url 'inventory:stock_validation_detail' sv.pk %}" class="btn btn-sm btn-outline-primary">
-              {% if sv.status == 'PENDING' and can_validate %}Review{% else %}View{% endif %}
-            </a>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="10" class="text-center text-muted py-4">No validations found.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3" style="width:90px;">Time</th>
+            <th style="width:90px;">Type</th>
+            <th style="width:140px;">Reference</th>
+            <th>Description</th>
+            <th class="text-end" style="width:110px;">Value (XAF)</th>
+            <th style="width:100px;">Submitted by</th>
+            <th style="width:90px;">Status</th>
+            <th style="width:70px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% regroup validations by submit_date as date_groups %}
+          {% for date_group in date_groups %}
+          {# ── Date separator ── #}
+          <tr class="table-secondary">
+            <td colspan="8" class="ps-3 py-1 fw-semibold small text-secondary">
+              <i class="bi bi-calendar3 me-1"></i>{{ date_group.grouper|date:"l, d F Y" }}
+              <span class="badge bg-secondary bg-opacity-50 text-dark ms-2">{{ date_group.list|length }} operation{{ date_group.list|length|pluralize }}</span>
+            </td>
+          </tr>
+          {% for sv in date_group.list %}
+          <tr class="{% if sv.status == 'REJECTED' %}table-danger bg-opacity-25{% endif %}">
+            <td class="ps-3 text-muted" style="font-size:.75rem;">{{ sv.submitted_at|date:"H:i" }}</td>
+            <td>
+              {% if sv.validation_type == 'GRN' %}
+                <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25">GRN</span>
+              {% elif sv.validation_type == 'ENTRY' %}
+                <span class="badge bg-success-subtle text-success border border-success border-opacity-25">Stock In</span>
+              {% elif sv.validation_type == 'EXIT' %}
+                <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25">Stock Out</span>
+              {% elif sv.validation_type == 'DISPOSAL' %}
+                <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25">Disposal</span>
+              {% elif sv.validation_type == 'ADJUSTMENT' %}
+                <span class="badge bg-warning-subtle text-warning border border-warning border-opacity-25">Adjustment</span>
+              {% elif sv.validation_type == 'COUNT' %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary border-opacity-25">Count</span>
+              {% elif sv.validation_type == 'RETURN' %}
+                <span class="badge bg-success-subtle text-success border border-success border-opacity-25">Return</span>
+              {% elif sv.validation_type == 'ISSUE' %}
+                <span class="badge bg-warning-subtle text-warning border border-warning border-opacity-25">Issue</span>
+              {% endif %}
+            </td>
+            <td class="fw-semibold font-monospace small">{{ sv.reference }}</td>
+            <td class="text-muted small">
+              {{ sv.description|truncatechars:60 }}
+              {% if sv.operation_type %}
+              <span class="badge bg-light text-secondary border ms-1" style="font-size:.65rem;" title="{{ sv.operation_type.name }}">{{ sv.operation_type.code }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end fw-semibold">{{ sv.total_value|floatformat:0|intcomma }}</td>
+            <td class="text-muted small text-nowrap">{{ sv.submitted_by.get_full_name|default:sv.submitted_by.username|truncatechars:16 }}</td>
+            <td>
+              {% if sv.status == 'PENDING' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif sv.status == 'VALIDATED' %}
+                <span class="badge bg-success">Validated</span>
+              {% elif sv.status == 'REJECTED' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'inventory:stock_validation_detail' sv.pk %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                {% if sv.status == 'PENDING' and can_validate %}Review{% else %}View{% endif %}
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+          {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-5">
+            <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>No validations found.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
+
+{# ── Pagination ── #}
+{% if page_obj.has_other_pages %}
+<nav class="mt-3 d-flex justify-content-center">
+  <ul class="pagination pagination-sm mb-0">
+    {% if page_obj.has_previous %}
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ search }}&status={{ status_filter }}">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+    </li>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+      <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+      <li class="page-item"><a class="page-link" href="?page={{ num }}&q={{ search }}&status={{ status_filter }}">{{ num }}</a></li>
+      {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ search }}&status={{ status_filter }}">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
 {% endblock %}

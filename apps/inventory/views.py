@@ -3553,11 +3553,15 @@ def stock_validation_list(request):
     """
     if not _can_validate_stock(request.user) and not _can_access_store(request.user):
         return HttpResponseForbidden('Access denied.')
+    from django.core.paginator import Paginator
+    from django.db.models.functions import TruncDate as _TruncDate
     status = request.GET.get('status', '')
     search = request.GET.get('q', '').strip()
 
     is_store_keeper_view = not _can_validate_stock(request.user)
-    qs = StockValidation.objects.filter(is_deleted=False).select_related('submitted_by', 'validated_by')
+    qs = StockValidation.objects.filter(is_deleted=False).select_related(
+        'submitted_by', 'validated_by', 'operation_type__debit_account', 'operation_type__credit_account'
+    )
 
     # Store keepers only see their own submissions
     if is_store_keeper_view:
@@ -3570,13 +3574,19 @@ def stock_validation_list(request):
             Q(reference__icontains=search) | Q(description__icontains=search)
         )
 
+    qs = qs.annotate(submit_date=_TruncDate('submitted_at')).order_by('-submitted_at')
+
     pending_count = StockValidation.objects.filter(status=StockValidationStatus.PENDING, is_deleted=False).count()
     my_rejected = 0
     if is_store_keeper_view:
         my_rejected = qs.filter(status=StockValidationStatus.REJECTED).count()
 
+    paginator = Paginator(qs, 30)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
     return render(request, 'inventory/stock_validation_list.html', {
-        'validations': qs[:200],
+        'validations': page_obj,
+        'page_obj': page_obj,
         'status_filter': status, 'search': search,
         'status_choices': StockValidationStatus.choices,
         'pending_count': pending_count,
