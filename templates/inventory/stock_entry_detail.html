@@ -1,25 +1,29 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize %}
-{% block title %}{{ note.entry_number }} — Bon d'Entrée{% endblock %}
+{% block title %}{{ note.entry_number }} — Stock Entry (BE){% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
   <div>
     <h5 class="mb-0 fw-bold">
-      <i class="bi bi-file-earmark-text me-2 text-success"></i>
+      <i class="bi bi-file-earmark-text me-2 text-muted"></i>
       {{ note.entry_number }}
-      {% if note.status == 'VALIDATED' %}<span class="badge bg-success ms-2 fs-6">Validé</span>
-      {% elif note.status == 'REJECTED' %}<span class="badge bg-danger ms-2 fs-6">Rejeté</span>
-      {% else %}<span class="badge bg-warning text-dark ms-2 fs-6">En attente GL</span>{% endif %}
+      {% if note.status == 'VALIDATED' %}
+      <span class="badge fw-semibold ms-2" style="font-size:.75rem;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">Validated</span>
+      {% elif note.status == 'REJECTED' %}
+      <span class="badge fw-semibold ms-2" style="font-size:.75rem;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Rejected</span>
+      {% else %}
+      <span class="badge fw-semibold ms-2" style="font-size:.75rem;background:#fef9c3;color:#713f12;border:1px solid #fde68a;">Pending GL</span>
+      {% endif %}
     </h5>
     <div class="text-muted small">Bon d'Entrée &mdash; OHADA/SYSCOHADA</div>
   </div>
   <div class="d-flex gap-2 d-print-none">
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Imprimer
+      <i class="bi bi-printer me-1"></i>Print
     </button>
     <a href="{% url 'inventory:stock_entry_list' %}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Retour liste
+      <i class="bi bi-arrow-left me-1"></i>Back to list
     </a>
   </div>
 </div>
@@ -32,30 +36,30 @@
 <div class="row g-3 mb-4">
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-success text-white py-2">
-        <i class="bi bi-info-circle me-1"></i>Informations du document
+      <div class="card-header py-2" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">
+        <i class="bi bi-info-circle me-1 text-muted"></i><span class="fw-semibold small">Document Information</span>
       </div>
       <div class="card-body">
         <table class="table table-sm table-borderless mb-0 small">
           <tr>
-            <th class="text-muted w-40" style="width:40%">N° Bon d'Entrée</th>
-            <td class="fw-bold font-monospace text-success">{{ note.entry_number }}</td>
+            <th class="text-muted" style="width:40%">BE Number</th>
+            <td class="fw-bold font-monospace" style="color:#1c3a5e;">{{ note.entry_number }}</td>
           </tr>
           <tr>
             <th class="text-muted">Date</th>
             <td>{{ note.entry_date|date:"d/m/Y" }}</td>
           </tr>
           <tr>
-            <th class="text-muted">Type d'entrée</th>
+            <th class="text-muted">Entry Type</th>
             <td>{{ note.get_source_display }}</td>
           </tr>
           <tr>
-            <th class="text-muted">Magasin destinataire</th>
+            <th class="text-muted">Destination Store</th>
             <td>{{ note.destination_store.name|default:"—" }}</td>
           </tr>
           {% if note.operation_type %}
           <tr>
-            <th class="text-muted">Op. GL</th>
+            <th class="text-muted">GL Operation</th>
             <td class="font-monospace small">{{ note.operation_type.code }} — {{ note.operation_type.name }}</td>
           </tr>
           {% endif %}
@@ -65,39 +69,42 @@
   </div>
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-light py-2">
-        <i class="bi bi-truck me-1"></i>Fournisseur &amp; Références
+      <div class="card-header py-2" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">
+        <i class="bi bi-truck me-1 text-muted"></i><span class="fw-semibold small">Vendor &amp; References</span>
       </div>
       <div class="card-body">
         <table class="table table-sm table-borderless mb-0 small">
           <tr>
-            <th class="text-muted w-40" style="width:40%">Fournisseur</th>
+            <th class="text-muted" style="width:40%">Vendor</th>
             <td class="fw-semibold">{{ note.vendor_name|default:"—" }}</td>
           </tr>
           <tr>
-            <th class="text-muted">N° Facture</th>
+            <th class="text-muted">Invoice No.</th>
             <td>{{ note.invoice_number|default:"—" }}</td>
           </tr>
           <tr>
-            <th class="text-muted">Bon de livraison</th>
+            <th class="text-muted">Delivery Note</th>
             <td>{{ note.delivery_note|default:"—" }}</td>
           </tr>
           <tr>
-            <th class="text-muted">Ref. commande (PO)</th>
+            <th class="text-muted">PO Reference</th>
             <td>{{ note.po_reference|default:"—" }}</td>
           </tr>
           <tr>
-            <th class="text-muted">État à réception</th>
+            <th class="text-muted">Condition on receipt</th>
             <td>
-              {% if note.condition == 'GOOD' %}<span class="badge bg-success-subtle text-success">Bon état</span>
-              {% elif note.condition == 'PARTIAL' %}<span class="badge bg-warning-subtle text-warning">Partiel</span>
-              {% elif note.condition == 'DAMAGED' %}<span class="badge bg-danger-subtle text-danger">Endommagé</span>
+              {% if note.condition == 'GOOD' %}
+              <span class="badge fw-semibold" style="font-size:.7rem;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">Good</span>
+              {% elif note.condition == 'PARTIAL' %}
+              <span class="badge fw-semibold" style="font-size:.7rem;background:#fef9c3;color:#713f12;border:1px solid #fde68a;">Partial</span>
+              {% elif note.condition == 'DAMAGED' %}
+              <span class="badge fw-semibold" style="font-size:.7rem;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;">Damaged</span>
               {% else %}{{ note.condition }}{% endif %}
             </td>
           </tr>
           {% if note.temp_check %}
           <tr>
-            <th class="text-muted">Contrôle temp.</th>
+            <th class="text-muted">Temp. check</th>
             <td>{{ note.temp_check }}</td>
           </tr>
           {% endif %}
@@ -109,62 +116,63 @@
 
 {# ── Lines table ── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-    <span class="fw-semibold"><i class="bi bi-list-ul me-1 text-success"></i>Détail des articles reçus</span>
-    <span class="text-muted small">{{ movements|length }} ligne(s) &mdash; Méthode CUMP</span>
+  <div class="card-header py-2 d-flex justify-content-between align-items-center" style="background:#f8f9fa;border-bottom:1px solid #dee2e6;">
+    <span class="fw-semibold small"><i class="bi bi-list-ul me-1 text-muted"></i>Items Received</span>
+    <span class="text-muted small">{{ movements|length }} line{{ movements|length|pluralize }} &mdash; CUMP method</span>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0 small">
-        <thead class="table-light">
-          <tr>
-            <th>#</th>
-            <th>Code article</th>
-            <th>Désignation</th>
-            <th>Catégorie</th>
-            <th class="text-center">Qté reçue</th>
-            <th>Lot / Batch</th>
-            <th>Expiry</th>
-            <th class="text-end">CUMP (FCFA)</th>
-            <th class="text-end">Valeur ligne (FCFA)</th>
-            <th class="text-end">Stock après</th>
+      <table class="table table-sm table-hover align-middle mb-0" style="font-size:.83rem;">
+        <thead>
+          <tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6;">
+            <th class="ps-3" style="width:40px;">#</th>
+            <th style="width:110px;">Item Code</th>
+            <th>Description</th>
+            <th style="width:110px;">Category</th>
+            <th class="text-center" style="width:90px;">Qty Received</th>
+            <th style="width:120px;">Lot / Batch</th>
+            <th style="width:100px;">Expiry</th>
+            <th class="text-end" style="width:120px;">CUMP (XAF)</th>
+            <th class="text-end" style="width:130px;">Line Value (XAF)</th>
+            <th class="text-end" style="width:100px;">Balance After</th>
           </tr>
         </thead>
         <tbody>
           {% for m in movements %}
-          <tr>
-            <td class="text-muted">{{ forloop.counter }}</td>
-            <td><code class="small">{{ m.item.item_code }}</code></td>
+          <tr style="border-bottom:1px solid #f1f3f5;">
+            <td class="ps-3 text-muted">{{ forloop.counter }}</td>
+            <td><code style="font-size:.78rem;color:#555;">{{ m.item.item_code }}</code></td>
             <td class="fw-semibold">{{ m.item.name }}</td>
-            <td><span class="badge bg-light text-dark border" style="font-size:.7rem;">{{ m.item.get_category_display }}</span></td>
-            <td class="text-center fw-bold text-success">+{{ m.quantity|intcomma }}</td>
+            <td>
+              <span class="badge fw-semibold" style="font-size:.68rem;background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">
+                {{ m.item.get_category_display }}
+              </span>
+            </td>
+            <td class="text-center fw-semibold" style="color:#166534;">+{{ m.quantity|intcomma }}</td>
             <td class="text-muted small">{% if m.batch %}{{ m.batch.lot_number }}{% else %}—{% endif %}</td>
             <td class="small">
               {% if m.batch and m.batch.expiry_date %}
-              <span class="badge bg-{{ m.batch.expiry_badge_color }}-subtle text-{{ m.batch.expiry_badge_color }}">
+              <span class="badge fw-semibold" style="font-size:.68rem;background:#f1f3f5;color:#334155;border:1px solid #dee2e6;">
                 {{ m.batch.expiry_date|date:"d/m/Y" }}
               </span>
               {% else %}—{% endif %}
             </td>
-            <td class="text-end">{{ m.item.unit_cost|floatformat:0|intcomma }}</td>
-            <td class="text-end fw-semibold">
-              {% with val=m.quantity|floatformat:0 %}
-              {# value = qty × unit_cost at time of entry #}
-              {{ m.quantity|intcomma }}
-              {% endwith %}
-            </td>
+            <td class="text-end text-muted">{{ m.item.unit_cost|floatformat:0|intcomma }}</td>
+            <td class="text-end fw-semibold">{{ m.quantity|intcomma }}</td>
             <td class="text-end text-muted">{{ m.balance_after|intcomma }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="10" class="text-center text-muted py-4">Aucune ligne.</td></tr>
+          <tr>
+            <td colspan="10" class="text-center text-muted py-4">No lines recorded.</td>
+          </tr>
           {% endfor %}
         </tbody>
-        <tfoot class="table-light fw-bold">
-          <tr>
-            <td colspan="4" class="text-end text-muted">Total :</td>
-            <td class="text-center text-success">+{{ note.total_lines }} ligne(s)</td>
+        <tfoot>
+          <tr style="background:#f8f9fa;border-top:2px solid #dee2e6;">
+            <td colspan="4" class="ps-3 text-end text-muted small fw-semibold">Total:</td>
+            <td class="text-center fw-bold" style="color:#166534;">{{ note.total_lines }} line{{ note.total_lines|pluralize }}</td>
             <td colspan="3"></td>
-            <td class="text-end text-success">{{ note.total_value|floatformat:0|intcomma }} FCFA</td>
+            <td class="text-end fw-bold" style="color:#1c3a5e;">{{ note.total_value|floatformat:0|intcomma }} XAF</td>
             <td></td>
           </tr>
         </tfoot>
@@ -173,36 +181,37 @@
   </div>
 </div>
 
-{# ── Status / GL info ── #}
+{# ── GL validation status ── #}
 {% if note.status == 'VALIDATED' and note.validated_by %}
-<div class="alert alert-success small">
+<div class="alert small py-2 mb-3" style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">
   <i class="bi bi-check-circle-fill me-1"></i>
-  Validé par <strong>{{ note.validated_by.get_full_name }}</strong>
-  le {{ note.validated_at|date:"d/m/Y à H:i" }}
-  {% if note.journal_entry %} — Journal entry <strong>{{ note.journal_entry.reference }}</strong>{% endif %}
+  Validated by <strong>{{ note.validated_by.get_full_name }}</strong>
+  on {{ note.validated_at|date:"d/m/Y" }} at {{ note.validated_at|date:"H:i" }}
+  {% if note.journal_entry %} &mdash; Journal entry <strong>{{ note.journal_entry.reference }}</strong>{% endif %}
 </div>
 {% endif %}
 
 {% if note.notes %}
-<div class="alert alert-light border small"><i class="bi bi-chat-text me-1"></i>{{ note.notes }}</div>
+<div class="alert alert-light border small py-2 mb-3"><i class="bi bi-chat-text me-1"></i>{{ note.notes }}</div>
 {% endif %}
 
-<div class="row">
-  <div class="col-md-4 text-center border-top pt-3 mt-3">
-    <div class="text-muted small mb-1">Saisi par</div>
+{# ── Signature block (print) ── #}
+<div class="row mt-4">
+  <div class="col-md-4 text-center border-top pt-3">
+    <div class="text-muted small mb-1">Entered by</div>
     <div class="fw-semibold">{{ note.created_by.get_full_name|default:"—" }}</div>
     <div class="text-muted small">{{ note.created_at|date:"d/m/Y H:i" }}</div>
     <div class="mt-4 border-top pt-2 text-muted small">Signature</div>
   </div>
-  <div class="col-md-4 text-center border-top pt-3 mt-3">
-    <div class="text-muted small mb-1">Responsable magasin</div>
+  <div class="col-md-4 text-center border-top pt-3">
+    <div class="text-muted small mb-1">Store Manager</div>
     <div class="fw-semibold">&nbsp;</div>
     <div class="text-muted small">&nbsp;</div>
     <div class="mt-4 border-top pt-2 text-muted small">Signature</div>
   </div>
-  <div class="col-md-4 text-center border-top pt-3 mt-3">
-    <div class="text-muted small mb-1">Validé par (Finance)</div>
-    <div class="fw-semibold">{{ note.validated_by.get_full_name|default:"En attente" }}</div>
+  <div class="col-md-4 text-center border-top pt-3">
+    <div class="text-muted small mb-1">Validated by (Finance)</div>
+    <div class="fw-semibold">{{ note.validated_by.get_full_name|default:"Pending" }}</div>
     <div class="text-muted small">{{ note.validated_at|date:"d/m/Y H:i"|default:"—" }}</div>
     <div class="mt-4 border-top pt-2 text-muted small">Signature</div>
   </div>
