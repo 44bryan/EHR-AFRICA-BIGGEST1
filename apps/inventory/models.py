@@ -300,6 +300,7 @@ class StockEntryNote(AuditModel):
         'billing.JournalEntry', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='entry_notes',
     )
+    deletion_reason   = models.TextField(blank=True, default='')
 
     class Meta:
         ordering = ['-entry_date', '-created_at']
@@ -375,6 +376,7 @@ class StockExitNote(AuditModel):
         'billing.JournalEntry', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='exit_notes',
     )
+    deletion_reason = models.TextField(blank=True, default='')
 
     class Meta:
         ordering = ['-exit_date', '-created_at']
