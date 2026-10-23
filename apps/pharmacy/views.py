@@ -4609,6 +4609,11 @@ def receive_stock(request):
     """Standalone stock receiving — add new deliveries without navigating Drug & Stock."""
     if not _can_manage_pharmacy(request.user):
         return HttpResponse('Access denied', status=403)
+    # HEAD_PHARMACIST uses the OHADA inventory BE form (GL-compliant)
+    from apps.accounts.models import UserRole
+    if request.user.role == UserRole.HEAD_PHARMACIST:
+        from django.shortcuts import redirect
+        return redirect('inventory:stock_entry_list')
 
     suppliers = Supplier.objects.filter(is_deleted=False).order_by('name')
     drugs = Drug.objects.filter(is_active=True, is_deleted=False).order_by('name')
