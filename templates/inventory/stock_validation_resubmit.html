@@ -1,0 +1,110 @@
+{% extends 'layouts/base_authenticated.html' %}
+{% load humanize %}
+{% block title %}Resubmit — {{ sv.reference }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-arrow-repeat me-2 text-warning"></i>Edit &amp; Resubmit</h5>
+    <p class="text-muted small mb-0">Correct the rejected entry and send back for Finance Director review</p>
+  </div>
+  <a href="{% url 'inventory:stock_validation_detail' sv.pk %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{# Rejection reason reminder #}
+<div class="alert alert-danger border-danger border-2 d-flex gap-3 align-items-start mb-4">
+  <i class="bi bi-x-octagon-fill fs-3 text-danger flex-shrink-0 mt-1"></i>
+  <div>
+    <div class="fw-bold mb-1">Rejection Reason from Finance Director:</div>
+    <div class="fs-6">{{ sv.validation_notes|default:"No reason provided." }}</div>
+    <div class="small text-muted mt-1">
+      Rejected by <strong>{{ sv.validated_by.get_full_name }}</strong>
+      on {{ sv.validated_at|date:"d M Y H:i" }}
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-warning-subtle fw-semibold py-2">
+        <i class="bi bi-pencil-square me-1 text-warning"></i>Correct &amp; Resubmit — {{ sv.reference }}
+      </div>
+      <div class="card-body">
+        <form method="post" action="{% url 'inventory:stock_validation_resubmit' sv.pk %}">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description / Notes <span class="text-danger">*</span></label>
+            <textarea name="description" class="form-control" rows="3" required>{{ sv.description }}</textarea>
+            <div class="form-text">Correct the description based on the Finance Director's feedback.</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Operation Type (GL Accounts)</label>
+            <select name="operation_type" class="form-select">
+              <option value="">-- Keep current: {% if sv.operation_type %}{{ sv.operation_type.code }} — {{ sv.operation_type.name }}{% else %}Not set{% endif %} --</option>
+              {% regroup op_types by get_category_display as grouped_ops %}
+              {% for group in grouped_ops %}
+              <optgroup label="{{ group.grouper }}">
+                {% for op in group.list %}
+                <option value="{{ op.pk }}" {% if sv.operation_type and sv.operation_type.pk == op.pk %}selected{% endif %}>
+                  {{ op.code }} — {{ op.name }}
+                </option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+            <div class="form-text">Change only if the Finance Director asked you to use a different operation type.</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-warning fw-semibold px-4">
+              <i class="bi bi-send me-1"></i>Resubmit for Review
+            </button>
+            <a href="{% url 'inventory:stock_validation_detail' sv.pk %}" class="btn btn-outline-secondary">
+              Cancel
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 bg-light fw-semibold small">
+        <i class="bi bi-receipt me-1 text-primary"></i>Transaction Summary
+      </div>
+      <ul class="list-group list-group-flush small">
+        <li class="list-group-item d-flex justify-content-between py-2">
+          <span class="text-muted">Reference</span>
+          <span class="fw-semibold font-monospace">{{ sv.reference }}</span>
+        </li>
+        <li class="list-group-item d-flex justify-content-between py-2">
+          <span class="text-muted">Type</span>
+          <span class="fw-semibold">{{ sv.get_validation_type_display }}</span>
+        </li>
+        <li class="list-group-item d-flex justify-content-between py-2">
+          <span class="text-muted">Value</span>
+          <span class="fw-bold text-primary">{{ sv.total_value|floatformat:0|intcomma }} XAF</span>
+        </li>
+        <li class="list-group-item d-flex justify-content-between py-2">
+          <span class="text-muted">Submitted</span>
+          <span>{{ sv.submitted_at|date:"d M Y H:i" }}</span>
+        </li>
+      </ul>
+    </div>
+    <div class="alert alert-info small mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>What happens when you resubmit:</strong><br>
+      The Finance Director will receive a notification and review your corrected entry.
+      The stock movement itself is unchanged — only the description and operation type can be updated here.
+    </div>
+  </div>
+</div>
+{% endblock %}

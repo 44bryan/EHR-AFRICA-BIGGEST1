@@ -3859,6 +3859,91 @@ def stock_validation_reject(request, validation_id):
     return redirect('inventory:stock_validation_list')
 
 
+@login_required
+def stock_validation_resubmit(request, validation_id):
+    """
+    Store keeper edits a REJECTED validation and resubmits for Finance review.
+    Only the original submitter (or admin) can resubmit their own rejected entry.
+    Resets status to PENDING, clears rejection data, updates description/operation type.
+    """
+    sv = get_object_or_404(StockValidation, pk=validation_id, is_deleted=False)
+
+    # Only original submitter or admin can resubmit
+    if sv.submitted_by != request.user and not (
+        request.user.is_superuser or request.user.role in (
+            UserRole.SUPER_ADMIN, UserRole.ADMIN_DIRECTOR
+        )
+    ):
+        messages.error(request, 'Only the original submitter can resubmit this transaction.')
+        return redirect('inventory:stock_validation_detail', validation_id=sv.pk)
+
+    if sv.status != StockValidationStatus.REJECTED:
+        messages.error(request, 'Only rejected transactions can be resubmitted.')
+        return redirect('inventory:stock_validation_detail', validation_id=sv.pk)
+
+    if request.method == 'POST':
+        new_description = request.POST.get('description', sv.description).strip()
+        new_op_type_id  = request.POST.get('operation_type', '')
+
+        sv.description   = new_description
+        sv.status        = StockValidationStatus.PENDING
+        sv.validated_by  = None
+        sv.validated_at  = None
+        sv.validation_notes = ''
+        sv.journal_entry = None
+
+        if new_op_type_id:
+            try:
+                sv.operation_type_id = new_op_type_id
+            except Exception:
+                pass
+
+        sv.save(update_fields=[
+            'description', 'status', 'validated_by', 'validated_at',
+            'validation_notes', 'journal_entry', 'operation_type',
+        ])
+
+        # Notify Finance Director(s) that a resubmission is waiting
+        try:
+            from apps.notifications.utils import notify_role
+            from apps.notifications.models import NotificationType, NotificationPriority
+            from apps.accounts.models import UserRole as UR
+            from django.urls import reverse
+            detail_url = reverse('inventory:stock_validation_detail', args=[sv.pk])
+            from apps.accounts.models import User
+            finance_directors = User.objects.filter(
+                role__in=[UR.FINANCE_DIRECTOR, UR.SENIOR_ACCOUNTANT],
+                is_active=True,
+            )
+            from apps.notifications.utils import notify
+            for fd in finance_directors:
+                notify(
+                    fd,
+                    title=f'Stock Entry Resubmitted — {sv.reference}',
+                    message=(
+                        f'{request.user.get_full_name() or request.user.username} has corrected '
+                        f'and resubmitted "{sv.description}" ({sv.reference}) for your review.'
+                    ),
+                    link=detail_url,
+                    notification_type=NotificationType.SYSTEM,
+                    priority=NotificationPriority.HIGH,
+                )
+        except Exception as e:
+            logger.warning('stock_validation_resubmit: notification failed — %s', e)
+
+        messages.success(request,
+            f'{sv.reference} resubmitted for Finance Director review. '
+            f'You will be notified once it is reviewed.')
+        return redirect('inventory:stock_validation_detail', validation_id=sv.pk)
+
+    # GET — show the resubmit edit form
+    op_types = StockOperationType.objects.filter(is_deleted=False).order_by('category', 'code')
+    return render(request, 'inventory/stock_validation_resubmit.html', {
+        'sv': sv,
+        'op_types': op_types,
+    })
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # STOCK CARD (Fiche de Stock) — per-item movement history
 # ═══════════════════════════════════════════════════════════════════════════════

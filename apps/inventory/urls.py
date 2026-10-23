@@ -144,6 +144,7 @@ urlpatterns = [
     path('validations/<uuid:validation_id>/', views.stock_validation_detail, name='stock_validation_detail'),
     path('validations/<uuid:validation_id>/approve/', views.stock_validation_approve, name='stock_validation_approve'),
     path('validations/<uuid:validation_id>/reject/', views.stock_validation_reject, name='stock_validation_reject'),
+    path('validations/<uuid:validation_id>/resubmit/', views.stock_validation_resubmit, name='stock_validation_resubmit'),
 
     # ── Stock Card / Bin Card / Stock Ledger ───────────────────
     path('items/<uuid:item_id>/stock-card/', views.stock_card, name='stock_card'),
