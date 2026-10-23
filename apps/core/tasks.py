@@ -324,7 +324,7 @@ def monthly_depreciation_task(self):
                     f'{posted} asset(s) posted, {skipped} skipped (fully depreciated or zero). '
                     + (f'{len(errors)} error(s): {"; ".join(errors[:3])}' if errors else 'No errors.')
                 ),
-                notification_type='SUCCESS' if not errors else 'WARNING',
+                notification_type='SYSTEM',
                 link='/billing/gl/journal/',
             )
     except Exception as e:

@@ -3785,18 +3785,18 @@ def stock_validation_approve(request, validation_id):
         je_ref = journal_entry.entry_number if journal_entry else 'No GL Entry'
         notify(
             sv.submitted_by,
-            title=f'✅ Stock Entry Validated — {sv.reference}',
+            title=f'Stock Entry Validated — {sv.reference}',
             message=(
                 f'Your stock transaction "{sv.description}" has been validated by '
                 f'{request.user.get_full_name() or request.user.username}. '
                 f'GL Journal Entry {je_ref} has been posted to the ledger.'
             ),
             link=detail_url,
-            notification_type=NotificationType.SUCCESS,
+            notification_type=NotificationType.SYSTEM,
             priority=NotificationPriority.HIGH,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('stock_validation_approve: notification failed — %s', e)
 
     return redirect('inventory:stock_validation_list')
 
@@ -3821,21 +3821,22 @@ def stock_validation_reject(request, validation_id):
         from apps.notifications.models import NotificationType, NotificationPriority
         from django.urls import reverse
         detail_url = reverse('inventory:stock_validation_detail', args=[sv.pk])
-        notify(
-            sv.submitted_by,
-            title=f'❌ Stock Entry Rejected — {sv.reference}',
-            message=(
-                f'Your stock transaction "{sv.description}" was rejected by '
-                f'{request.user.get_full_name() or request.user.username}. '
-                f'Reason: {sv.validation_notes or "No reason provided"}. '
-                f'Please review and resubmit.'
-            ),
-            link=detail_url,
-            notification_type=NotificationType.ALERT,
-            priority=NotificationPriority.HIGH,
-        )
-    except Exception:
-        pass
+        if sv.submitted_by:
+            notify(
+                sv.submitted_by,
+                title=f'Stock Entry Rejected — {sv.reference}',
+                message=(
+                    f'Your stock transaction "{sv.description}" was rejected by '
+                    f'{request.user.get_full_name() or request.user.username}. '
+                    f'Reason: {sv.validation_notes or "No reason provided"}. '
+                    f'Please review and resubmit.'
+                ),
+                link=detail_url,
+                notification_type=NotificationType.SYSTEM,
+                priority=NotificationPriority.HIGH,
+            )
+    except Exception as e:
+        logger.warning('stock_validation_reject: notification failed — %s', e)
 
     return redirect('inventory:stock_validation_list')
 
