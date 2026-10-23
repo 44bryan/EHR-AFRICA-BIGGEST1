@@ -847,18 +847,18 @@ def post_asset_addition(asset, user=None):
         if cost <= 0:
             return None
 
-        # Map category to OHADA asset account
+        # Map category to OHADA asset account — postable 7-digit children from new COA
         CAT_MAP = {
-            'LAND':         '221000',
-            'BUILDING':     '231000',
-            'VEHICLE':      '245000',
-            'EQUIPMENT':    '241000',
-            'FURNITURE':    '244000',
-            'IT_EQUIPMENT': '242000',
-            'MEDICAL':      '241000',
-            'OTHER':        '249000',
+            'LAND':         '226100',   # Parkings (closest land improvement account)
+            'BUILDING':     '2313001',  # Main Building
+            'VEHICLE':      '2451001',  # Vehicles
+            'EQUIPMENT':    '2411001',  # Electrical Equipment (general equipment)
+            'FURNITURE':    '2441101',  # Hospital Furniture
+            'IT_EQUIPMENT': '2122001',  # IT Licences / Software
+            'MEDICAL':      '2413001',  # Ophthalmology Equipment
+            'OTHER':        '2411001',  # Default to Electrical Equipment
         }
-        asset_code = CAT_MAP.get(str(asset.category), '241000')
+        asset_code = CAT_MAP.get(str(asset.category), '2411001')
         asset_acct = GLAccount.objects.filter(code=asset_code, is_deleted=False).first()
         if not asset_acct:
             asset_acct = GLAccount.objects.filter(code__startswith='241', is_deleted=False).first()
@@ -1536,7 +1536,7 @@ def post_cash_variance(variance, user=None):
 PHARMACY_STOCK   = '321000'   # OHADA Class 3 — Pharmacy Stock (Marchandises)
 THEATRE_STOCK    = '323000'   # OHADA Class 3 — Theatre/OT Consumables Stock
 COGS_PHARMACY    = '601000'   # OHADA Class 6 — Cost of Goods Sold (Achats de marchandises)
-PHARMACY_REVENUE = '704000'   # OHADA Class 7 — Pharmacy Sales Revenue
+PHARMACY_REVENUE = '7051501'  # Sales of Medications-MICEI (postable child of 705150)
 STOCK_LOSS       = '603000'   # OHADA Class 6 — Stock Losses (damage, expiry, pilferage)
 STOCK_GAIN       = '321000'   # Surplus goes back to stock
 

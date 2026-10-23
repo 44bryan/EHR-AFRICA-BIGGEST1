@@ -653,7 +653,7 @@ def insurance_ledger(request):
 
     OHADA Chart of Accounts:
       - Class 4 — Third-Party Accounts
-      - Account 412000 — Insurance Receivables (Assurances)
+      - Account 4120002 — Clients-Patients (HMO / CNPS Insurance)
       - Batch submitted = Dr 412 (insurer owes)
       - Payment received = Cr 412 (insurer paid)
       - Claim rejected = Cr 412 (AR reversed)
@@ -680,9 +680,9 @@ def insurance_ledger(request):
         scheme = InsuranceScheme.objects.filter(pk=scheme_id, is_deleted=False).first()
 
     if scheme:
-        # Build ledger from JournalLines on account 412000
+        # Build ledger from JournalLines on insurance AR account (4120002)
         from apps.billing.models import GLAccount
-        ar_acct = GLAccount.objects.filter(code='412000', is_active=True).first()
+        ar_acct = GLAccount.objects.filter(code='4120002', is_active=True).first()
 
         if ar_acct:
             # Get all journal lines for this account that reference this scheme
@@ -764,8 +764,8 @@ def insurance_ledger(request):
         total_credit = sum(e['credit'] for e in raw)
 
         summary = {
-            'gl_account': '412000',
-            'gl_label': 'Insurance Receivables',
+            'gl_account': '4120002',
+            'gl_label': 'Clients-Patients (HMO / CNPS Insurance)',
             'gl_class': 'Class 4 — Third-Party Accounts',
             'scheme_name': scheme.name,
             'scheme_code': scheme.code,
