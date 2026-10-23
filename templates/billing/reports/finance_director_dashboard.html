@@ -1,66 +1,69 @@
 {% extends "layouts/base_authenticated.html" %}
 {% load humanize static %}
-{% block title %}Finance Director Dashboard{% endblock %}
+{% block title %}Finance Director — Tableau de Bord{% endblock %}
 
 {% block extra_css %}
 <style>
-  /* ── Top-line strip ── */
-  .fd-strip { background: #fff; border: 1px solid #e9ecef; border-radius: .6rem; }
-  .fd-strip-item { text-align: center; padding: .6rem .5rem; }
-  .fd-strip-item .sl { font-size: .6rem; text-transform: uppercase; letter-spacing: .06em; color: #868e96; font-weight: 600; }
-  .fd-strip-item .sv { font-size: 1.4rem; font-weight: 800; line-height: 1.15; }
-  .fd-strip-item .ss { font-size: .62rem; color: #adb5bd; }
-  .fd-strip-divider { width: 1px; background: #e9ecef; align-self: stretch; flex-shrink: 0; }
+  /* ── Top strip ── */
+  .fd-strip { background:#fff; border:1px solid #e9ecef; border-radius:.5rem; }
+  .fd-strip-item { text-align:center; padding:.65rem .5rem; }
+  .fd-strip-item .sl { font-size:.6rem; text-transform:uppercase; letter-spacing:.07em; color:#868e96; font-weight:700; }
+  .fd-strip-item .sv { font-size:1.35rem; font-weight:800; line-height:1.2; color:#1c3a5e; }
+  .fd-strip-item .ss { font-size:.6rem; color:#adb5bd; }
+  .fd-strip-divider { width:1px; background:#e9ecef; align-self:stretch; flex-shrink:0; }
 
-  /* ── KPI tiles ── */
-  .fd-tile { background: #fff; border: 1px solid #e9ecef; border-radius: .5rem; padding: .7rem .85rem; height: 100%; transition: box-shadow .15s; }
-  .fd-tile:hover { box-shadow: 0 4px 16px rgba(0,0,0,.06); }
-  .fd-tile .tile-icon { width: 38px; height: 38px; border-radius: .45rem; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
-  .fd-tile .tile-label { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: #868e96; font-weight: 600; margin-bottom: 2px; }
-  .fd-tile .tile-val { font-size: 1.15rem; font-weight: 700; line-height: 1.15; }
-  .fd-tile .tile-sub { font-size: .6rem; color: #adb5bd; }
+  /* ── Tiles ── */
+  .fd-tile { background:#fff; border:1px solid #e9ecef; border-radius:.5rem; padding:.75rem .85rem; height:100%; }
+  .fd-tile .tile-label { font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; color:#868e96; font-weight:700; margin-bottom:3px; }
+  .fd-tile .tile-val { font-size:1.1rem; font-weight:700; color:#212529; line-height:1.2; }
+  .fd-tile .tile-sub { font-size:.6rem; color:#adb5bd; margin-top:2px; }
+  .fd-tile.navy { border-left:3px solid #1c3a5e; }
+  .fd-tile.navy .tile-val { color:#1c3a5e; }
+  .fd-tile.positive .tile-val { color:#166534; }
+  .fd-tile.negative .tile-val { color:#991b1b; }
 
   /* ── Cards ── */
-  .fd-card { background: #fff; border: 1px solid #e9ecef; border-radius: .5rem; overflow: hidden; }
-  .fd-card-hdr { padding: .55rem .85rem; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
-  .fd-card-hdr h6 { font-size: .74rem; font-weight: 700; margin: 0; color: #343a40; }
-  .fd-card-body { padding: .7rem .85rem; }
+  .fd-card { background:#fff; border:1px solid #e9ecef; border-radius:.5rem; overflow:hidden; }
+  .fd-card-hdr { padding:.55rem .85rem; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; justify-content:space-between; }
+  .fd-card-hdr h6 { font-size:.74rem; font-weight:700; margin:0; color:#343a40; }
+  .fd-card-body { padding:.75rem .85rem; }
 
   /* ── Alert rows ── */
-  .fd-arow { padding: .5rem 0; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; justify-content: space-between; }
-  .fd-arow:last-child { border-bottom: 0; }
-  .fd-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: .45rem; flex-shrink: 0; }
+  .fd-arow { padding:.48rem 0; border-bottom:1px solid #f5f5f5; display:flex; align-items:center; justify-content:space-between; }
+  .fd-arow:last-child { border-bottom:0; }
+  .fd-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:.45rem; flex-shrink:0; }
 
   /* ── Table ── */
-  .fd-table { width: 100%; font-size: .72rem; }
-  .fd-table th { font-weight: 600; color: #868e96; text-transform: uppercase; letter-spacing: .03em; padding: .35rem .4rem; border-bottom: 1px solid #e9ecef; font-size: .62rem; }
-  .fd-table td { padding: .4rem .4rem; border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
-  .fd-table tr:last-child td { border-bottom: 0; }
+  .fd-table { width:100%; font-size:.72rem; }
+  .fd-table th { font-weight:700; color:#868e96; text-transform:uppercase; letter-spacing:.04em; padding:.35rem .4rem; border-bottom:1px solid #e9ecef; font-size:.6rem; }
+  .fd-table td { padding:.4rem .4rem; border-bottom:1px solid #f5f5f5; vertical-align:middle; }
+  .fd-table tr:last-child td { border-bottom:0; }
 
   /* ── Quick links ── */
-  .fd-qlink { border: 1px solid #e9ecef; border-radius: .45rem; padding: .5rem .7rem; display: flex; align-items: center; gap: .4rem; text-decoration: none; color: #343a40; font-weight: 600; font-size: .72rem; transition: all .12s; }
-  .fd-qlink:hover { background: #f8f9fa; border-color: #ced4da; color: var(--ehr-primary); }
-  .fd-qlink i { font-size: .9rem; }
+  .fd-qlink { border:1px solid #e9ecef; border-radius:.4rem; padding:.48rem .65rem; display:flex; align-items:center; gap:.4rem; text-decoration:none; color:#343a40; font-weight:600; font-size:.72rem; transition:all .1s; }
+  .fd-qlink:hover { background:#f8f9fa; border-color:#ced4da; color:#1c3a5e; }
+  .fd-qlink i { font-size:.88rem; color:#6c757d; }
 
   /* ── Budget bars ── */
-  .fd-budget-bar { height: 6px; border-radius: 3px; background: #e9ecef; overflow: hidden; }
-  .fd-budget-fill { height: 100%; border-radius: 3px; transition: width .5s; }
+  .fd-budget-bar { height:5px; border-radius:3px; background:#e9ecef; overflow:hidden; }
+  .fd-budget-fill { height:100%; border-radius:3px; transition:width .5s; background:#1c3a5e; }
+  .fd-budget-fill.over { background:#991b1b; }
 
   /* ── Invoice pills ── */
-  .fd-pill { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .6rem; border-radius: 2rem; font-size: .68rem; font-weight: 600; width: 100%; }
+  .fd-pill { display:inline-flex; align-items:center; gap:.3rem; padding:.28rem .6rem; border-radius:2rem; font-size:.68rem; font-weight:600; width:100%; border:1px solid #e9ecef; color:#495057; background:#f8f9fa; }
 </style>
 {% endblock %}
 
 {% block page_header %}
-<div class="flex-wrap gap-2 d-flex justify-content-between align-items-center mb-2">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
-    <h5 class="fw-bold mb-0">Finance Director Dashboard</h5>
-    <p class="page-subtitle text-muted small mb-0">{% now "l, d F Y" %} &middot; {{ modules.hospital_name|default:HOSPITAL_NAME }} &middot; {{ modules.hospital_name|default:HOSPITAL_NAME }}</p>
+    <h5 class="fw-bold mb-0"><i class="bi bi-bank me-2"></i>Finance Director — Tableau de Bord</h5>
+    <p class="page-subtitle text-muted small mb-0">{% now "l, d F Y" %}</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="{% url 'billing:report_daily_liquidity' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-droplet-half me-1"></i>Liquidity</a>
-    <a href="{% url 'billing:balance_sheet' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-bank me-1"></i>Balance Sheet</a>
-    <a href="{% url 'billing:report_pl' %}" class="btn btn-sm btn-primary"><i class="bi bi-bar-chart-line me-1"></i>P&amp;L</a>
+    <a href="{% url 'billing:report_daily_liquidity' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-droplet-half me-1"></i>Liquidité</a>
+    <a href="{% url 'billing:balance_sheet' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard-data me-1"></i>Bilan</a>
+    <a href="{% url 'billing:report_pl' %}" class="btn btn-sm btn-dark"><i class="bi bi-bar-chart-line me-1"></i>P&amp;L</a>
   </div>
 </div>
 {% endblock %}
@@ -68,165 +71,127 @@
 {% block content %}
 {% include 'components/letterhead.html' %}
 
-{# ══════ TOP-LINE STRIP ══════ #}
+{# ══ TOP-LINE STRIP ══ #}
 <div class="fd-strip p-2 mb-3">
   <div class="d-flex flex-wrap align-items-center justify-content-between">
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Revenue Today</div>
-      <div class="sv text-success">{{ revenue_today|floatformat:0|intcomma }}</div>
+      <div class="sl">Recettes Aujourd'hui</div>
+      <div class="sv">{{ revenue_today|floatformat:0|intcomma }}</div>
       <div class="ss">FCFA</div>
     </div>
     <div class="fd-strip-divider d-none d-md-block"></div>
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Revenue This Month</div>
-      <div class="sv text-primary">{{ revenue_month|floatformat:0|intcomma }}</div>
+      <div class="sl">Recettes Ce Mois</div>
+      <div class="sv">{{ revenue_month|floatformat:0|intcomma }}</div>
       <div class="ss">FCFA</div>
     </div>
     <div class="fd-strip-divider d-none d-md-block"></div>
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Revenue YTD</div>
-      <div class="sv" style="color:#0077b6;">{{ revenue_ytd|floatformat:0|intcomma }}</div>
-      <div class="ss">FCFA year-to-date</div>
+      <div class="sl">Recettes Cumulées (YTD)</div>
+      <div class="sv">{{ revenue_ytd|floatformat:0|intcomma }}</div>
+      <div class="ss">FCFA depuis janvier</div>
     </div>
     <div class="fd-strip-divider d-none d-md-block"></div>
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Collection Rate</div>
-      <div class="sv {% if collection_rate >= 80 %}text-success{% elif collection_rate >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ collection_rate }}%</div>
-      <div class="ss">of {{ billed_month|floatformat:0|intcomma }} billed</div>
+      <div class="sl">Taux de Recouvrement</div>
+      <div class="sv {% if collection_rate < 50 %}text-danger{% endif %}">{{ collection_rate }}%</div>
+      <div class="ss">sur {{ billed_month|floatformat:0|intcomma }} facturé</div>
     </div>
     <div class="fd-strip-divider d-none d-md-block"></div>
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Operating Margin</div>
-      <div class="sv {% if operating_margin >= 20 %}text-success{% elif operating_margin >= 0 %}text-warning{% else %}text-danger{% endif %}">{{ operating_margin }}%</div>
-      <div class="ss">target &ge; 20%</div>
+      <div class="sl">Marge Opérationnelle</div>
+      <div class="sv {% if operating_margin < 0 %}text-danger{% endif %}">{{ operating_margin }}%</div>
+      <div class="ss">objectif &ge; 20%</div>
     </div>
     <div class="fd-strip-divider d-none d-md-block"></div>
     <div class="fd-strip-item flex-fill">
-      <div class="sl">Patients Today</div>
+      <div class="sl">Patients Aujourd'hui</div>
       <div class="sv">{{ visits_today }}</div>
-      <div class="ss">{{ visits_month }} this month</div>
+      <div class="ss">{{ visits_month }} ce mois</div>
     </div>
   </div>
 </div>
 
-{# ══════ KPI TILES — Row 1: P&L + Liquidity ══════ #}
+{# ══ KPI ROW 1 — P&L ══ #}
 <div class="row g-2 mb-2">
   <div class="col-6 col-lg-3">
     <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-arrow-down-circle"></i></div>
-        <div>
-          <div class="tile-label">Expenses (Month)</div>
-          <div class="tile-val text-danger">{{ expenses_month|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
+      <div class="tile-label">Charges (Ce Mois)</div>
+      <div class="tile-val">{{ expenses_month|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA dépensés</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile {% if net_month >= 0 %}positive{% else %}negative{% endif %}">
+      <div class="tile-label">Résultat Net (Ce Mois)</div>
+      <div class="tile-val">{% if net_month >= 0 %}+{% endif %}{{ net_month|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA net du mois</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon {% if net_month >= 0 %}bg-success bg-opacity-10 text-success{% else %}bg-danger bg-opacity-10 text-danger{% endif %}">
-          <i class="bi bi-{% if net_month >= 0 %}trophy{% else %}exclamation-triangle{% endif %}"></i>
-        </div>
-        <div>
-          <div class="tile-label">Net Income (Month)</div>
-          <div class="tile-val {% if net_month >= 0 %}text-success{% else %}text-danger{% endif %}">{{ net_month|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
+      <div class="tile-label">Charges Cumulées (YTD)</div>
+      <div class="tile-val">{{ expenses_ytd|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA depuis janvier</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
-    <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon" style="background:rgba(232,93,4,.08);color:#e85d04;"><i class="bi bi-graph-down-arrow"></i></div>
-        <div>
-          <div class="tile-label">Expenses YTD</div>
-          <div class="tile-val" style="color:#e85d04;">{{ expenses_ytd|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon {% if net_ytd >= 0 %}bg-success bg-opacity-10 text-success{% else %}bg-danger bg-opacity-10 text-danger{% endif %}">
-          <i class="bi bi-{% if net_ytd >= 0 %}cash-stack{% else %}exclamation-diamond{% endif %}"></i>
-        </div>
-        <div>
-          <div class="tile-label">Net Income YTD</div>
-          <div class="tile-val {% if net_ytd >= 0 %}text-success{% else %}text-danger{% endif %}">{{ net_ytd|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
+    <div class="fd-tile {% if net_ytd >= 0 %}positive{% else %}negative{% endif %}">
+      <div class="tile-label">Résultat Net Cumulé (YTD)</div>
+      <div class="tile-val">{% if net_ytd >= 0 %}+{% endif %}{{ net_ytd|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA résultat YTD</div>
     </div>
   </div>
 </div>
 
-{# ══════ KPI TILES — Row 2: Liquidity + AR/AP ══════ #}
+{# ══ KPI ROW 2 — Liquidity + AR/AP ══ #}
 <div class="row g-2 mb-3">
   <div class="col-6 col-lg-3">
-    <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon bg-secondary bg-opacity-10 text-secondary"><i class="bi bi-safe"></i></div>
-        <div>
-          <div class="tile-label">Safe Balance</div>
-          <div class="tile-val">{{ safe_balance|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
+    <div class="fd-tile navy">
+      <div class="tile-label">Caisse (Solde)</div>
+      <div class="tile-val">{{ safe_balance|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA en caisse</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="fd-tile navy">
+      <div class="tile-label">Solde Bancaire</div>
+      <div class="tile-val">{{ bank_total|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA comptes bancaires</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-bank"></i></div>
-        <div>
-          <div class="tile-label">Bank Accounts</div>
-          <div class="tile-val text-primary">{{ bank_total|floatformat:0|intcomma }}</div>
-        </div>
-      </div>
+      <div class="tile-label">Créances Clients (AR)</div>
+      <div class="tile-val">{{ ar_total|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">{{ ar_outstanding }} facture{{ ar_outstanding|pluralize }} en attente</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-hourglass-split"></i></div>
-        <div>
-          <div class="tile-label">AR Outstanding</div>
-          <div class="tile-val text-warning">{{ ar_total|floatformat:0|intcomma }}</div>
-          <div class="tile-sub">{{ ar_outstanding }} invoice{{ ar_outstanding|pluralize }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-lg-3">
-    <div class="fd-tile">
-      <div class="d-flex align-items-center gap-2">
-        <div class="tile-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-file-earmark-minus"></i></div>
-        <div>
-          <div class="tile-label">AP Outstanding</div>
-          <div class="tile-val text-danger">{{ ap_outstanding|floatformat:0|intcomma }}</div>
-          <div class="tile-sub">FCFA vendor bills</div>
-        </div>
-      </div>
+      <div class="tile-label">Dettes Fournisseurs (AP)</div>
+      <div class="tile-val">{{ ap_outstanding|floatformat:0|intcomma }}</div>
+      <div class="tile-sub">FCFA à payer</div>
     </div>
   </div>
 </div>
 
-{# ══════ CHARTS ROW 1 — Trend + Payment Methods ══════ #}
+{# ══ CHARTS ROW 1 ══ #}
 <div class="row g-2 mb-2">
   <div class="col-lg-8">
     <div class="fd-card h-100">
       <div class="fd-card-hdr">
-        <h6><i class="bi bi-graph-up-arrow me-2 text-success"></i>Revenue vs Expenses (12 Months)</h6>
+        <h6><i class="bi bi-graph-up-arrow me-2"></i>Recettes vs Charges — 12 Derniers Mois</h6>
       </div>
       <div class="fd-card-body" style="padding:.5rem;">
-        <div style="position:relative;height:270px;"><canvas id="trendChart"></canvas></div>
+        <div style="position:relative;height:265px;"><canvas id="trendChart"></canvas></div>
       </div>
     </div>
   </div>
   <div class="col-lg-4">
     <div class="fd-card h-100">
       <div class="fd-card-hdr">
-        <h6><i class="bi bi-credit-card me-2 text-primary"></i>Revenue by Payment Method</h6>
+        <h6><i class="bi bi-credit-card me-2"></i>Recettes par Mode de Paiement</h6>
       </div>
       <div class="fd-card-body d-flex align-items-center justify-content-center">
         <div style="position:relative;width:100%;max-width:220px;"><canvas id="pmChart"></canvas></div>
@@ -235,12 +200,12 @@
   </div>
 </div>
 
-{# ══════ CHARTS ROW 2 — Categories + Budget vs Actual ══════ #}
+{# ══ CHARTS ROW 2 ══ #}
 <div class="row g-2 mb-2">
   <div class="col-lg-4">
     <div class="fd-card h-100">
       <div class="fd-card-hdr">
-        <h6><i class="bi bi-pie-chart me-2 text-info"></i>Top Revenue Categories</h6>
+        <h6><i class="bi bi-pie-chart me-2"></i>Top Catégories de Recettes</h6>
       </div>
       <div class="fd-card-body d-flex align-items-center justify-content-center">
         <div style="position:relative;width:100%;max-width:220px;"><canvas id="catChart"></canvas></div>
@@ -250,41 +215,41 @@
   <div class="col-lg-4">
     <div class="fd-card h-100">
       <div class="fd-card-hdr">
-        <h6><i class="bi bi-bar-chart me-2 text-success"></i>Budget vs Actual (This Month)</h6>
+        <h6><i class="bi bi-bar-chart me-2"></i>Budget vs Réalisé (Ce Mois)</h6>
       </div>
       <div class="fd-card-body">
         <div class="mb-3">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="tile-label" style="font-size:.65rem;">Revenue</span>
-            <span class="small fw-bold">{{ revenue_month|floatformat:0|intcomma }} / {{ budget_revenue|floatformat:0|intcomma }}</span>
+          <div class="d-flex justify-content-between mb-1">
+            <span style="font-size:.65rem;font-weight:700;text-transform:uppercase;color:#868e96;letter-spacing:.05em;">Recettes</span>
+            <span style="font-size:.72rem;font-weight:600;">{{ revenue_month|floatformat:0|intcomma }} / {{ budget_revenue|floatformat:0|intcomma }}</span>
           </div>
           <div class="fd-budget-bar">
-            <div class="fd-budget-fill {% if rev_variance >= 0 %}bg-success{% else %}bg-warning{% endif %}" style="width:{% widthratio revenue_month budget_revenue 100 %}%;"></div>
+            <div class="fd-budget-fill" style="width:{% if budget_revenue > 0 %}{% widthratio revenue_month budget_revenue 100 %}{% else %}0{% endif %}%;"></div>
           </div>
           <div class="d-flex justify-content-between mt-1">
-            <span class="tile-sub">{% if budget_revenue > 0 %}{% widthratio revenue_month budget_revenue 100 %}% achieved{% else %}No budget set{% endif %}</span>
-            <span class="tile-sub {% if rev_variance >= 0 %}text-success{% else %}text-danger{% endif %}">
+            <span style="font-size:.6rem;color:#adb5bd;">{% if budget_revenue > 0 %}{% widthratio revenue_month budget_revenue 100 %}% atteint{% else %}Budget non défini{% endif %}</span>
+            <span style="font-size:.6rem;font-weight:600;" class="{% if rev_variance >= 0 %}text-success{% else %}text-danger{% endif %}">
               {% if rev_variance >= 0 %}+{% endif %}{{ rev_variance|floatformat:0|intcomma }}
             </span>
           </div>
         </div>
         <div class="mb-3">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="tile-label" style="font-size:.65rem;">Expenses</span>
-            <span class="small fw-bold">{{ expenses_month|floatformat:0|intcomma }} / {{ budget_expense|floatformat:0|intcomma }}</span>
+          <div class="d-flex justify-content-between mb-1">
+            <span style="font-size:.65rem;font-weight:700;text-transform:uppercase;color:#868e96;letter-spacing:.05em;">Charges</span>
+            <span style="font-size:.72rem;font-weight:600;">{{ expenses_month|floatformat:0|intcomma }} / {{ budget_expense|floatformat:0|intcomma }}</span>
           </div>
           <div class="fd-budget-bar">
-            <div class="fd-budget-fill {% if exp_variance <= 0 %}bg-success{% else %}bg-danger{% endif %}" style="width:{% if budget_expense > 0 %}{% widthratio expenses_month budget_expense 100 %}{% else %}0{% endif %}%;"></div>
+            <div class="fd-budget-fill {% if exp_variance > 0 %}over{% endif %}" style="width:{% if budget_expense > 0 %}{% widthratio expenses_month budget_expense 100 %}{% else %}0{% endif %}%;"></div>
           </div>
           <div class="d-flex justify-content-between mt-1">
-            <span class="tile-sub">{% if budget_expense > 0 %}{% widthratio expenses_month budget_expense 100 %}% spent{% else %}No budget set{% endif %}</span>
-            <span class="tile-sub {% if exp_variance <= 0 %}text-success{% else %}text-danger{% endif %}">
+            <span style="font-size:.6rem;color:#adb5bd;">{% if budget_expense > 0 %}{% widthratio expenses_month budget_expense 100 %}% consommé{% else %}Budget non défini{% endif %}</span>
+            <span style="font-size:.6rem;font-weight:600;" class="{% if exp_variance <= 0 %}text-success{% else %}text-danger{% endif %}">
               {% if exp_variance > 0 %}+{% endif %}{{ exp_variance|floatformat:0|intcomma }}
             </span>
           </div>
         </div>
         <div class="text-center mt-3">
-          <a href="{% url 'billing:budget_ytd_report' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Full Budget YTD</a>
+          <a href="{% url 'billing:budget_ytd_report' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Budget YTD Complet</a>
         </div>
       </div>
     </div>
@@ -292,120 +257,111 @@
   <div class="col-lg-4">
     <div class="fd-card h-100">
       <div class="fd-card-hdr">
-        <h6><i class="bi bi-shield-plus me-2 text-warning"></i>Insurance Receivables</h6>
-        <span class="badge bg-warning bg-opacity-10 text-warning fw-bold" style="font-size:.68rem;">{{ insurance_total_owed|floatformat:0|intcomma }} FCFA</span>
+        <h6><i class="bi bi-shield-plus me-2"></i>Créances Assurances</h6>
+        <span class="badge text-dark fw-bold" style="background:#f1f3f5;font-size:.68rem;border:1px solid #dee2e6;">{{ insurance_total_owed|floatformat:0|intcomma }} FCFA</span>
       </div>
       <div class="fd-card-body py-1">
         {% if insurance_receivables %}
         <table class="fd-table">
-          <thead><tr><th>Scheme</th><th class="text-end">Owed</th></tr></thead>
+          <thead><tr><th>Organisme</th><th class="text-end">Montant dû</th></tr></thead>
           <tbody>
           {% for r in insurance_receivables %}
             <tr>
               <td>{{ r.scheme_name }}</td>
-              <td class="text-end fw-bold text-warning">{{ r.owed|floatformat:0|intcomma }}</td>
+              <td class="text-end fw-bold">{{ r.owed|floatformat:0|intcomma }}</td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
         {% else %}
-        <p class="text-muted small text-center py-3 mb-0">No outstanding insurance claims</p>
+        <p class="text-muted small text-center py-3 mb-0">Aucune créance assurance en cours</p>
         {% endif %}
         <div class="text-center mt-2 mb-1">
-          <a href="{% url 'hmo:insurance_aging' %}" class="btn btn-sm btn-outline-warning"><i class="bi bi-hourglass-split me-1"></i>Insurance Aging</a>
+          <a href="{% url 'hmo:insurance_aging' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-hourglass-split me-1"></i>Aging Assurances</a>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-{# ══════ BOTTOM ROW — Alerts + Invoices + Cashier Desk + Quick Links ══════ #}
+{# ══ BOTTOM ROW — Alerts + Invoices + Quick Links ══ #}
 <div class="row g-2 mb-3">
-  {# Alerts #}
   <div class="col-lg-3">
     <div class="fd-card h-100">
-      <div class="fd-card-hdr">
-        <h6><i class="bi bi-bell-fill me-2 text-warning"></i>Alerts</h6>
-      </div>
+      <div class="fd-card-hdr"><h6><i class="bi bi-bell me-2"></i>Alertes</h6></div>
       <div class="fd-card-body py-1">
         <div class="fd-arow">
-          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_expenses > 0 %}#ffc107{% else %}#28a745{% endif %};"></span>Expenses pending</span>
-          <a href="{% url 'billing:expense_list' %}" class="badge rounded-pill {% if pending_expenses > 0 %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ pending_expenses|default:0 }}</a>
+          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_expenses > 0 %}#991b1b{% else %}#166534{% endif %};"></span>Charges à approuver</span>
+          <a href="{% url 'billing:expense_list' %}" class="badge rounded-pill fw-semibold" style="background:#f1f3f5;color:#495057;border:1px solid #dee2e6;">{{ pending_expenses|default:0 }}</a>
         </div>
         <div class="fd-arow">
-          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_advances > 0 %}#0dcaf0{% else %}#28a745{% endif %};"></span>Advance requests</span>
-          <a href="{% url 'billing:advance_list' %}" class="badge rounded-pill {% if pending_advances > 0 %}bg-info text-dark{% else %}bg-success{% endif %}">{{ pending_advances|default:0 }}</a>
+          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_advances > 0 %}#92400e{% else %}#166534{% endif %};"></span>Avances en attente</span>
+          <a href="{% url 'billing:advance_list' %}" class="badge rounded-pill fw-semibold" style="background:#f1f3f5;color:#495057;border:1px solid #dee2e6;">{{ pending_advances|default:0 }}</a>
         </div>
         <div class="fd-arow">
-          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if overdue_advances > 0 %}#dc3545{% else %}#28a745{% endif %};"></span>Overdue advances</span>
-          <a href="{% url 'billing:advance_list' %}" class="badge rounded-pill {% if overdue_advances > 0 %}bg-danger{% else %}bg-success{% endif %}">{{ overdue_advances|default:0 }}</a>
+          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if overdue_advances > 0 %}#991b1b{% else %}#166534{% endif %};"></span>Avances en retard</span>
+          <a href="{% url 'billing:advance_list' %}" class="badge rounded-pill fw-semibold" style="background:#f1f3f5;color:#495057;border:1px solid #dee2e6;">{{ overdue_advances|default:0 }}</a>
         </div>
         <div class="fd-arow">
-          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if unresolved_variances > 0 %}#dc3545{% else %}#28a745{% endif %};"></span>Cash variances</span>
-          <a href="{% url 'billing:variance_register' %}" class="badge rounded-pill {% if unresolved_variances > 0 %}bg-danger{% else %}bg-success{% endif %}">{{ unresolved_variances|default:0 }}</a>
+          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if unresolved_variances > 0 %}#991b1b{% else %}#166534{% endif %};"></span>Écarts de caisse</span>
+          <a href="{% url 'billing:variance_register' %}" class="badge rounded-pill fw-semibold" style="background:#f1f3f5;color:#495057;border:1px solid #dee2e6;">{{ unresolved_variances|default:0 }}</a>
         </div>
         <div class="fd-arow">
-          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_reconciliations > 0 %}#6c757d{% else %}#28a745{% endif %};"></span>Draft reconciliations</span>
-          <a href="{% url 'billing:bank_reconciliation_list' %}" class="badge rounded-pill {% if pending_reconciliations > 0 %}bg-secondary{% else %}bg-success{% endif %}">{{ pending_reconciliations|default:0 }}</a>
+          <span class="d-flex align-items-center small"><span class="fd-dot" style="background:{% if pending_reconciliations > 0 %}#6c757d{% else %}#166534{% endif %};"></span>Rapprochements en cours</span>
+          <a href="{% url 'billing:bank_reconciliation_list' %}" class="badge rounded-pill fw-semibold" style="background:#f1f3f5;color:#495057;border:1px solid #dee2e6;">{{ pending_reconciliations|default:0 }}</a>
         </div>
       </div>
     </div>
   </div>
 
-  {# Invoice Status + Cashier Desk #}
   <div class="col-lg-4">
     <div class="fd-card h-100">
-      <div class="fd-card-hdr">
-        <h6><i class="bi bi-receipt me-2 text-primary"></i>Invoices &amp; Desk Performance</h6>
-      </div>
+      <div class="fd-card-hdr"><h6><i class="bi bi-receipt me-2"></i>Factures &amp; Performances Caissiers</h6></div>
       <div class="fd-card-body py-2">
-        <div class="row g-2 mb-2">
-          <div class="col-6"><div class="fd-pill bg-success bg-opacity-10 text-success"><i class="bi bi-check-circle-fill"></i> Paid <span class="ms-auto">{{ invoices_paid }}</span></div></div>
-          <div class="col-6"><div class="fd-pill bg-warning bg-opacity-10 text-warning"><i class="bi bi-clock-fill"></i> Partial <span class="ms-auto">{{ invoices_partial }}</span></div></div>
-          <div class="col-6"><div class="fd-pill bg-danger bg-opacity-10 text-danger"><i class="bi bi-exclamation-circle-fill"></i> Unpaid <span class="ms-auto">{{ invoices_unpaid }}</span></div></div>
-          <div class="col-6"><div class="fd-pill bg-secondary bg-opacity-10 text-secondary"><i class="bi bi-slash-circle-fill"></i> Void <span class="ms-auto">{{ invoices_void }}</span></div></div>
+        <div class="row g-2 mb-3">
+          <div class="col-6"><div class="fd-pill"><i class="bi bi-check-circle text-muted"></i> Payées <span class="ms-auto fw-bold">{{ invoices_paid }}</span></div></div>
+          <div class="col-6"><div class="fd-pill"><i class="bi bi-clock text-muted"></i> Partielles <span class="ms-auto fw-bold">{{ invoices_partial }}</span></div></div>
+          <div class="col-6"><div class="fd-pill"><i class="bi bi-exclamation-circle text-muted"></i> Impayées <span class="ms-auto fw-bold">{{ invoices_unpaid }}</span></div></div>
+          <div class="col-6"><div class="fd-pill"><i class="bi bi-slash-circle text-muted"></i> Annulées <span class="ms-auto fw-bold">{{ invoices_void }}</span></div></div>
         </div>
-        <div style="font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:#868e96;font-weight:600;margin:.5rem 0 .3rem;">Today's Cashier Collections</div>
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#868e96;font-weight:700;margin-bottom:.4rem;">Recouvrements Caissiers — Aujourd'hui</div>
         {% if desk_performance %}
         <table class="fd-table">
-          <thead><tr><th>Cashier</th><th class="text-end">Collected</th><th class="text-end">Txns</th></tr></thead>
+          <thead><tr><th>Caissier</th><th class="text-end">Recouvré (FCFA)</th><th class="text-end">Opérations</th></tr></thead>
           <tbody>
           {% for d in desk_performance %}
             <tr>
-              <td><i class="bi bi-person-circle me-1 text-muted"></i>{{ d.cashier }}</td>
-              <td class="text-end fw-bold text-success">{{ d.collected|floatformat:0|intcomma }}</td>
-              <td class="text-end">{{ d.txn_count }}</td>
+              <td><i class="bi bi-person me-1 text-muted"></i>{{ d.cashier }}</td>
+              <td class="text-end fw-bold">{{ d.collected|floatformat:0|intcomma }}</td>
+              <td class="text-end text-muted">{{ d.txn_count }}</td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
         {% else %}
-        <p class="text-muted small text-center py-2 mb-0">No collections yet today</p>
+        <p class="text-muted small text-center py-2 mb-0">Aucun recouvrement enregistré aujourd'hui</p>
         {% endif %}
       </div>
     </div>
   </div>
 
-  {# Quick Navigation #}
   <div class="col-lg-5">
     <div class="fd-card h-100">
-      <div class="fd-card-hdr">
-        <h6><i class="bi bi-lightning-charge-fill me-2 text-primary"></i>Quick Navigation</h6>
-      </div>
+      <div class="fd-card-hdr"><h6><i class="bi bi-grid me-2"></i>Navigation Rapide</h6></div>
       <div class="fd-card-body py-2">
         <div class="row g-2">
-          <div class="col-6"><a href="{% url 'billing:report_pl' %}" class="fd-qlink"><i class="bi bi-bar-chart-line text-success"></i>P&amp;L Statement</a></div>
-          <div class="col-6"><a href="{% url 'billing:balance_sheet' %}" class="fd-qlink"><i class="bi bi-bank text-primary"></i>Balance Sheet</a></div>
-          <div class="col-6"><a href="{% url 'billing:cash_flow_statement' %}" class="fd-qlink"><i class="bi bi-arrow-left-right text-info"></i>Cash Flow</a></div>
-          <div class="col-6"><a href="{% url 'billing:trial_balance' %}" class="fd-qlink"><i class="bi bi-clipboard-data text-secondary"></i>Trial Balance</a></div>
-          <div class="col-6"><a href="{% url 'billing:revenue_analysis' %}" class="fd-qlink"><i class="bi bi-graph-up-arrow text-success"></i>Revenue Analysis</a></div>
-          <div class="col-6"><a href="{% url 'billing:report_ap_aging' %}" class="fd-qlink"><i class="bi bi-hourglass-bottom text-warning"></i>AP Aging</a></div>
-          <div class="col-6"><a href="{% url 'billing:ar_aging' %}" class="fd-qlink"><i class="bi bi-hourglass-split text-danger"></i>AR Aging</a></div>
-          <div class="col-6"><a href="{% url 'billing:report_tva' %}" class="fd-qlink"><i class="bi bi-percent text-danger"></i>TVA Return</a></div>
-          <div class="col-6"><a href="{% url 'billing:report_audit_trail' %}" class="fd-qlink"><i class="bi bi-shield-check text-secondary"></i>Audit Trail</a></div>
-          <div class="col-6"><a href="{% url 'billing:fiscal_period_list' %}" class="fd-qlink"><i class="bi bi-lock text-dark"></i>Fiscal Periods</a></div>
-          <div class="col-6"><a href="{% url 'billing:report_revenue_by_department' %}" class="fd-qlink"><i class="bi bi-diagram-3 text-info"></i>Revenue by Dept</a></div>
-          <div class="col-6"><a href="{% url 'billing:report_surgery_revenue' %}" class="fd-qlink"><i class="bi bi-heart-pulse text-danger"></i>Surgery Revenue</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_pl' %}" class="fd-qlink"><i class="bi bi-bar-chart-line"></i>État de Résultat</a></div>
+          <div class="col-6"><a href="{% url 'billing:balance_sheet' %}" class="fd-qlink"><i class="bi bi-clipboard-data"></i>Bilan Comptable</a></div>
+          <div class="col-6"><a href="{% url 'billing:cash_flow_statement' %}" class="fd-qlink"><i class="bi bi-arrow-left-right"></i>Flux de Trésorerie</a></div>
+          <div class="col-6"><a href="{% url 'billing:trial_balance' %}" class="fd-qlink"><i class="bi bi-table"></i>Balance Générale</a></div>
+          <div class="col-6"><a href="{% url 'billing:revenue_analysis' %}" class="fd-qlink"><i class="bi bi-graph-up-arrow"></i>Analyse des Recettes</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_ap_aging' %}" class="fd-qlink"><i class="bi bi-hourglass-bottom"></i>Aging Fournisseurs</a></div>
+          <div class="col-6"><a href="{% url 'billing:ar_aging' %}" class="fd-qlink"><i class="bi bi-hourglass-split"></i>Aging Clients</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_tva' %}" class="fd-qlink"><i class="bi bi-percent"></i>Déclaration TVA</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_audit_trail' %}" class="fd-qlink"><i class="bi bi-shield-check"></i>Journal d'Audit</a></div>
+          <div class="col-6"><a href="{% url 'billing:fiscal_period_list' %}" class="fd-qlink"><i class="bi bi-lock"></i>Périodes Fiscales</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_revenue_by_department' %}" class="fd-qlink"><i class="bi bi-diagram-3"></i>Recettes par Dépt.</a></div>
+          <div class="col-6"><a href="{% url 'billing:report_surgery_revenue' %}" class="fd-qlink"><i class="bi bi-heart-pulse"></i>Recettes Chirurgie</a></div>
         </div>
       </div>
     </div>
@@ -418,54 +374,62 @@
 <script src="{% static 'vendor/chart.min.js' %}"></script>
 <script>
 (function() {
-  const ttOpts = { backgroundColor:'#fff', borderColor:'#dee2e6', borderWidth:1, titleColor:'#212529', bodyColor:'#495057', cornerRadius:6, padding:8, titleFont:{size:11}, bodyFont:{size:11} };
-  const palette5 = ['#0d6efd','#198754','#ffc107','#dc3545','#6610f2'];
-  const palette7 = ['#0d6efd','#198754','#ffc107','#dc3545','#6610f2','#0dcaf0','#fd7e14'];
+  const ttOpts = {
+    backgroundColor:'#fff', borderColor:'#dee2e6', borderWidth:1,
+    titleColor:'#212529', bodyColor:'#495057',
+    cornerRadius:5, padding:8, titleFont:{size:11}, bodyFont:{size:11}
+  };
+  // Muted professional palette
+  const palette = ['#1c3a5e','#4a7ab5','#7aadd4','#aacde8','#c8daea','#8fa8c0','#6c8ca8'];
 
-  /* Revenue vs Expenses */
+  /* ── Revenue vs Expenses trend ── */
   var ctx1 = document.getElementById('trendChart');
   if (ctx1) new Chart(ctx1, {
     type: 'bar',
     data: {
       labels: {{ trend_labels|safe }},
       datasets: [
-        { label:'Revenue', data:{{ trend_data|safe }}, type:'line', borderColor:'#198754', backgroundColor:'rgba(25,135,84,.06)', borderWidth:2.5, pointBackgroundColor:'#198754', pointRadius:3, pointHoverRadius:5, tension:.35, fill:true, order:1 },
-        { label:'Expenses', data:{{ trend_expenses|safe }}, backgroundColor:'rgba(220,53,69,.15)', borderColor:'rgba(220,53,69,.4)', borderWidth:1, borderRadius:3, order:2 }
+        { label:'Recettes', data:{{ trend_data|safe }}, type:'line',
+          borderColor:'#166534', backgroundColor:'rgba(22,101,52,.06)',
+          borderWidth:2, pointRadius:2, pointHoverRadius:4, tension:.35, fill:true, order:1 },
+        { label:'Charges', data:{{ trend_expenses|safe }},
+          backgroundColor:'rgba(153,27,27,.12)', borderColor:'rgba(153,27,27,.3)',
+          borderWidth:1, borderRadius:3, order:2 }
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
-      interaction:{mode:'index',intersect:false},
-      plugins: {
-        legend:{position:'top',labels:{usePointStyle:true,pointStyle:'circle',padding:12,font:{size:10}}},
-        tooltip:{ ...ttOpts, callbacks:{ label:function(c){return c.dataset.label+': '+c.parsed.y.toLocaleString()+' FCFA';} } }
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{position:'top', labels:{usePointStyle:true, pointStyle:'circle', padding:12, font:{size:10}}},
+        tooltip:{ ...ttOpts, callbacks:{ label:function(c){ return c.dataset.label+': '+c.parsed.y.toLocaleString()+' FCFA'; } } }
       },
-      scales: {
-        y:{beginAtZero:true,ticks:{callback:function(v){return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;},font:{size:10},color:'#aaa'},grid:{color:'#f5f5f5'}},
-        x:{ticks:{font:{size:9},color:'#aaa',maxRotation:45},grid:{display:false}}
+      scales:{
+        y:{ beginAtZero:true, ticks:{ callback:function(v){ return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v; }, font:{size:10}, color:'#adb5bd' }, grid:{color:'#f5f5f5'} },
+        x:{ ticks:{ font:{size:9}, color:'#adb5bd', maxRotation:40 }, grid:{display:false} }
       }
     }
   });
 
-  /* Payment Method Doughnut */
+  /* ── Payment methods doughnut ── */
   var ctx2 = document.getElementById('pmChart');
   if (ctx2) new Chart(ctx2, {
     type: 'doughnut',
-    data: { labels:{{ pm_labels|safe }}, datasets:[{data:{{ pm_data|safe }}, backgroundColor:palette7, borderWidth:0, hoverOffset:5}] },
-    options: { responsive:true, cutout:'62%', plugins:{
-      legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:6,font:{size:9}}},
-      tooltip:{ ...ttOpts, callbacks:{ label:function(c){return c.label+': '+c.parsed.toLocaleString()+' FCFA';} } }
+    data: { labels:{{ pm_labels|safe }}, datasets:[{ data:{{ pm_data|safe }}, backgroundColor:palette, borderWidth:0, hoverOffset:4 }] },
+    options:{ responsive:true, cutout:'62%', plugins:{
+      legend:{ position:'bottom', labels:{ usePointStyle:true, pointStyle:'circle', padding:6, font:{size:9} } },
+      tooltip:{ ...ttOpts, callbacks:{ label:function(c){ return c.label+': '+c.parsed.toLocaleString()+' FCFA'; } } }
     }}
   });
 
-  /* Category Doughnut */
+  /* ── Category doughnut ── */
   var ctx3 = document.getElementById('catChart');
   if (ctx3) new Chart(ctx3, {
     type: 'doughnut',
-    data: { labels:{{ cat_labels|safe }}, datasets:[{data:{{ cat_data|safe }}, backgroundColor:palette5, borderWidth:0, hoverOffset:5}] },
-    options: { responsive:true, cutout:'62%', plugins:{
-      legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:6,font:{size:9}}},
-      tooltip:{ ...ttOpts, callbacks:{ label:function(c){return c.label+': '+c.parsed.toLocaleString()+' FCFA';} } }
+    data: { labels:{{ cat_labels|safe }}, datasets:[{ data:{{ cat_data|safe }}, backgroundColor:palette, borderWidth:0, hoverOffset:4 }] },
+    options:{ responsive:true, cutout:'62%', plugins:{
+      legend:{ position:'bottom', labels:{ usePointStyle:true, pointStyle:'circle', padding:6, font:{size:9} } },
+      tooltip:{ ...ttOpts, callbacks:{ label:function(c){ return c.label+': '+c.parsed.toLocaleString()+' FCFA'; } } }
     }}
   });
 })();
